@@ -1,0 +1,48 @@
+if (CMAKE_CXX_COMPILER_ID STREQUAL "IntelLLVM")
+  message(STATUS "IntelLLVM detected: sanitizing CMAKE_CXX_FLAGS…")
+
+  string(REGEX REPLACE "-Wno-implicit-float-size-conversion" "" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
+  string(REGEX REPLACE "-Winline"                             "" CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
+
+  foreach(cfg IN ITEMS CMAKE_CXX_FLAGS_DEBUG CMAKE_CXX_FLAGS_RELEASE)
+    if (DEFINED ${cfg})
+      string(REGEX REPLACE "-Wno-implicit-float-size-conversion" "" ${cfg} "${${cfg}}")
+      string(REGEX REPLACE "-Winline"                             "" ${cfg} "${${cfg}}")
+    endif()
+  endforeach()
+  add_compile_options(-w)
+endif()
+
+find_package(GTest QUIET)
+
+if (NOT GTest_FOUND)
+  message(STATUS "GoogleTest not found, downloading...")
+  include(FetchContent)
+  set(gtest_disable_werror ON CACHE BOOL "Disables Werror in GTest" FORCE)
+
+  FetchContent_Declare(
+    googletest
+    GIT_REPOSITORY https://github.com/google/googletest.git
+    GIT_TAG        v1.16.0
+  )
+  FetchContent_MakeAvailable(googletest)
+endif()
+
+include(GoogleTest)
+
+add_executable(temper_ut
+  ut_Tensor.cpp
+  ${CMAKE_SOURCE_DIR}/src/Tensor.cpp
+)
+
+target_compile_definitions(temper_ut PRIVATE UNIT_TEST)
+
+target_link_libraries(
+  temper_ut
+  PRIVATE
+    Common
+    GTest::gtest
+    GTest::gtest_main
+)
+
+gtest_discover_tests(temper_ut)
