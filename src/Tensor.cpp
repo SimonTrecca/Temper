@@ -1,10 +1,218 @@
+/**
+ * @file Tensor.cpp
+ * @brief Tensor class function definitions.
+ */
+
 #include "temper/Tensor.hpp"
 #include <iostream>
 
 template<typename float_t>
-Tensor<float_t>::~Tensor()
+void Tensor<float_t>::compute_strides()
 {
-	// sycl::free(data);
+    m_strides.resize(m_dimensions.size());
+
+    if (!m_dimensions.empty())
+    {
+        m_strides.back() = 1;
+        for (uint64_t i = m_dimensions.size() - 1; i > 0; --i)
+        {
+            m_strides[i - 1] = m_strides[i] * m_dimensions[i];
+        }
+    }
+}
+
+template<typename float_t>
+Tensor<float_t>::Tensor(const std::vector<uint64_t>& dimensions)
+    : m_p_data(nullptr),
+      m_dimensions(dimensions),
+      m_strides(dimensions.size()),
+      m_own_data(true)
+{
+    compute_strides();
+
+    uint64_t total_size = 1;
+    for (uint64_t d : dimensions)
+    {
+        total_size *= d;
+    }
+
+    m_p_data = sycl::malloc_device<float_t>(total_size, g_sycl_queue);
+
+    g_sycl_queue.memset(m_p_data, 0, sizeof(float_t)*total_size).wait();
+}
+
+template<typename float_t>
+Tensor<float_t>::Tensor(const Tensor& other)
+    : m_p_data(nullptr),
+      m_dimensions(other.m_dimensions),
+      m_strides(other.m_strides),
+      m_own_data(other.m_own_data)
+{
+    if (m_own_data)
+    {
+        uint64_t total_size = 1;
+        for (uint64_t d : m_dimensions)
+            total_size *= d;
+
+        m_p_data = sycl::malloc_device<float_t>(total_size, g_sycl_queue);
+        g_sycl_queue.memcpy(m_p_data, other.m_p_data,
+                            sizeof(float_t) * total_size).wait();
+    }
+    else
+    {
+        m_p_data = other.m_p_data;
+    }
+}
+
+template<typename float_t>
+Tensor<float_t>::Tensor(Tensor&& other) noexcept
+    : m_p_data(other.m_p_data),
+      m_dimensions(std::move(other.m_dimensions)),
+      m_strides(std::move(other.m_strides)),
+      m_own_data(other.m_own_data)
+{
+    other.m_p_data = nullptr;
+    other.m_own_data = true;
+}
+
+template<typename float_t>
+Tensor<float_t>::Tensor(Tensor& other,
+                  const std::vector<uint64_t>& start_indices,
+                  const std::vector<uint64_t>& view_shape)
+    : m_p_data(nullptr),
+      m_own_data(false)
+{
+    const uint64_t original_rank = other.m_dimensions.size();
+    const uint64_t view_rank = view_shape.size();
+
+    if (start_indices.size() != original_rank)
+    {
+        throw std::invalid_argument("Start_indices must match tensor rank.");
+    }
+
+    if (view_rank == 0 || view_rank > original_rank)
+    {
+        throw std::invalid_argument
+            ("View shape rank must be between 1 and tensor rank.");
+    }
+
+    // Bounds checking.
+    for (uint64_t i = 0; i < original_rank; ++i)
+    {
+        uint64_t start = start_indices[i];
+        uint64_t dim = other.m_dimensions[i];
+        if (start >= dim)
+        {
+            throw std::out_of_range("Start index out of bounds.");
+        }
+    }
+    for (uint64_t j = 0; j < view_rank; ++j)
+    {
+        uint64_t i = original_rank - view_rank + j;
+        uint64_t len = view_shape[j];
+        uint64_t dim = other.m_dimensions[i];
+        if (len == 0 || start_indices[i] + len > dim)
+        {
+            throw std::out_of_range("View shape out of bounds.");
+        }
+    }
+
+    uint64_t offset = 0;
+    for (uint64_t i = 0; i < original_rank; ++i)
+    {
+        offset += start_indices[i] * other.m_strides[i];
+    }
+
+    m_p_data = other.m_p_data + offset;
+
+    // Build new dimensions and strides for the view.
+    m_dimensions.resize(view_rank);
+    m_strides.resize(view_rank);
+    for (uint64_t j = 0; j < view_rank; ++j)
+    {
+        uint64_t i = original_rank - view_rank + j;
+        m_dimensions[j] = view_shape[j];
+        m_strides[j] = other.m_strides[i];
+    }
+}
+
+template<typename float_t>
+Tensor<float_t>& Tensor<float_t>::operator=(const Tensor& other)
+{
+    if (this != &other)
+    {
+        if (m_own_data && m_p_data)
+            sycl::free(m_p_data, g_sycl_queue);
+
+        m_dimensions = other.m_dimensions;
+        m_strides = other.m_strides;
+        m_own_data = other.m_own_data;
+
+        if (m_own_data)
+        {
+            uint64_t total_size = 1;
+            for (uint64_t d : m_dimensions)
+                total_size *= d;
+
+            m_p_data = sycl::malloc_device<float_t>(total_size, g_sycl_queue);
+            g_sycl_queue.memcpy(m_p_data, other.m_p_data,
+                                sizeof(float_t) * total_size).wait();
+        }
+        else
+        {
+            m_p_data = other.m_p_data;
+        }
+    }
+    return *this;
+}
+
+template<typename float_t>
+Tensor<float_t>& Tensor<float_t>::operator=(Tensor&& other) noexcept
+{
+    if (this != &other)
+    {
+        if (m_own_data && m_p_data)
+            sycl::free(m_p_data, g_sycl_queue);
+
+        m_p_data = other.m_p_data;
+        m_dimensions = std::move(other.m_dimensions);
+        m_strides = std::move(other.m_strides);
+        m_own_data = other.m_own_data;
+
+        other.m_p_data = nullptr;
+        other.m_own_data = true;
+    }
+    return *this;
+}
+
+template<typename float_t>
+Tensor<float_t>& Tensor<float_t>::operator=(const std::vector<float_t>& values)
+{
+    uint64_t total_size = 1;
+    for (uint64_t d : m_dimensions)
+        total_size *= d;
+
+    if (values.size() != total_size)
+        throw std::invalid_argument("Size mismatch in 1D vector assignment");
+
+    g_sycl_queue.memcpy
+        (m_p_data, values.data(), sizeof(float_t) * values.size()).wait();
+
+    return *this;
+}
+
+template<typename float_t>
+Tensor<float_t>::~Tensor() noexcept
+{
+    try
+    {
+        if (m_own_data && m_p_data)
+            sycl::free(m_p_data, g_sycl_queue);
+    }
+    catch (const sycl::exception& e)
+    {
+        std::cerr << "SYCL free failed: " << e.what() << std::endl;
+    }
 }
 
 template class Tensor<float>;
