@@ -15,6 +15,8 @@
 #undef private
 #undef protected
 
+using namespace temper;
+
 namespace Test
 {
 
@@ -60,7 +62,7 @@ void copy_tensor_data(Tensor<float_t>& dest, const Tensor<float_t>& src)
     float_t* src_data = src.m_p_data;
     float_t* dest_data = dest.m_p_data;
 
-    // Launch kernel
+    // Launch kernel.
     g_sycl_queue.parallel_for(sycl::range<1>(total_elements), [=]
         (sycl::id<1> idx)
     {
@@ -68,7 +70,8 @@ void copy_tensor_data(Tensor<float_t>& dest, const Tensor<float_t>& src)
         uint64_t src_offset = 0;
         uint64_t dest_offset = 0;
 
-        for (uint64_t i = 0; i < rank; ++i) {
+        for (uint64_t i = 0; i < rank; ++i)
+        {
             uint64_t coord = (linear / shape_str[i]) % dims[i];
             src_offset  += coord * src_strides[i];
             dest_offset += coord * dest_strides[i];
@@ -141,9 +144,10 @@ TEST(TENSOR, compute_strides_larger_tensor)
 TEST(TENSOR, constructor_sets_dimensions_and_strides)
 {
     std::vector<uint64_t> dims = { 2, 3, 4 };
-    Tensor<float> t(dims);
+    Tensor<float> t(dims, MemoryLocation::DEVICE);
 
     EXPECT_EQ(t.m_dimensions, dims);
+    EXPECT_EQ(t.m_mem_loc, MemoryLocation::DEVICE);
 
     std::vector<uint64_t> expected_strides = { 12, 4, 1 };
     EXPECT_EQ(t.m_strides, expected_strides);
@@ -157,10 +161,13 @@ TEST(TENSOR, constructor_sets_dimensions_and_strides)
 TEST(TENSOR, constructor_zero_initializes_data)
 {
     std::vector<uint64_t> dims = { 2, 3 };
-    Tensor<float> t(dims);
+    Tensor<float> t(dims, MemoryLocation::HOST);
+
+    EXPECT_EQ(t.m_mem_loc, MemoryLocation::HOST);
 
     uint64_t total_size = 1;
-    for (uint64_t d : dims) {
+    for (uint64_t d : dims)
+    {
         total_size *= d;
     }
 
@@ -172,7 +179,8 @@ TEST(TENSOR, constructor_zero_initializes_data)
     );
     e.wait();
 
-    for (float v : host_data) {
+    for (float v : host_data)
+    {
         EXPECT_EQ(v, 0.0f);
     }
 }
@@ -183,11 +191,13 @@ TEST(TENSOR, constructor_zero_initializes_data)
  */
 TEST(TENSOR, copy_constructor)
 {
-    Tensor<float> t1({2, 2});
+    Tensor<float> t1({2, 2}, MemoryLocation::DEVICE);
     std::vector<float> values = {1.0f, 2.0f, 3.0f, 4.0f};
     t1 = values;
 
     Tensor<float> t2(t1);
+
+    EXPECT_EQ(t2.m_mem_loc, t1.m_mem_loc);
 
     std::vector<float> host(4);
     g_sycl_queue.memcpy(host.data(), t2.m_p_data, sizeof(float) * 4).wait();
@@ -204,15 +214,53 @@ TEST(TENSOR, copy_constructor)
  */
 TEST(TENSOR, move_constructor)
 {
-    Tensor<float> t1({2, 2});
+    Tensor<float> t1({2, 2}, MemoryLocation::HOST);
     std::vector<float> values = {5.0f, 6.0f, 7.0f, 8.0f};
     t1 = values;
 
     float* original_ptr = t1.m_p_data;
+    MemoryLocation original_loc = t1.m_mem_loc;
+
     Tensor<float> t2(std::move(t1));
 
     EXPECT_EQ(t2.m_p_data, original_ptr);
+    EXPECT_EQ(t2.m_mem_loc, original_loc);
     EXPECT_EQ(t1.m_p_data, nullptr);
+}
+
+/**
+ * @test TENSOR.constructor_memory_location_and_access
+ * @brief Tests correct memory location assignment.
+ */
+TEST(TENSOR, constructor_memory_location_and_access)
+{
+    // DEVICE tensor test: write via kernel, then copy back to host and verify.
+    Tensor<float> t_device({1, 1}, MemoryLocation::DEVICE);
+    EXPECT_EQ(t_device.m_mem_loc, MemoryLocation::DEVICE);
+
+    // Launch kernel to set element to 42.0f.
+    g_sycl_queue.submit([&](sycl::handler& cgh)
+    {
+        auto ptr = t_device.m_p_data;
+        cgh.single_task([=]()
+        {
+            ptr[0] = 42.0f;
+        });
+    }).wait();
+
+    // Copy back to host and check.
+    float host_val = 0.f;
+    g_sycl_queue.memcpy(&host_val, t_device.m_p_data, sizeof(float)).wait();
+    EXPECT_FLOAT_EQ(host_val, 42.0f);
+
+
+    // HOST tensor test: write directly on host memory and read back.
+    Tensor<float> t_host({1, 1}, MemoryLocation::HOST);
+    EXPECT_EQ(t_host.m_mem_loc, MemoryLocation::HOST);
+
+    // Direct write on host pointer.
+    t_host.m_p_data[0] = 24.0f;
+    EXPECT_FLOAT_EQ(t_host.m_p_data[0], 24.0f);
 }
 
 /**
@@ -221,12 +269,14 @@ TEST(TENSOR, move_constructor)
  */
 TEST(TENSOR, copy_assignment_operator)
 {
-    Tensor<float> t1({2, 2});
+    Tensor<float> t1({2, 2}, MemoryLocation::DEVICE);
     std::vector<float> values = {9.0f, 10.0f, 11.0f, 12.0f};
     t1 = values;
 
     Tensor<float> t2;
     t2 = t1;
+
+    EXPECT_EQ(t2.m_mem_loc, t1.m_mem_loc);
 
     std::vector<float> host(4);
     g_sycl_queue.memcpy(host.data(), t2.m_p_data, sizeof(float) * 4).wait();
@@ -243,15 +293,18 @@ TEST(TENSOR, copy_assignment_operator)
  */
 TEST(TENSOR, move_assignment_operator)
 {
-    Tensor<float> t1({2, 2});
+    Tensor<float> t1({2, 2}, MemoryLocation::HOST);
     std::vector<float> values = {13.0f, 14.0f, 15.0f, 16.0f};
     t1 = values;
 
     float* original_ptr = t1.m_p_data;
+    MemoryLocation original_loc = t1.m_mem_loc;
+
     Tensor<float> t2;
     t2 = std::move(t1);
 
     EXPECT_EQ(t2.m_p_data, original_ptr);
+    EXPECT_EQ(t2.m_mem_loc, original_loc);
     EXPECT_EQ(t1.m_p_data, nullptr);
 }
 
@@ -297,10 +350,11 @@ TEST(TENSOR, assign_flat_vector_size_mismatch_throws)
  */
 TEST(TENSOR, slice_view_preserves_strides_and_data)
 {
-    Tensor<float> img({3, 4, 5});
+    Tensor<float> img({3, 4, 5}, MemoryLocation::DEVICE);
+    EXPECT_EQ(img.m_mem_loc, MemoryLocation::DEVICE);
+
     std::vector<float> vals(3 * 4 * 5);
 
-    // Fill tensor with known values: value = 100*c + 10*i + j.
     for (uint64_t c = 0; c < 3; ++c)
     {
         for (uint64_t i = 0; i < 4; ++i)
@@ -315,22 +369,20 @@ TEST(TENSOR, slice_view_preserves_strides_and_data)
 
     img = vals;
 
-    // Create 2x3 patch starting at channel 1, row 0, col 0.
     Tensor<float> patch(img, {1, 0, 0}, {2, 3});
 
-    // Check shape and stride correctness.
+    EXPECT_EQ(patch.m_mem_loc, MemoryLocation::DEVICE);
+
     EXPECT_EQ(patch.m_dimensions, std::vector<uint64_t>({2, 3}));
     EXPECT_EQ(patch.m_strides[0], img.m_strides[1]);
     EXPECT_EQ(patch.m_strides[1], img.m_strides[2]);
 
-    // Copy data to a host tensor and then to host memory.
-    Tensor<float> host({2, 3});
+    Tensor<float> host({2, 3}, MemoryLocation::HOST);
     copy_tensor_data(host, patch);
 
     std::vector<float> out(6);
     g_sycl_queue.memcpy(out.data(), host.m_p_data, sizeof(float) * 6).wait();
 
-    // Validate each element matches expected value.
     for (int ii = 0; ii < 2; ++ii)
     {
         for (int jj = 0; jj < 3; ++jj)
@@ -348,16 +400,20 @@ TEST(TENSOR, slice_view_preserves_strides_and_data)
  */
 TEST(TENSOR, slice_identity_preserves_layout)
 {
-    Tensor<float> t({2, 3});
+    Tensor<float> t({2, 3}, MemoryLocation::DEVICE);
+    EXPECT_EQ(t.m_mem_loc, MemoryLocation::DEVICE);
+
     std::vector<float> v = {0, 1, 2, 3, 4, 5};
     t = v;
 
     Tensor<float> view(t, {0, 0}, {2, 3});
 
+    EXPECT_EQ(view.m_mem_loc, MemoryLocation::DEVICE);
+
     EXPECT_EQ(view.m_dimensions, t.m_dimensions);
     EXPECT_EQ(view.m_strides, t.m_strides);
 
-    Tensor<float> host({2, 3});
+    Tensor<float> host({2, 3}, MemoryLocation::HOST);
     copy_tensor_data(host, view);
 
     std::vector<float> out(6);
@@ -610,6 +666,166 @@ TEST(TENSOR, tensor_view_modification_reflects_in_original)
     }
 }
 
+/**
+ * @test TENSOR.to_device_to_host
+ * @brief Moves a tensor from DEVICE to HOST
+ * and verifies data integrity and metadata.
+ */
+TEST(TENSOR, to_device_to_host)
+{
+    Tensor<float> t({4, 4}, MemoryLocation::DEVICE);
 
+    uint64_t total_size = 1;
+    for (uint64_t d : t.m_dimensions)
+    {
+        total_size *= d;
+    }
+
+    std::vector<float> values(total_size);
+    for (uint64_t i = 0; i < total_size; ++i)
+    {
+        values[i] = static_cast<float>(i + 1);
+    }
+
+    t = values;
+
+    EXPECT_EQ(t.m_mem_loc, MemoryLocation::DEVICE);
+
+    t.to(MemoryLocation::HOST);
+
+    EXPECT_EQ(t.m_mem_loc, MemoryLocation::HOST);
+
+    std::vector<float> host_data(total_size);
+    g_sycl_queue.memcpy
+        (host_data.data(), t.m_p_data, sizeof(float) * total_size).wait();
+
+    for (uint64_t i = 0; i < total_size; ++i)
+    {
+        EXPECT_FLOAT_EQ(host_data[i], static_cast<float>(i + 1));
+    }
+}
+
+/**
+ * @test TENSOR.to_host_to_device
+ * @brief Moves a tensor from HOST to DEVICE
+ * and verifies data integrity and metadata.
+ */
+TEST(TENSOR, to_host_to_device)
+{
+    Tensor<float> t({3, 5}, MemoryLocation::HOST);
+
+    uint64_t total_size = 1;
+    for (uint64_t d : t.m_dimensions)
+    {
+        total_size *= d;
+    }
+
+    std::vector<float> values(total_size);
+    for (uint64_t i = 0; i < total_size; ++i)
+    {
+        values[i] = static_cast<float>(i + 1);
+    }
+
+    t = values;
+
+    EXPECT_EQ(t.m_mem_loc, MemoryLocation::HOST);
+
+    t.to(MemoryLocation::DEVICE);
+
+    EXPECT_EQ(t.m_mem_loc, MemoryLocation::DEVICE);
+
+    std::vector<float> host_data(total_size);
+    g_sycl_queue.memcpy
+        (host_data.data(), t.m_p_data, sizeof(float) * total_size).wait();
+
+    for (uint64_t i = 0; i < total_size; ++i)
+    {
+        EXPECT_FLOAT_EQ(host_data[i], static_cast<float>(i + 1));
+    }
+}
+
+/**
+ * @test TENSOR.to_noop_when_already_in_target
+ * @brief Calling to() with current memory location should do nothing.
+ */
+TEST(TENSOR, to_noop_when_already_in_target)
+{
+    Tensor<float> t_host({2, 2}, MemoryLocation::HOST);
+
+    uint64_t total_size = 1;
+    for (uint64_t d : t_host.m_dimensions)
+    {
+        total_size *= d;
+    }
+
+    std::vector<float> values(total_size);
+    for (uint64_t i = 0; i < total_size; ++i)
+    {
+        values[i] = static_cast<float>(i + 1);
+    }
+
+    t_host = values;
+
+    t_host.to(MemoryLocation::HOST);
+    EXPECT_EQ(t_host.m_mem_loc, MemoryLocation::HOST);
+
+    std::vector<float> host_data_host(total_size);
+    g_sycl_queue.memcpy(host_data_host.data(),
+        t_host.m_p_data, sizeof(float) * total_size).wait();
+
+    for (uint64_t i = 0; i < total_size; ++i)
+    {
+        EXPECT_FLOAT_EQ(host_data_host[i], static_cast<float>(i + 1));
+    }
+
+
+    Tensor<float> t_device({2, 2}, MemoryLocation::DEVICE);
+
+    t_device = values;
+
+    t_device.to(MemoryLocation::DEVICE);
+    EXPECT_EQ(t_device.m_mem_loc, MemoryLocation::DEVICE);
+
+    std::vector<float> host_data_device(total_size);
+    g_sycl_queue.memcpy(host_data_device.data(),
+        t_device.m_p_data, sizeof(float) * total_size).wait();
+
+    for (uint64_t i = 0; i < total_size; ++i)
+    {
+        EXPECT_FLOAT_EQ(host_data_device[i], static_cast<float>(i + 1));
+    }
+
+}
+
+/**
+ * @test TENSOR.to_throws_for_view
+ * @brief Calling to() on a view (non-owning tensor) should throw.
+ */
+TEST(TENSOR, to_throws_for_view)
+{
+    Tensor<float> t_owner({2, 2}, MemoryLocation::HOST);
+
+    uint64_t total_size = 1;
+    for (uint64_t d : t_owner.m_dimensions)
+    {
+        total_size *= d;
+    }
+
+    std::vector<float> values(total_size);
+    for (uint64_t i = 0; i < total_size; ++i)
+    {
+        values[i] = static_cast<float>(i + 1);
+    }
+
+    t_owner = values;
+
+
+    Tensor<float> t_view(t_owner, {0, 0}, {2, 1});
+
+    EXPECT_FALSE(t_view.m_own_data);
+
+    EXPECT_THROW(t_view.to(MemoryLocation::DEVICE), std::runtime_error);
+    EXPECT_THROW(t_view.to(MemoryLocation::HOST), std::runtime_error);
+}
 
 } // namespace Test

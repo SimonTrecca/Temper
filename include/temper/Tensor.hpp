@@ -11,6 +11,16 @@
 #include <stdexcept>
 #include "SYCLQueue.hpp"
 
+namespace temper {
+
+/**
+ * @brief Supported device types for Tensor storage.
+ */
+enum class MemoryLocation {
+    HOST,   ///< Host memory
+    DEVICE  ///< Device memory (via SYCL)
+};
+
 /**
  * @brief Class template for the Tensor data structure.
  * @tparam float_t Floating point adjacent numeric types (float, double, etc.).
@@ -23,10 +33,20 @@ class Tensor
 
 private:
 
-	float_t*               m_p_data;      ///< Member pointer to data.
-    std::vector<uint64_t>  m_dimensions;  ///< Member dimensions for each axis.
-    std::vector<uint64_t>  m_strides;     ///< Member strides for each axis.
-    bool                   m_own_data;    ///< Member boolean for data ownership.
+    /// Member pointer to data.
+	float_t*               m_p_data;
+
+    /// Member dimensions for each axis.
+    std::vector<uint64_t>  m_dimensions;
+
+    /// Member strides for each axis.
+    std::vector<uint64_t>  m_strides;
+
+    /// Member boolean for data ownership; true if it's owned by tensor
+    bool                   m_own_data;
+
+    /// Member enumeration to indicate if data is on host or device.
+    MemoryLocation         m_mem_loc;
 
     /**
      * @brief Computes strides using dimensions.
@@ -48,8 +68,10 @@ public:
      * based on the specified dimensions.
      *
      * @param dimensions The size of the tensor along each dimension.
+     * @param loc Where data memory should reside.
      */
-    Tensor(const std::vector<uint64_t>& dimensions);
+    Tensor(const std::vector<uint64_t>& dimensions,
+        MemoryLocation loc = MemoryLocation::DEVICE);
 
     /**
      * @brief Copy constructor.
@@ -81,7 +103,6 @@ public:
            const std::vector<uint64_t>& start_indices,
            const std::vector<uint64_t>& view_shape);
 
-
     /**
      * @brief Copy assignment operator.
      *
@@ -112,6 +133,16 @@ public:
      */
     Tensor& operator=(const std::vector<float_t>& values);
 
+    /**
+     * @brief Moves tensor data between host (shared) and device memory.
+     *
+     * Transfers owned data to the specified memory location.
+     *
+     * @param target_loc Target memory location (HOST or DEVICE).
+     * @throws std::runtime_error if called on a non-owning tensor (view).
+     */
+    void to(MemoryLocation target_loc);
+
 	/**
      * @brief Tensor class destructor.
      *
@@ -123,5 +154,7 @@ public:
 
 /// Explicit instantiation for "float" data
 extern template class Tensor<float>;
+
+} // namespace temper
 
 #endif // TENSOR_HPP

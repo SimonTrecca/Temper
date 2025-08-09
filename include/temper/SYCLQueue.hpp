@@ -12,9 +12,13 @@
 
 #include <sycl/sycl.hpp>
 
+namespace temper {
+
 /**
  * @brief Global SYCL queue used for all asynchronous operations.
  */
 extern sycl::queue g_sycl_queue;
+
+} // namespace temper
 
 #endif // SYCLQUEUE_HPP
