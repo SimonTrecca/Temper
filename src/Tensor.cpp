@@ -241,13 +241,130 @@ Tensor<float_t>& Tensor<float_t>::operator=(const std::vector<float_t>& values)
 
     if (values.size() != total_size)
     {
-        throw std::invalid_argument("Size mismatch in 1D vector assignment");
+        throw std::invalid_argument("Size mismatch in 1D vector assignment.");
     }
 
     g_sycl_queue.memcpy
         (m_p_data, values.data(), sizeof(float_t) * values.size()).wait();
 
     return *this;
+}
+
+template<typename float_t>
+Tensor<float_t>& Tensor<float_t>::operator=(float_t val)
+{
+    if (m_dimensions.empty())
+    {
+        m_dimensions = {1};
+        compute_strides();
+
+        if (m_mem_loc == MemoryLocation::HOST)
+        {
+            m_p_data = static_cast<float_t*>(
+                sycl::malloc_shared(sizeof(float_t), g_sycl_queue));
+        }
+        else
+        {
+            m_p_data = static_cast<float_t*>(
+                sycl::malloc_device(sizeof(float_t), g_sycl_queue));
+        }
+        m_own_data = true;
+    }
+
+    uint64_t total_size = 1;
+    for (uint64_t d : m_dimensions)
+    {
+        total_size *= d;
+    }
+
+    if (total_size != 1)
+    {
+        throw std::invalid_argument(
+            "Scalar assignment only allowed for tensors with single element.");
+    }
+
+    g_sycl_queue.memcpy(m_p_data, &val, sizeof(float_t)).wait();
+    return *this;
+}
+
+
+template<typename float_t>
+Tensor<float_t> Tensor<float_t>::operator[](uint64_t idx)
+{
+    const uint64_t rank = static_cast<uint64_t>(m_dimensions.size());
+    if (rank == 0)
+    {
+        throw std::out_of_range("Tensor has no dimensions.");
+    }
+    if (idx >= m_dimensions[0])
+    {
+        throw std::out_of_range("Index out of bounds (operator[]).");
+    }
+
+    if (rank == 1)
+    {
+        std::vector<uint64_t> start_indices{ idx };
+        std::vector<uint64_t> view_shape{ 1 };
+        return Tensor(*this, start_indices, view_shape);
+    }
+    else
+    {
+        std::vector<uint64_t> start_indices(rank, 0);
+        start_indices[0] = idx;
+        std::vector<uint64_t> view_shape
+            (m_dimensions.begin() + 1, m_dimensions.end());
+        return Tensor(*this, start_indices, view_shape);
+    }
+}
+
+template<typename float_t>
+Tensor<float_t> Tensor<float_t>::operator[](uint64_t idx) const
+{
+    const uint64_t rank = static_cast<uint64_t>(m_dimensions.size());
+    if (rank == 0)
+    {
+        throw std::out_of_range("Tensor has no dimensions.");
+    }
+    if (idx >= m_dimensions[0])
+    {
+        throw std::out_of_range("Index out of bounds (operator[] const).");
+    }
+
+    if (rank == 1)
+    {
+        std::vector<uint64_t> start_indices{ idx };
+        std::vector<uint64_t> view_shape{ 1 };
+        return Tensor(const_cast<Tensor&>(*this), start_indices, view_shape);
+    }
+    else
+    {
+        std::vector<uint64_t> start_indices(rank, 0);
+        start_indices[0] = idx;
+        std::vector<uint64_t> view_shape
+            (m_dimensions.begin() + 1, m_dimensions.end());
+        return Tensor(const_cast<Tensor&>(*this), start_indices, view_shape);
+    }
+}
+
+template<typename float_t>
+Tensor<float_t>::operator float_t() const
+{
+    uint64_t total_size = 1;
+    for (uint64_t d : m_dimensions)
+    {
+        total_size *= d;
+    }
+
+    if (total_size != 1)
+    {
+        throw std::invalid_argument
+            ("Scalar read only allowed for tensors with single element.");
+    }
+
+    float_t tmp;
+
+    g_sycl_queue.memcpy(&tmp, m_p_data, sizeof(float_t)).wait();
+    return tmp;
 }
 
 template<typename float_t>

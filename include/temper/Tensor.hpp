@@ -134,6 +134,58 @@ public:
     Tensor& operator=(const std::vector<float_t>& values);
 
     /**
+     * @brief Assigns a scalar value to this tensor.
+     *
+     * If the tensor was default-constructed (no dimensions), it is
+     * automatically initialized as a scalar tensor with shape {1}
+     * and memory allocated according to its memory location.
+     *
+     * If the tensor already has dimensions, it must contain exactly
+     * one element or an exception is thrown.
+     *
+     * @param val Scalar value to assign.
+     * @return Reference to this tensor.
+     * @throws std::invalid_argument If tensor size is not exactly 1.
+     */
+    Tensor& operator=(float_t val);
+
+    /**
+     * @brief Returns a non-owning view into a sub-tensor at the given index.
+     *
+     * Applies the index to the first dimension:
+     * - Rank 1: view of a single element (shape {1})
+     * - Rank > 1: view of the remaining dimensions (axis 0 dropped)
+     *
+     * @param idx Index along the first dimension.
+     * @return Tensor view (non-owning) into the selected region.
+     * @throws std::out_of_range If index is out of bounds or tensor has no dimensions.
+     */
+    Tensor operator[](uint64_t idx);
+
+    /**
+     * @brief Const version of operator[] returning a non-owning view.
+     *
+     * Same behavior as the non-const version. Uses const_cast internally
+     * but does not modify the original tensor.
+     *
+     * @param idx Index along the first dimension.
+     * @return Tensor view (non-owning) into the selected region.
+     * @throws std::out_of_range If index is out of bounds or tensor has no dimensions.
+     */
+    Tensor operator[](uint64_t idx) const;
+
+    /**
+     * @brief Converts a scalar tensor to its underlying value.
+     *
+     * Copies the single element from host or device memory.
+     * The tensor must contain exactly one element.
+     *
+     * @return Scalar value stored in this tensor.
+     * @throws std::invalid_argument If tensor size is not exactly 1.
+     */
+    operator float_t() const;
+
+    /**
      * @brief Moves tensor data between host (shared) and device memory.
      *
      * Transfers owned data to the specified memory location.

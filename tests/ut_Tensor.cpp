@@ -819,13 +819,207 @@ TEST(TENSOR, to_throws_for_view)
 
     t_owner = values;
 
-
     Tensor<float> t_view(t_owner, {0, 0}, {2, 1});
 
     EXPECT_FALSE(t_view.m_own_data);
 
     EXPECT_THROW(t_view.to(MemoryLocation::DEVICE), std::runtime_error);
     EXPECT_THROW(t_view.to(MemoryLocation::HOST), std::runtime_error);
+}
+
+/**
+ * @test TENSOR.operator_index_chain_assign_and_read
+ * @brief Tests that chained operator[] returns views
+ * and allows assignment and reading.
+ */
+TEST(TENSOR, operator_index_chain_assign_and_read)
+{
+    Tensor<float> t({2, 3, 4}, MemoryLocation::HOST);
+    std::vector<float> vals(2 * 3 * 4);
+    for (uint64_t i = 0; i < vals.size(); ++i)
+    {
+        vals[i] = static_cast<float>(i + 1);
+    }
+    t = vals;
+
+    t[1][2][3] = 420.0f;
+
+    float v = t[1][2][3];
+    EXPECT_FLOAT_EQ(v, 420.0f);
+
+    float host_val = 0.0f;
+    uint64_t offset =
+        1 * t.m_strides[0] + 2 * t.m_strides[1] + 3 * t.m_strides[2];
+    g_sycl_queue.memcpy(&host_val, t.m_p_data + offset, sizeof(float)).wait();
+    EXPECT_FLOAT_EQ(host_val, 420.0f);
+}
+
+/**
+ * @test TENSOR.operator_index_chain_const_access
+ * @brief Tests that const Tensor supports chained operator[] reading.
+ */
+TEST(TENSOR, operator_index_chain_const_access)
+{
+    Tensor<float> t({2, 2, 2}, MemoryLocation::HOST);
+    std::vector<float> vals(8);
+    for (uint64_t i = 0; i < vals.size(); ++i)
+    {
+        vals[i] = static_cast<float>(i + 10);
+    }
+    t = vals;
+
+    const Tensor<float>& ct = t;
+
+    float a = ct[1][1][1];
+    EXPECT_FLOAT_EQ(a, vals[1 * 4 + 1 * 2 + 1]);
+}
+
+/**
+ * @test TENSOR.scalar_assignment_and_conversion
+ * @brief Tests operator=(float_t)
+ * and operator float_t() on 1-element tensors / views.
+ */
+TEST(TENSOR, scalar_assignment_and_conversion)
+{
+    Tensor<float> s({1}, MemoryLocation::HOST);
+    s = 5.5f;
+    float sval = s;
+    EXPECT_FLOAT_EQ(sval, 5.5f);
+
+    Tensor<float> t({2, 2}, MemoryLocation::HOST);
+    std::vector<float> vals = { 1.0f, 2.0f, 3.0f, 4.0f };
+    t = vals;
+
+    t[1][1] = 99.25f;
+    float read_back = t[1][1];
+    EXPECT_FLOAT_EQ(read_back, 99.25f);
+}
+
+/**
+ * @test TENSOR.scalar_assignment_to_default_constructed_tensor
+ * @brief Tests that assigning a scalar to a default-constructed tensor
+ * automatically initializes it as a scalar tensor of shape {1} and stores
+ * the assigned value correctly.
+ *
+ * Also verifies that assigning a scalar to a tensor with more than one element
+ * throws std::invalid_argument.
+ */
+TEST(TENSOR, scalar_assignment_to_default_constructed_tensor) {
+    Tensor<float> t;
+    t = 42.5f;
+
+    ASSERT_EQ(t.m_dimensions.size(), 1);
+    EXPECT_EQ(t.m_dimensions[0], 1);
+
+    float val = static_cast<float>(t);
+    EXPECT_FLOAT_EQ(val, 42.5f);
+
+    Tensor<float> big({2, 2});
+    EXPECT_THROW(big = 1.0f, std::invalid_argument);
+}
+
+/**
+ * @test TENSOR.scalar_assignment_wrong_size_throws
+ * @brief Assigning a scalar to a non-1-element tensor must throw.
+ */
+TEST(TENSOR, scalar_assignment_wrong_size_throws)
+{
+    Tensor<float> t({2, 2}, MemoryLocation::HOST);
+    EXPECT_THROW(
+    {
+        t = 3.14f;
+    }, std::invalid_argument);
+}
+
+/**
+ * @test TENSOR.operator_index_out_of_bounds_throws
+ * @brief operator[] should throw when index is out of range.
+ */
+TEST(TENSOR, operator_index_out_of_bounds_throws)
+{
+    Tensor<float> t({2, 2, 2}, MemoryLocation::HOST);
+
+    EXPECT_THROW(
+    {
+        (void)t[2];
+    }, std::out_of_range);
+
+    EXPECT_THROW(
+    {
+        (void)t[1][2];
+    }, std::out_of_range);
+
+    EXPECT_THROW(
+    {
+        (void)t[1][1][2];
+    }, std::out_of_range);
+}
+
+/**
+ * @test TENSOR.view_constructor_middle_chunk_write_and_read
+ * @brief Create a 3D tensor, take a chunk in the middle of a channel
+ * with the view constructor, write via chained operator[] on the view
+ * and verify reads from both the view and the original tensor
+ * at the expected positions.
+ */
+TEST(TENSOR, view_constructor_middle_chunk_write_and_read)
+{
+    Tensor<float> img({3, 6, 7}, MemoryLocation::HOST);
+
+    std::vector<float> vals(3 * 6 * 7);
+    for (uint64_t c = 0; c < 3; ++c)
+    {
+        for (uint64_t h = 0; h < 6; ++h)
+        {
+            for (uint64_t w = 0; w < 7; ++w)
+            {
+                uint64_t idx = c * (6 * 7) + h * 7 + w;
+                vals[idx] = static_cast<float>(c * 10000 + h * 100 + w);
+            }
+        }
+    }
+    img = vals;
+
+    std::vector<uint64_t> start = { 1, 2, 3 };
+    std::vector<uint64_t> view_shape = { 3, 2 };
+    Tensor<float> chunk(img, start, view_shape);
+
+    EXPECT_EQ(chunk.m_dimensions, std::vector<uint64_t>({3, 2}));
+
+    chunk[0][0] = 9999.5f;
+    chunk[2][1] = 8888.25f;
+
+    float a = chunk[0][0];
+    float b = chunk[2][1];
+
+    EXPECT_FLOAT_EQ(a, 9999.5f);
+    EXPECT_FLOAT_EQ(b, 8888.25f);
+
+    uint64_t off_a =
+        start[0] * img.m_strides[0] + (start[1] + 0) * img.m_strides[1] +
+        (start[2] + 0) * img.m_strides[2];
+
+    uint64_t off_b =
+        start[0] * img.m_strides[0] + (start[1] + 2) * img.m_strides[1] +
+        (start[2] + 1) * img.m_strides[2];
+
+    float host_a = 0.0f;
+    float host_b = 0.0f;
+    g_sycl_queue.memcpy(&host_a, img.m_p_data + off_a, sizeof(float)).wait();
+    g_sycl_queue.memcpy(&host_b, img.m_p_data + off_b, sizeof(float)).wait();
+
+    EXPECT_FLOAT_EQ(host_a, 9999.5f);
+    EXPECT_FLOAT_EQ(host_b, 8888.25f);
+
+    float cval = chunk[1][0];
+
+    uint64_t off_c =
+        start[0] * img.m_strides[0] + (start[1] + 1) * img.m_strides[1] +
+        (start[2] + 0) * img.m_strides[2];
+
+    float host_c = 0.0f;
+    g_sycl_queue.memcpy(&host_c, img.m_p_data + off_c, sizeof(float)).wait();
+    EXPECT_FLOAT_EQ(cval, host_c);
 }
 
 } // namespace Test
