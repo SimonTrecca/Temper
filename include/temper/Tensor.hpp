@@ -9,6 +9,7 @@
 #include <vector>
 #include <cstdint>
 #include <stdexcept>
+#include <memory>
 #include "SYCLQueue.hpp"
 
 namespace temper {
@@ -34,19 +35,19 @@ class Tensor
 private:
 
     /// Member pointer to data.
-	float_t*               m_p_data;
+	std::shared_ptr<float_t> m_p_data;
 
     /// Member dimensions for each axis.
-    std::vector<uint64_t>  m_dimensions;
+    std::vector<uint64_t>    m_dimensions;
 
     /// Member strides for each axis.
-    std::vector<uint64_t>  m_strides;
+    std::vector<uint64_t>    m_strides;
 
     /// Member boolean for data ownership; true if it's owned by tensor
-    bool                   m_own_data;
+    bool                     m_own_data;
 
     /// Member enumeration to indicate if data is on host or device.
-    MemoryLocation         m_mem_loc;
+    MemoryLocation           m_mem_loc;
 
     /**
      * @brief Computes strides using dimensions.
@@ -80,7 +81,7 @@ public:
      *
      * @param other The tensor to copy from.
      */
-    Tensor(const Tensor& other);
+    Tensor(const Tensor & other);
 
     /**
      * @brief Move constructor.
@@ -89,17 +90,18 @@ public:
      *
      * @param other The tensor to move from.
      */
-    Tensor(Tensor&& other) noexcept;
+    Tensor(Tensor && other) noexcept;
 
     /**
      * @brief Constructs a non-owning view into another Tensor.
+     * View can live beyond owner's lifespan.
      *
      * @param other Tensor to view into (must outlive the view).
      * @param start_indices Starting coordinate for the view (per axis).
      * @param new_dims Shape of the view.
      * @throws std::invalid_argument on rank mismatch or bounds error.
      */
-    Tensor(Tensor& other,
+    Tensor(Tensor & other,
            const std::vector<uint64_t>& start_indices,
            const std::vector<uint64_t>& view_shape);
 
@@ -111,7 +113,7 @@ public:
      * @param other The tensor to assign from.
      * @return Reference to this tensor.
      */
-    Tensor& operator=(const Tensor& other);
+    Tensor& operator=(const Tensor & other);
 
     /**
      * @brief Move assignment operator.
@@ -121,7 +123,7 @@ public:
      * @param other The tensor to move from.
      * @return Reference to this tensor.
      */
-    Tensor& operator=(Tensor&& other) noexcept;
+    Tensor& operator=(Tensor && other) noexcept;
 
     /**
      * @brief Assignment from flat std::vector.
@@ -131,7 +133,7 @@ public:
      * @param values The flat vector of values.
      * @return Reference to this tensor.
      */
-    Tensor& operator=(const std::vector<float_t>& values);
+    Tensor& operator=(const std::vector<float_t> & values);
 
     /**
      * @brief Assigns a scalar value to this tensor.
@@ -158,7 +160,8 @@ public:
      *
      * @param idx Index along the first dimension.
      * @return Tensor view (non-owning) into the selected region.
-     * @throws std::out_of_range If index is out of bounds or tensor has no dimensions.
+     * @throws std::out_of_range If index is out of bounds or tensor
+     * has no dimensions.
      */
     Tensor operator[](uint64_t idx);
 
@@ -170,7 +173,8 @@ public:
      *
      * @param idx Index along the first dimension.
      * @return Tensor view (non-owning) into the selected region.
-     * @throws std::out_of_range If index is out of bounds or tensor has no dimensions.
+     * @throws std::out_of_range If index is out of bounds or tensor
+     * has no dimensions.
      */
     Tensor operator[](uint64_t idx) const;
 
@@ -212,14 +216,14 @@ public:
      *
      * @param os The output stream to print to. Defaults to std::cout.
      */
-    void print(std::ostream& os = std::cout) const;
+    void print(std::ostream & os = std::cout) const;
 
 	/**
      * @brief Tensor class destructor.
      *
      * Frees owned device memory.
      */
-	~Tensor() noexcept;
+	~Tensor() noexcept = default;
 
 };
 

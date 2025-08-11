@@ -24,10 +24,9 @@ void Tensor<float_t>::compute_strides()
 }
 
 template<typename float_t>
-Tensor<float_t>::Tensor(const std::vector<uint64_t>& dimensions,
+Tensor<float_t>::Tensor(const std::vector<uint64_t> & dimensions,
                         MemoryLocation loc)
-    : m_p_data(nullptr),
-      m_dimensions(dimensions),
+    : m_dimensions(dimensions),
       m_strides(dimensions.size()),
       m_own_data(true),
       m_mem_loc(loc)
@@ -40,24 +39,35 @@ Tensor<float_t>::Tensor(const std::vector<uint64_t>& dimensions,
         total_size *= d;
     }
 
+    float_t* raw_ptr = nullptr;
     if (m_mem_loc == MemoryLocation::HOST)
     {
-        m_p_data = static_cast<float_t*>(
+        raw_ptr = static_cast<float_t*>(
             sycl::malloc_shared(total_size * sizeof(float_t), g_sycl_queue));
-    } else
+    }
+    else
     {
-
-        m_p_data = static_cast<float_t*>(
+        raw_ptr = static_cast<float_t*>(
             sycl::malloc_device(total_size * sizeof(float_t), g_sycl_queue));
     }
 
-    g_sycl_queue.memset(m_p_data, 0, sizeof(float_t)*total_size).wait();
+    m_p_data = std::shared_ptr<float_t>(raw_ptr,
+        [](float_t* p)
+        {
+            if (p)
+            {
+                sycl::free(p, g_sycl_queue);
+            }
+        }
+    );
+
+    g_sycl_queue.memset(m_p_data.get(), 0, sizeof(float_t) * total_size).wait();
 }
 
+
 template<typename float_t>
-Tensor<float_t>::Tensor(const Tensor& other)
-    : m_p_data(nullptr),
-      m_dimensions(other.m_dimensions),
+Tensor<float_t>::Tensor(const Tensor & other)
+    : m_dimensions(other.m_dimensions),
       m_strides(other.m_strides),
       m_own_data(other.m_own_data),
       m_mem_loc(other.m_mem_loc)
@@ -70,18 +80,29 @@ Tensor<float_t>::Tensor(const Tensor& other)
             total_size *= d;
         }
 
+        float_t* raw_ptr = nullptr;
         if (m_mem_loc == MemoryLocation::HOST)
         {
-            m_p_data = static_cast<float_t*>(
+            raw_ptr = static_cast<float_t*>(
                 sycl::malloc_shared(total_size * sizeof(float_t), g_sycl_queue));
-        } else
+        }
+        else
         {
-
-            m_p_data = static_cast<float_t*>(
+            raw_ptr = static_cast<float_t*>(
                 sycl::malloc_device(total_size * sizeof(float_t), g_sycl_queue));
         }
 
-        g_sycl_queue.memcpy(m_p_data, other.m_p_data,
+        m_p_data = std::shared_ptr<float_t>(raw_ptr,
+            [](float_t* p)
+            {
+                if (p)
+                {
+                    sycl::free(p, g_sycl_queue);
+                }
+            }
+        );
+
+        g_sycl_queue.memcpy(m_p_data.get(), other.m_p_data.get(),
                             sizeof(float_t) * total_size).wait();
     }
     else
@@ -91,23 +112,22 @@ Tensor<float_t>::Tensor(const Tensor& other)
 }
 
 template<typename float_t>
-Tensor<float_t>::Tensor(Tensor&& other) noexcept
-    : m_p_data(other.m_p_data),
+Tensor<float_t>::Tensor(Tensor && other) noexcept
+    : m_p_data(std::move(other.m_p_data)),
       m_dimensions(std::move(other.m_dimensions)),
       m_strides(std::move(other.m_strides)),
       m_own_data(other.m_own_data),
       m_mem_loc(other.m_mem_loc)
 {
-    other.m_p_data = nullptr;
+    other.m_p_data.reset();
     other.m_own_data = true;
 }
 
 template<typename float_t>
-Tensor<float_t>::Tensor(Tensor& other,
-                  const std::vector<uint64_t>& start_indices,
-                  const std::vector<uint64_t>& view_shape)
-    : m_p_data(nullptr),
-      m_own_data(false),
+Tensor<float_t>::Tensor(Tensor & other,
+                  const std::vector<uint64_t> & start_indices,
+                  const std::vector<uint64_t> & view_shape)
+    : m_own_data(false),
       m_mem_loc(other.m_mem_loc)
 {
     const uint64_t original_rank = other.m_dimensions.size();
@@ -124,7 +144,6 @@ Tensor<float_t>::Tensor(Tensor& other,
             ("View shape rank must be between 1 and tensor rank.");
     }
 
-    // Bounds checking.
     for (uint64_t i = 0; i < original_rank; ++i)
     {
         uint64_t start = start_indices[i];
@@ -151,9 +170,9 @@ Tensor<float_t>::Tensor(Tensor& other,
         offset += start_indices[i] * other.m_strides[i];
     }
 
-    m_p_data = other.m_p_data + offset;
+    m_p_data = std::shared_ptr<float_t>
+        (other.m_p_data, other.m_p_data.get() + offset);
 
-    // Build new dimensions and strides for the view.
     m_dimensions.resize(view_rank);
     m_strides.resize(view_rank);
     for (uint64_t j = 0; j < view_rank; ++j)
@@ -165,15 +184,10 @@ Tensor<float_t>::Tensor(Tensor& other,
 }
 
 template<typename float_t>
-Tensor<float_t>& Tensor<float_t>::operator=(const Tensor& other)
+Tensor<float_t> & Tensor<float_t>::operator=(const Tensor & other)
 {
     if (this != &other)
     {
-        if (m_own_data && m_p_data)
-        {
-            sycl::free(m_p_data, g_sycl_queue);
-        }
-
         m_dimensions = other.m_dimensions;
         m_strides = other.m_strides;
         m_own_data = other.m_own_data;
@@ -187,17 +201,29 @@ Tensor<float_t>& Tensor<float_t>::operator=(const Tensor& other)
                 total_size *= d;
             }
 
+            float_t* raw_ptr = nullptr;
             if (m_mem_loc == MemoryLocation::HOST)
             {
-                m_p_data = static_cast<float_t*>(sycl::malloc_shared
-                    (total_size * sizeof(float_t), g_sycl_queue));
-            } else
-            {
-
-                m_p_data = static_cast<float_t*>(sycl::malloc_device
+                raw_ptr = static_cast<float_t*>(sycl::malloc_shared
                     (total_size * sizeof(float_t), g_sycl_queue));
             }
-            g_sycl_queue.memcpy(m_p_data, other.m_p_data,
+            else
+            {
+                raw_ptr = static_cast<float_t*>(sycl::malloc_device
+                    (total_size * sizeof(float_t), g_sycl_queue));
+            }
+
+            m_p_data = std::shared_ptr<float_t>(raw_ptr,
+                [](float_t* p)
+                {
+                    if (p)
+                    {
+                        sycl::free(p, g_sycl_queue);
+                    }
+                }
+            );
+
+            g_sycl_queue.memcpy(m_p_data.get(), other.m_p_data.get(),
                                 sizeof(float_t) * total_size).wait();
         }
         else
@@ -209,29 +235,25 @@ Tensor<float_t>& Tensor<float_t>::operator=(const Tensor& other)
 }
 
 template<typename float_t>
-Tensor<float_t>& Tensor<float_t>::operator=(Tensor&& other) noexcept
+Tensor<float_t>& Tensor<float_t>::operator=(Tensor && other) noexcept
 {
     if (this != &other)
     {
-        if (m_own_data && m_p_data)
-        {
-            sycl::free(m_p_data, g_sycl_queue);
-        }
-
-        m_p_data = other.m_p_data;
+        m_p_data = std::move(other.m_p_data);
         m_dimensions = std::move(other.m_dimensions);
         m_strides = std::move(other.m_strides);
         m_own_data = other.m_own_data;
         m_mem_loc = other.m_mem_loc;
 
-        other.m_p_data = nullptr;
+        other.m_p_data.reset();
         other.m_own_data = true;
     }
     return *this;
 }
 
+
 template<typename float_t>
-Tensor<float_t>& Tensor<float_t>::operator=(const std::vector<float_t>& values)
+Tensor<float_t> & Tensor<float_t>::operator=(const std::vector<float_t> & values)
 {
     uint64_t total_size = 1;
     for (uint64_t d : m_dimensions)
@@ -245,37 +267,46 @@ Tensor<float_t>& Tensor<float_t>::operator=(const std::vector<float_t>& values)
     }
 
     g_sycl_queue.memcpy
-        (m_p_data, values.data(), sizeof(float_t) * values.size()).wait();
+        (m_p_data.get(), values.data(), sizeof(float_t) * values.size()).wait();
 
     return *this;
 }
 
 template<typename float_t>
-Tensor<float_t>& Tensor<float_t>::operator=(float_t val)
+Tensor<float_t> & Tensor<float_t>::operator=(float_t val)
 {
     if (m_dimensions.empty())
     {
         m_dimensions = {1};
         compute_strides();
 
+        float_t* raw_ptr = nullptr;
         if (m_mem_loc == MemoryLocation::HOST)
         {
-            m_p_data = static_cast<float_t*>(
+            raw_ptr = static_cast<float_t*>(
                 sycl::malloc_shared(sizeof(float_t), g_sycl_queue));
         }
         else
         {
-            m_p_data = static_cast<float_t*>(
+            raw_ptr = static_cast<float_t*>(
                 sycl::malloc_device(sizeof(float_t), g_sycl_queue));
         }
+
+        m_p_data = std::shared_ptr<float_t>(raw_ptr,
+            [](float_t* p)
+            {
+                if (p)
+                {
+                    sycl::free(p, g_sycl_queue);
+                }
+            }
+        );
+
         m_own_data = true;
     }
 
     uint64_t total_size = 1;
-    for (uint64_t d : m_dimensions)
-    {
-        total_size *= d;
-    }
+    for (uint64_t d : m_dimensions) total_size *= d;
 
     if (total_size != 1)
     {
@@ -283,10 +314,9 @@ Tensor<float_t>& Tensor<float_t>::operator=(float_t val)
             "Scalar assignment only allowed for tensors with single element.");
     }
 
-    g_sycl_queue.memcpy(m_p_data, &val, sizeof(float_t)).wait();
+    g_sycl_queue.memcpy(m_p_data.get(), &val, sizeof(float_t)).wait();
     return *this;
 }
-
 
 template<typename float_t>
 Tensor<float_t> Tensor<float_t>::operator[](uint64_t idx)
@@ -363,7 +393,7 @@ Tensor<float_t>::operator float_t() const
 
     float_t tmp;
 
-    g_sycl_queue.memcpy(&tmp, m_p_data, sizeof(float_t)).wait();
+    g_sycl_queue.memcpy(&tmp, m_p_data.get(), sizeof(float_t)).wait();
     return tmp;
 }
 
@@ -387,26 +417,32 @@ void Tensor<float_t>::to(MemoryLocation target_loc)
         total_size *= d;
     }
 
-    float_t* new_ptr = nullptr;
-
+    float_t* raw_ptr = nullptr;
     if (target_loc == MemoryLocation::HOST)
     {
-        new_ptr = static_cast<float_t*>(
+        raw_ptr = static_cast<float_t*>(
             sycl::malloc_shared(total_size * sizeof(float_t), g_sycl_queue));
-        g_sycl_queue.memcpy
-            (new_ptr, m_p_data, total_size * sizeof(float_t)).wait();
     }
     else
     {
-        new_ptr = static_cast<float_t*>(
+        raw_ptr = static_cast<float_t*>(
             sycl::malloc_device(total_size * sizeof(float_t), g_sycl_queue));
-        g_sycl_queue.memcpy
-            (new_ptr, m_p_data, total_size * sizeof(float_t)).wait();
     }
 
-    sycl::free(m_p_data, g_sycl_queue);
+    std::shared_ptr<float_t> new_ptr = std::shared_ptr<float_t>(raw_ptr,
+        [](float_t* p)
+        {
+            if (p)
+            {
+                sycl::free(p, g_sycl_queue);
+            }
+        }
+    );
 
-    m_p_data = new_ptr;
+    g_sycl_queue.memcpy
+        (new_ptr.get(), m_p_data.get(), total_size * sizeof(float_t)).wait();
+
+    m_p_data = std::move(new_ptr);
     m_mem_loc = target_loc;
 }
 
@@ -423,7 +459,7 @@ void Tensor<float_t>::print(std::ostream& os) const
             {
                 float_t val;
                 g_sycl_queue.memcpy
-                    (&val, m_p_data + offset + i, sizeof(float_t)).wait();
+                    (&val, m_p_data.get() + offset + i, sizeof(float_t)).wait();
                 os << val;
                 if (i != m_dimensions[dim] - 1)
                 {
@@ -453,23 +489,6 @@ void Tensor<float_t>::print(std::ostream& os) const
     }
     recurse(0, 0);
     os << "\n";
-}
-
-
-template<typename float_t>
-Tensor<float_t>::~Tensor() noexcept
-{
-    try
-    {
-        if (m_own_data && m_p_data)
-        {
-            sycl::free(m_p_data, g_sycl_queue);
-        }
-    }
-    catch (const sycl::exception& e)
-    {
-        std::cerr << "SYCL free failed: " << e.what() << std::endl;
-    }
 }
 
 template class Tensor<float>;
