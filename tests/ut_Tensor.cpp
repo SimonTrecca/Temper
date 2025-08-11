@@ -1022,4 +1022,40 @@ TEST(TENSOR, view_constructor_middle_chunk_write_and_read)
     EXPECT_FLOAT_EQ(cval, host_c);
 }
 
+/**
+ * @test TENSOR.print_tensor
+ * @brief Checks that print correctly outputs a 2x2 tensor with assigned values.
+ *
+ * Creates a 2x2 tensor, assigns values {1,2,3,4}, and verifies
+ * that print outputs the expected nested format.
+ */
+TEST(TENSOR, print_tensor)
+{
+    temper::Tensor<float> t({2, 2}, temper::MemoryLocation::HOST);
+    std::vector<float> vals = {1.0f, 2.0f, 3.0f, 4.0f};
+    t = vals;
+
+    std::stringstream ss;
+    t.print(ss);
+
+    std::string expected = "[[1, 2],\n [3, 4]]\n";
+
+    EXPECT_EQ(ss.str(), expected);
+}
+
+/**
+ * @test TENSOR.print_empty_tensor
+ * @brief Checks that print correctly outputs an empty tensor.
+ *
+ * Creates a tensor with no dimensions and verifies that print
+ * outputs the string "[]\n".
+ */
+TEST(TENSOR, print_empty_tensor)
+{
+    temper::Tensor<float> t({}, temper::MemoryLocation::HOST);
+    std::stringstream ss;
+    t.print(ss);
+    EXPECT_EQ(ss.str(), "[]\n");
+}
+
 } // namespace Test

@@ -195,6 +195,25 @@ public:
      */
     void to(MemoryLocation target_loc);
 
+    /**
+     * @brief Prints the tensor elements to the provided output
+     * stream in a nested format.
+     *
+     * The tensor elements are printed recursively as nested arrays
+     * reflecting the tensor's shape.
+     * This function handles tensors stored in host or
+     * device memory transparently.
+     *
+     * Example output for a 2x2 tensor:
+     * @code
+     * [[1.0, 2.0],
+     *  [3.0, 4.0]]
+     * @endcode
+     *
+     * @param os The output stream to print to. Defaults to std::cout.
+     */
+    void print(std::ostream& os = std::cout) const;
+
 	/**
      * @brief Tensor class destructor.
      *

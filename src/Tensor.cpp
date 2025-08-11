@@ -373,7 +373,7 @@ void Tensor<float_t>::to(MemoryLocation target_loc)
     if (!m_own_data)
     {
         throw std::runtime_error
-            ("Cannot move memory of a Tensor view (non-owning)");
+            ("Cannot move memory of a Tensor view (non-owning).");
     }
 
     if (m_mem_loc == target_loc)
@@ -409,6 +409,52 @@ void Tensor<float_t>::to(MemoryLocation target_loc)
     m_p_data = new_ptr;
     m_mem_loc = target_loc;
 }
+
+template<typename float_t>
+void Tensor<float_t>::print(std::ostream& os) const
+{
+    std::function<void(uint64_t, uint64_t)> recurse
+        = [&](uint64_t dim, uint64_t offset)
+    {
+        if (dim == m_dimensions.size() - 1)
+        {
+            os << "[";
+            for (uint64_t i = 0; i < m_dimensions[dim]; ++i)
+            {
+                float_t val;
+                g_sycl_queue.memcpy
+                    (&val, m_p_data + offset + i, sizeof(float_t)).wait();
+                os << val;
+                if (i != m_dimensions[dim] - 1)
+                {
+                    os << ", ";
+                }
+            }
+            os << "]";
+        } else
+        {
+            os << "[";
+            for (uint64_t i = 0; i < m_dimensions[dim]; ++i)
+            {
+                recurse(dim + 1, offset + i * m_strides[dim]);
+                if (i != m_dimensions[dim] - 1)
+                {
+                    os << ",\n" << std::string(dim + 1, ' ');
+                }
+            }
+            os << "]";
+        }
+    };
+
+    if (m_dimensions.empty())
+    {
+        os << "[]\n";
+        return;
+    }
+    recurse(0, 0);
+    os << "\n";
+}
+
 
 template<typename float_t>
 Tensor<float_t>::~Tensor() noexcept
