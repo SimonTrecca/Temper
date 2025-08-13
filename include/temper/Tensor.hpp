@@ -10,6 +10,8 @@
 #include <cstdint>
 #include <stdexcept>
 #include <memory>
+#include <cmath>
+#include <limits>
 #include "SYCLQueue.hpp"
 
 namespace temper {
@@ -60,6 +62,11 @@ private:
 
 public:
 
+    /**
+     * @brief Tensor default class constructor.
+     *
+     * Set as default.
+     */
     Tensor() = default;
 
     /**
@@ -98,7 +105,7 @@ public:
      *
      * @param other Tensor to view into (must outlive the view).
      * @param start_indices Starting coordinate for the view (per axis).
-     * @param new_dims Shape of the view.
+     * @param view_shape Shape of the view.
      * @throws std::invalid_argument on rank mismatch or bounds error.
      */
     Tensor(Tensor & other,
@@ -190,6 +197,110 @@ public:
     operator float_t() const;
 
     /**
+     * @brief Element-wise addition with right-aligned broadcasting.
+     *
+     * Computes element-wise sum between this tensor and @p other using
+     * right-aligned broadcasting (dimensions of size 1 are broadcastable).
+     * Result memory location is DEVICE if either operand is on the device,
+     * otherwise HOST. Executed synchronously on the library SYCL queue.
+     *
+     * @param other Tensor to add.
+     * @return New tensor containing the broadcasted element-wise sum.
+     *
+     * @throws std::invalid_argument if either tensor is rank-0,
+     * has a zero-sized axis, or shapes are incompatible for broadcasting.
+     * @throws std::runtime_error "NaN detected in inputs." if a NaN was observed.
+     * @throws std::runtime_error "Non-finite result (overflow or Inf)."
+     * if a non-finite result was produced.
+     * @throws std::runtime_error "Numeric error during element-wise addition."
+     * for other numeric errors.
+     */
+    Tensor operator+(const Tensor & other) const;
+
+    /**
+     * @brief Element-wise subtraction with right-aligned broadcasting.
+     *
+     * Computes element-wise difference (this - other) with right-aligned
+     * broadcasting (dimensions of size 1 are broadcastable). Result memory
+     * location follows the same device/host rule. Executed synchronously on
+     * the library SYCL queue.
+     *
+     * @param other Tensor to subtract.
+     * @return New tensor containing the broadcasted element-wise difference.
+     *
+     * @throws std::invalid_argument if either tensor is rank-0,
+     * has a zero-sized axis, or shapes are incompatible for broadcasting.
+     * @throws std::runtime_error "NaN detected in inputs." if a NaN was observed.
+     * @throws std::runtime_error "Non-finite result (overflow or Inf)."
+     * if a non-finite result was produced.
+     * @throws std::runtime_error "Numeric error during element-wise addition."
+     * for other numeric errors.
+     */
+    Tensor operator-(const Tensor & other) const;
+
+    /**
+     * @brief Element-wise multiplication with right-aligned broadcasting.
+     *
+     * Computes element-wise product with right-aligned broadcasting
+     * (dimensions of size 1 are broadcastable). Result memory location is
+     * DEVICE if either operand is on device, otherwise HOST. Executed
+     * synchronously on the library SYCL queue.
+     *
+     * @param other Tensor to multiply.
+     * @return New tensor containing the broadcasted element-wise product.
+     *
+     * @throws std::invalid_argument if either tensor is rank-0,
+     * has a zero-sized axis, or shapes are incompatible for broadcasting.
+     * @throws std::runtime_error "NaN detected in inputs." if a NaN was observed.
+     * @throws std::runtime_error "Non-finite result (overflow or Inf)."
+     * if a non-finite result was produced.
+     * @throws std::runtime_error "Numeric error during element-wise addition."
+     * for other numeric errors.
+     */
+    Tensor operator*(const Tensor & other) const;
+
+    /**
+     * @brief Element-wise division with right-aligned broadcasting and checks.
+     *
+     * Computes element-wise quotient (this / other) with right-aligned
+     * broadcasting (dimensions of size 1 are broadcastable). Denominator
+     * zero is detected and yields ±infinity in the output according to the
+     * numerator sign and records a division-by-zero error. Result memory
+     * location is DEVICE if either operand is on device, otherwise HOST.
+     * Executed synchronously on the library SYCL queue.
+     *
+     * @param other Divisor tensor.
+     * @return New tensor containing the broadcasted element-wise quotient.
+     *
+     * @throws std::invalid_argument if either tensor is rank-0,
+     * has a zero-sized axis, or shapes are incompatible for broadcasting.
+     * @throws std::runtime_error "NaN detected in inputs." if a NaN was observed.
+     * @throws std::runtime_error "Division by zero detected."
+     * if any divisor element equals zero.
+     * @throws std::runtime_error "Non-finite result detected."
+     * if a non-finite quotient was produced.
+     * @throws std::runtime_error "Numeric error during element-wise division."
+     * for other numeric errors.
+     */
+    Tensor operator/(const Tensor & other) const;
+
+    /**
+     * @brief Unary element-wise negation.
+     *
+     * Returns a new tensor where each element is the negation of the
+     * corresponding element in this tensor. Output has the same shape and
+     * memory location as the input.
+     * Executed synchronously on the library SYCL queue.
+     *
+     * @return New tensor containing element-wise negated values.
+     *
+     * @throws std::invalid_argument if this tensor is rank-0
+     * or has a zero-sized axis.
+     * @throws std::runtime_error "NaN detected in input." if a NaN was observed.
+     */
+    Tensor operator-() const;
+
+    /**
      * @brief Moves tensor data between host (shared) and device memory.
      *
      * Transfers owned data to the specified memory location.
@@ -221,7 +332,7 @@ public:
 	/**
      * @brief Tensor class destructor.
      *
-     * Frees owned device memory.
+     * Set as default.
      */
 	~Tensor() noexcept = default;
 

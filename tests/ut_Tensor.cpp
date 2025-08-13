@@ -1133,4 +1133,1213 @@ TEST(TENSOR, print_empty_tensor)
     EXPECT_EQ(ss.str(), "[]\n");
 }
 
+/**
+ * @test TENSOR.operator_addition
+ * @brief Verifies element-wise addition on device memory.
+ *
+ * Creates two 2x3 device tensors A and B with known values, computes
+ * C = A + B, copies the result back to host and checks every element
+ * equals avals[i] + bvals[i].
+ */
+TEST(TENSOR, operator_addition)
+{
+    Tensor<float> A({2,3}, MemoryLocation::DEVICE);
+    Tensor<float> B({2,3}, MemoryLocation::DEVICE);
+
+    std::vector<float> avals = {1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f};
+    std::vector<float> bvals = {6.0f, 5.0f, 4.0f, 3.0f, 2.0f, 1.0f};
+
+    A = avals;
+    B = bvals;
+
+    Tensor<float> C = A + B;
+
+    const uint64_t total = 6;
+    std::vector<float> ch(total);
+    g_sycl_queue.memcpy
+        (ch.data(), C.m_p_data.get(), sizeof(float) * total).wait();
+
+    for (uint64_t i = 0; i < total; ++i)
+    {
+        EXPECT_FLOAT_EQ(ch[i], avals[i] + bvals[i]);
+    }
+}
+
+/**
+ * @test TENSOR.operator_addition_broadcasting_1d_to_2d
+ * @brief Verifies broadcasting from 1-D to 2-D for addition.
+ *
+ * Creates A (2x3) and B (shape [3]) on device, computes R = A + B,
+ * copies result to host and checks each element equals the expected
+ * broadcasted sum.
+ */
+TEST(TENSOR, operator_addition_broadcasting_1d_to_2d)
+{
+    Tensor<float> A({2,3}, MemoryLocation::DEVICE);
+    Tensor<float> B({3}, MemoryLocation::DEVICE);
+
+    A = std::vector<float>{10.0f, 20.0f, 30.0f, 40.0f, 50.0f, 60.0f};
+    B = std::vector<float>{1.0f, 2.0f, 3.0f};
+
+    Tensor<float> R = A + B;
+
+    uint64_t total = 6;
+    std::vector<float> rh(total);
+    g_sycl_queue.memcpy
+        (rh.data(), R.m_p_data.get(), sizeof(float) * total).wait();
+
+    std::vector<float> expected = {11.0f, 22.0f, 33.0f, 41.0f, 52.0f, 63.0f};
+    for (uint64_t i = 0; i < total; ++i)
+    {
+        EXPECT_EQ(rh[i], expected[i]);
+    }
+}
+
+/**
+ * @test TENSOR.operator_addition_broadcasting_scalar
+ * @brief Verifies addition broadcasting with a scalar operand.
+ *
+ * Creates A (2x3) and B (shape [1]) on host, computes R = A + B,
+ * copies result to host and checks each element equals the expected
+ * scalar-added value.
+ */
+TEST(TENSOR, operator_addition_broadcasting_scalar)
+{
+    Tensor<float> A({2,3}, MemoryLocation::HOST);
+    Tensor<float> B({1}, MemoryLocation::HOST);
+
+    A = std::vector<float>{1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f};
+    B = std::vector<float>{5.0f};
+
+    Tensor<float> R = A + B;
+
+    uint64_t total = 6;
+    std::vector<float> rh(total);
+    g_sycl_queue.memcpy
+        (rh.data(), R.m_p_data.get(), sizeof(float) * total).wait();
+
+    std::vector<float> expected = {6.0f, 7.0f, 8.0f, 9.0f, 10.0f, 11.0f};
+    for (uint64_t i = 0; i < total; ++i)
+    {
+        EXPECT_EQ(rh[i], expected[i]);
+    }
+}
+
+/**
+ * @test TENSOR.operator_addition_with_views
+ * @brief Verifies element-wise addition between a row view and a tensor.
+ */
+TEST(TENSOR, operator_addition_with_views)
+{
+    Tensor<float> T({2,3}, MemoryLocation::DEVICE);
+    T = std::vector<float>{1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f};
+
+    Tensor<float> row0 = T[0];
+    Tensor<float> addend({3}, MemoryLocation::DEVICE);
+    addend = std::vector<float>{10.0f, 20.0f, 30.0f};
+
+    Tensor<float> R = row0 + addend;
+
+    const uint64_t total = 3;
+    std::vector<float> rh(total);
+    g_sycl_queue.memcpy
+        (rh.data(), R.m_p_data.get(), sizeof(float) * total).wait();
+
+    std::vector<float> expected = {11.0f, 22.0f, 33.0f};
+    for (uint64_t i = 0; i < total; ++i)
+    {
+        EXPECT_FLOAT_EQ(rh[i], expected[i]);
+    }
+
+    // Sanity: original parent should remain unchanged.
+    std::vector<float> parent_row(total);
+    g_sycl_queue.memcpy
+        (parent_row.data(), T.m_p_data.get(), sizeof(float) * total).wait();
+    EXPECT_FLOAT_EQ(parent_row[0], 1.0f);
+    EXPECT_FLOAT_EQ(parent_row[1], 2.0f);
+    EXPECT_FLOAT_EQ(parent_row[2], 3.0f);
+}
+
+/**
+ * @test TENSOR.operator_addition_incompatible_shapes
+ * @brief Addition throws when operand shapes are incompatible.
+ *
+ * Creates A (2x3) and B (2x2) on host and expects an std::invalid_argument
+ * when attempting to compute A + B.
+ */
+TEST(TENSOR, operator_addition_incompatible_shapes)
+{
+    Tensor<float> A({2,3}, MemoryLocation::HOST);
+    Tensor<float> B({2,2}, MemoryLocation::HOST);
+    A = std::vector<float>{1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f};
+    B = std::vector<float>{1.0f, 2.0f, 3.0f, 4.0f};
+
+    EXPECT_THROW({ Tensor<float> R = A + B; }, std::invalid_argument);
+}
+
+/**
+ * @test TENSOR.operator_addition_result_mem_location
+ * @brief Result memory is DEVICE if either operand is DEVICE (addition).
+ */
+TEST(TENSOR, operator_addition_result_mem_location)
+{
+    Tensor<float> A({2,2}, MemoryLocation::HOST);
+    Tensor<float> B({2,2}, MemoryLocation::DEVICE);
+
+    A = std::vector<float>{1.0f, 2.0f, 3.0f, 4.0f};
+    B = std::vector<float>{4.0f, 3.0f, 2.0f, 1.0f};
+
+    Tensor<float> R = A + B;
+    EXPECT_EQ(R.m_mem_loc, MemoryLocation::DEVICE);
+}
+
+/**
+ * @test TENSOR.operator_addition_both_host_result_mem_location
+ * @brief Result memory is HOST when both operands are HOST (addition).
+ */
+TEST(TENSOR, operator_addition_both_host_result_mem_location)
+{
+    Tensor<float> A({2,2}, MemoryLocation::HOST);
+    Tensor<float> B({2,2}, MemoryLocation::HOST);
+
+    A = std::vector<float>{1.0f, 2.0f, 3.0f, 4.0f};
+    B = std::vector<float>{4.0f, 3.0f, 2.0f, 1.0f};
+
+    Tensor<float> R = A + B;
+    EXPECT_EQ(R.m_mem_loc, MemoryLocation::HOST);
+}
+
+/**
+ * @test TENSOR.operator_addition_nan_inputs_throws
+ * @brief Addition detects NaN inputs and triggers a runtime_error.
+ *
+ * Creates A and B on DEVICE with a NaN in A, then expects A + B to throw.
+ */
+TEST(TENSOR, operator_addition_nan_inputs_throws)
+{
+    Tensor<float> A({2}, MemoryLocation::DEVICE);
+    Tensor<float> B({2}, MemoryLocation::DEVICE);
+
+    float nan = std::numeric_limits<float>::quiet_NaN();
+    A = std::vector<float>{1.0f, nan};
+    B = std::vector<float>{2.0f, 3.0f};
+
+    EXPECT_THROW({ Tensor<float> R = A + B; }, std::runtime_error);
+}
+
+/**
+ * @test TENSOR.operator_addition_non_finite_result_throws
+ * @brief Addition that overflows to Inf should trigger runtime_error.
+ */
+TEST(TENSOR, operator_addition_non_finite_result_throws)
+{
+    Tensor<float> A({1}, MemoryLocation::DEVICE);
+    Tensor<float> B({1}, MemoryLocation::DEVICE);
+
+    float large = std::numeric_limits<float>::max();
+    A = std::vector<float>{large};
+    B = std::vector<float>{large};
+
+    EXPECT_THROW({ Tensor<float> R = A + B; }, std::runtime_error);
+}
+
+/**
+ * @test TENSOR.operator_addition_broadcasting_complex_alignment
+ * @brief Verifies broadcasting for A{2,3,4} + B{3,1} (B aligned to {1,3,1}).
+ *
+ * Fills A with values 0..23 and B with {10,20,30}. Expects
+ * R[i,j,k] == A[i,j,k] + B[j,0]. Result is expected to be on DEVICE.
+ */
+TEST(TENSOR, operator_addition_broadcasting_complex_alignment)
+{
+    Tensor<float> A({2,3,4}, MemoryLocation::DEVICE);
+    Tensor<float> B({3,1},   MemoryLocation::DEVICE);
+
+    const uint64_t total = 2 * 3 * 4;
+    std::vector<float> avals(total);
+    for (uint64_t i = 0; i < total; ++i)
+    {
+        avals[i] = static_cast<float>(i);
+    }
+
+    std::vector<float> bvals = {10.0f, 20.0f, 30.0f};
+
+    A = avals;
+    B = bvals;
+
+    Tensor<float> R = A + B;
+    EXPECT_EQ(R.m_mem_loc, MemoryLocation::DEVICE);
+
+    std::vector<float> rh(total);
+    g_sycl_queue.memcpy
+        (rh.data(), R.m_p_data.get(), sizeof(float) * total).wait();
+
+    std::vector<float> expected(total);
+    for (uint64_t i = 0; i < 2; ++i)
+    {
+        for (uint64_t j = 0; j < 3; ++j)
+        {
+            float offset = bvals[j];
+            for (uint64_t k = 0; k < 4; ++k)
+            {
+                uint64_t idx = i * 3 * 4 + j * 4 + k;
+                expected[idx] = avals[idx] + offset;
+            }
+        }
+    }
+
+    for (uint64_t idx = 0; idx < total; ++idx)
+    {
+        EXPECT_FLOAT_EQ(rh[idx], expected[idx]);
+    }
+}
+
+/**
+ * @test TENSOR.operator_subtraction
+ * @brief Verifies element-wise subtraction on device memory.
+ *
+ * Creates two 2x3 device tensors A and B with known values, computes
+ * D = A - B, copies the result back to host and checks every element
+ * equals avals[i] - bvals[i].
+ */
+TEST(TENSOR, operator_subtraction)
+{
+    Tensor<float> A({2,3}, MemoryLocation::DEVICE);
+    Tensor<float> B({2,3}, MemoryLocation::DEVICE);
+
+    std::vector<float> avals = {1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f};
+    std::vector<float> bvals = {6.0f, 5.0f, 4.0f, 3.0f, 2.0f, 1.0f};
+
+    A = avals;
+    B = bvals;
+
+    Tensor<float> D = A - B;
+
+    const uint64_t total = 6;
+    std::vector<float> dh(total);
+    g_sycl_queue.memcpy
+        (dh.data(), D.m_p_data.get(), sizeof(float) * total).wait();
+
+    for (uint64_t i = 0; i < total; ++i)
+    {
+        EXPECT_FLOAT_EQ(dh[i], avals[i] - bvals[i]);
+    }
+}
+
+/**
+ * @test TENSOR.operator_subtraction_broadcasting_1d_to_2d
+ * @brief Verifies broadcasting from 1-D to 2-D for subtraction.
+ *
+ * Creates A (2x3) and B (shape [3]) on device, computes R = A - B,
+ * copies result to host and checks each element equals the expected
+ * broadcasted difference.
+ */
+TEST(TENSOR, operator_subtraction_broadcasting_1d_to_2d)
+{
+    Tensor<float> A({2,3}, MemoryLocation::DEVICE);
+    Tensor<float> B({3}, MemoryLocation::DEVICE);
+
+    A = std::vector<float>{10.0f, 20.0f, 30.0f, 40.0f, 50.0f, 60.0f};
+    B = std::vector<float>{1.0f, 2.0f, 3.0f};
+
+    Tensor<float> R = A - B;
+
+    uint64_t total = 6;
+    std::vector<float> rh(total);
+    g_sycl_queue.memcpy
+        (rh.data(), R.m_p_data.get(), sizeof(float) * total).wait();
+
+    std::vector<float> expected = {9.0f, 18.0f, 27.0f, 39.0f, 48.0f, 57.0f};
+    for (uint64_t i = 0; i < total; ++i)
+    {
+        EXPECT_EQ(rh[i], expected[i]);
+    }
+}
+
+/**
+ * @test TENSOR.operator_subtraction_broadcasting_scalar
+ * @brief Verifies addition broadcasting with a scalar operand for subtraction.
+ *
+ * Creates A (2x3) and B (shape [1]) on host, computes R = A - B,
+ * copies result to host and checks each element equals the expected
+ * scalar-subtracted value.
+ */
+TEST(TENSOR, operator_subtraction_broadcasting_scalar)
+{
+    Tensor<float> A({2,3}, MemoryLocation::HOST);
+    Tensor<float> B({1}, MemoryLocation::HOST);
+
+    A = std::vector<float>{1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f};
+    B = std::vector<float>{5.0f};
+
+    Tensor<float> R = A - B;
+
+    uint64_t total = 6;
+    std::vector<float> rh(total);
+    g_sycl_queue.memcpy
+        (rh.data(), R.m_p_data.get(), sizeof(float) * total).wait();
+
+    std::vector<float> expected = {-4.0f, -3.0f, -2.0f, -1.0f, 0.0f, 1.0f};
+    for (uint64_t i = 0; i < total; ++i)
+    {
+        EXPECT_EQ(rh[i], expected[i]);
+    }
+}
+
+/**
+ * @test TENSOR.operator_subtraction_with_views
+ * @brief Verifies element-wise subtraction between a row view and a tensor.
+ */
+TEST(TENSOR, operator_subtraction_with_views)
+{
+    Tensor<float> T({2,3}, MemoryLocation::DEVICE);
+    T = std::vector<float>{10.0f, 20.0f, 30.0f, 40.0f, 50.0f, 60.0f};
+
+    Tensor<float> row0 = T[0];
+    Tensor<float> subtrahend({3}, MemoryLocation::DEVICE);
+    subtrahend = std::vector<float>{1.0f, 2.0f, 3.0f};
+
+    Tensor<float> R = row0 - subtrahend;
+
+    const uint64_t total = 3;
+    std::vector<float> rh(total);
+    g_sycl_queue.memcpy
+        (rh.data(), R.m_p_data.get(), sizeof(float) * total).wait();
+
+    std::vector<float> expected = {9.0f, 18.0f, 27.0f};
+    for (uint64_t i = 0; i < total; ++i)
+    {
+        EXPECT_FLOAT_EQ(rh[i], expected[i]);
+    }
+}
+
+/**
+ * @test TENSOR.operator_subtraction_incompatible_shapes
+ * @brief Subtraction throws when operand shapes are incompatible.
+ *
+ * Creates A (2x3) and B (2x2) on host and expects an std::invalid_argument
+ * when attempting to compute A - B.
+ */
+TEST(TENSOR, operator_subtraction_incompatible_shapes)
+{
+    Tensor<float> A({2,3}, MemoryLocation::HOST);
+    Tensor<float> B({2,2}, MemoryLocation::HOST);
+    A = std::vector<float>{1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f};
+    B = std::vector<float>{1.0f, 2.0f, 3.0f, 4.0f};
+
+    EXPECT_THROW({ Tensor<float> R = A - B; }, std::invalid_argument);
+}
+
+/**
+ * @test TENSOR.operator_subtraction_result_mem_location
+ * @brief Result memory is DEVICE if either operand is DEVICE (subtraction).
+ */
+TEST(TENSOR, operator_subtraction_result_mem_location)
+{
+    Tensor<float> A({2,2}, MemoryLocation::HOST);
+    Tensor<float> B({2,2}, MemoryLocation::DEVICE);
+
+    A = std::vector<float>{1.0f, 2.0f, 3.0f, 4.0f};
+    B = std::vector<float>{4.0f, 3.0f, 2.0f, 1.0f};
+
+    Tensor<float> R = A - B;
+    EXPECT_EQ(R.m_mem_loc, MemoryLocation::DEVICE);
+}
+
+/**
+ * @test TENSOR.operator_subtraction_both_host_result_mem_location
+ * @brief Result memory is HOST when both operands are HOST (subtraction).
+ */
+TEST(TENSOR, operator_subtraction_both_host_result_mem_location)
+{
+    Tensor<float> A({2,2}, MemoryLocation::HOST);
+    Tensor<float> B({2,2}, MemoryLocation::HOST);
+
+    A = std::vector<float>{1.0f, 2.0f, 3.0f, 4.0f};
+    B = std::vector<float>{4.0f, 3.0f, 2.0f, 1.0f};
+
+    Tensor<float> R = A - B;
+    EXPECT_EQ(R.m_mem_loc, MemoryLocation::HOST);
+}
+
+/**
+ * @test TENSOR.operator_subtraction_nan_inputs_throws
+ * @brief Subtraction detects NaN inputs and triggers a runtime_error.
+ *
+ * Creates A and B on DEVICE with a NaN in A, then expects A - B to throw.
+ */
+TEST(TENSOR, operator_subtraction_nan_inputs_throws)
+{
+    Tensor<float> A({2}, MemoryLocation::DEVICE);
+    Tensor<float> B({2}, MemoryLocation::DEVICE);
+
+    float nan = std::numeric_limits<float>::quiet_NaN();
+    A = std::vector<float>{1.0f, nan};
+    B = std::vector<float>{2.0f, 3.0f};
+
+    EXPECT_THROW({ Tensor<float> R = A - B; }, std::runtime_error);
+}
+
+/**
+ * @test TENSOR.operator_subtraction_non_finite_result_throws
+ * @brief Subtraction that overflows to Inf should trigger runtime_error.
+ */
+TEST(TENSOR, operator_subtraction_non_finite_result_throws)
+{
+    Tensor<float> A({1}, MemoryLocation::DEVICE);
+    Tensor<float> B({1}, MemoryLocation::DEVICE);
+
+    float large = std::numeric_limits<float>::max();
+    A = std::vector<float>{ large };
+    B = std::vector<float>{ -large };
+
+    EXPECT_THROW({ Tensor<float> R = A - B; }, std::runtime_error);
+}
+
+/**
+ * @test TENSOR.operator_subtraction_broadcasting_complex_alignment
+ * @brief Verifies broadcasting for A{2,3,4} - B{3,1} (B aligned to {1,3,1}).
+ *
+ * Fills A with values 0..23 and B with {10,20,30}. Expects
+ * R[i,j,k] == A[i,j,k] - B[j,0]. Result is expected to be on DEVICE.
+ */
+TEST(TENSOR, operator_subtraction_broadcasting_complex_alignment)
+{
+    Tensor<float> A({2, 3, 4}, MemoryLocation::DEVICE);
+    Tensor<float> B({3, 1},   MemoryLocation::DEVICE);
+
+    const uint64_t total = 2 * 3 * 4;
+    std::vector<float> avals(total);
+    for (uint64_t i = 0; i < total; ++i)
+    {
+        avals[i] = static_cast<float>(i);
+    }
+
+    std::vector<float> bvals = {10.0f, 20.0f, 30.0f};
+
+    A = avals;
+    B = bvals;
+
+    Tensor<float> R = A - B;
+    EXPECT_EQ(R.m_mem_loc, MemoryLocation::DEVICE);
+
+    std::vector<float> rh(total);
+    g_sycl_queue.memcpy
+        (rh.data(), R.m_p_data.get(), sizeof(float) * total).wait();
+
+    std::vector<float> expected(total);
+    for (uint64_t i = 0; i < 2; ++i)
+    {
+        for (uint64_t j = 0; j < 3; ++j)
+        {
+            float offset = bvals[j];
+            for (uint64_t k = 0; k < 4; ++k)
+            {
+                uint64_t idx = i * 3 * 4 + j * 4 + k;
+                expected[idx] = avals[idx] - offset;
+            }
+        }
+    }
+
+    for (uint64_t idx = 0; idx < total; ++idx)
+    {
+        EXPECT_FLOAT_EQ(rh[idx], expected[idx]);
+    }
+}
+
+/**
+ * @test TENSOR.operator_multiplication
+ * @brief Verifies element-wise multiplication on device memory.
+ *
+ * Creates two 2x3 device tensors A and B with known values, computes
+ * E = A * B, copies the result back to host and checks every element
+ * equals avals[i] * bvals[i].
+ */
+TEST(TENSOR, operator_multiplication)
+{
+    Tensor<float> A({2,3}, MemoryLocation::DEVICE);
+    Tensor<float> B({2,3}, MemoryLocation::DEVICE);
+
+    std::vector<float> avals = {1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f};
+    std::vector<float> bvals = {6.0f, 5.0f, 4.0f, 3.0f, 2.0f, 1.0f};
+
+    A = avals;
+    B = bvals;
+
+    Tensor<float> E = A * B;
+
+    const uint64_t total = 6;
+    std::vector<float> eh(total);
+    g_sycl_queue.memcpy
+        (eh.data(), E.m_p_data.get(), sizeof(float) * total).wait();
+
+    for (uint64_t i = 0; i < total; ++i)
+    {
+        EXPECT_FLOAT_EQ(eh[i], avals[i] * bvals[i]);
+    }
+}
+
+/**
+ * @test TENSOR.operator_multiplication_broadcasting_1d_to_2d
+ * @brief Verifies broadcasting from 1-D to 2-D for multiplication.
+ *
+ * Creates A (2x3) and B (shape [3]) on device, computes R = A * B,
+ * copies result to host and checks each element equals the expected
+ * broadcasted product.
+ */
+TEST(TENSOR, operator_multiplication_broadcasting_1d_to_2d)
+{
+    Tensor<float> A({2,3}, MemoryLocation::DEVICE);
+    Tensor<float> B({3}, MemoryLocation::DEVICE);
+
+    A = std::vector<float>{10.0f, 20.0f, 30.0f, 40.0f, 50.0f, 60.0f};
+    B = std::vector<float>{1.0f, 2.0f, 3.0f};
+
+    Tensor<float> R = A * B;
+
+    uint64_t total = 6;
+    std::vector<float> rh(total);
+    g_sycl_queue.memcpy
+        (rh.data(), R.m_p_data.get(), sizeof(float) * total).wait();
+
+    std::vector<float> expected = {10.0f, 40.0f, 90.0f, 40.0f, 100.0f, 180.0f};
+    for (uint64_t i = 0; i < total; ++i)
+    {
+        EXPECT_EQ(rh[i], expected[i]);
+    }
+}
+
+/**
+ * @test TENSOR.operator_multiplication_broadcasting_scalar
+ * @brief Verifies multiplication broadcasting with a scalar operand.
+ *
+ * Creates A (2x3) and B (shape [1]) on host, computes R = A * B,
+ * copies result to host and checks each element equals the expected
+ * scalar-multiplied value.
+ */
+TEST(TENSOR, operator_multiplication_broadcasting_scalar)
+{
+    Tensor<float> A({2,3}, MemoryLocation::HOST);
+    Tensor<float> B({1}, MemoryLocation::HOST);
+
+    A = std::vector<float>{1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f};
+    B = std::vector<float>{5.0f};
+
+    Tensor<float> R = A * B;
+
+    uint64_t total = 6;
+    std::vector<float> rh(total);
+    g_sycl_queue.memcpy
+        (rh.data(), R.m_p_data.get(), sizeof(float) * total).wait();
+
+    std::vector<float> expected = {5.0f, 10.0f, 15.0f, 20.0f, 25.0f, 30.0f};
+    for (uint64_t i = 0; i < total; ++i)
+    {
+        EXPECT_EQ(rh[i], expected[i]);
+    }
+}
+
+/**
+ * @test TENSOR.operator_multiplication_with_views
+ * @brief Verifies element-wise multiplication between a row view and a tensor.
+ */
+TEST(TENSOR, operator_multiplication_with_views)
+{
+    Tensor<float> T({2,3}, MemoryLocation::DEVICE);
+    T = std::vector<float>{2.0f, 3.0f, 4.0f, 5.0f, 6.0f, 7.0f};
+
+    Tensor<float> row0 = T[0];
+    Tensor<float> multiplier({3}, MemoryLocation::DEVICE);
+    multiplier = std::vector<float>{10.0f, 20.0f, 30.0f};
+
+    Tensor<float> R = row0 * multiplier;
+
+    const uint64_t total = 3;
+    std::vector<float> rh(total);
+    g_sycl_queue.memcpy
+        (rh.data(), R.m_p_data.get(), sizeof(float) * total).wait();
+
+    std::vector<float> expected = {20.0f, 60.0f, 120.0f};
+    for (uint64_t i = 0; i < total; ++i)
+    {
+        EXPECT_FLOAT_EQ(rh[i], expected[i]);
+    }
+}
+
+/**
+ * @test TENSOR.operator_multiplication_incompatible_shapes
+ * @brief Multiplication throws when operand shapes are incompatible.
+ *
+ * Creates A (2x3) and B (2x2) on host and expects an std::invalid_argument
+ * when attempting to compute A * B.
+ */
+TEST(TENSOR, operator_multiplication_incompatible_shapes)
+{
+    Tensor<float> A({2,3}, MemoryLocation::HOST);
+    Tensor<float> B({2,2}, MemoryLocation::HOST);
+    A = std::vector<float>{1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f};
+    B = std::vector<float>{1.0f, 2.0f, 3.0f, 4.0f};
+
+    EXPECT_THROW({ Tensor<float> R = A * B; }, std::invalid_argument);
+}
+
+/**
+ * @test TENSOR.operator_multiplication_result_mem_location
+ * @brief Result memory is DEVICE if either operand is DEVICE (multiplication).
+ */
+TEST(TENSOR, operator_multiplication_result_mem_location)
+{
+    Tensor<float> A({2,2}, MemoryLocation::HOST);
+    Tensor<float> B({2,2}, MemoryLocation::DEVICE);
+
+    A = std::vector<float>{1.0f, 2.0f, 3.0f, 4.0f};
+    B = std::vector<float>{4.0f, 3.0f, 2.0f, 1.0f};
+
+    Tensor<float> R = A * B;
+    EXPECT_EQ(R.m_mem_loc, MemoryLocation::DEVICE);
+}
+
+/**
+ * @test TENSOR.operator_multiplication_both_host_result_mem_location
+ * @brief Result memory is HOST when both operands are HOST (multiplication).
+ */
+TEST(TENSOR, operator_multiplication_both_host_result_mem_location)
+{
+    Tensor<float> A({2,2}, MemoryLocation::HOST);
+    Tensor<float> B({2,2}, MemoryLocation::HOST);
+
+    A = std::vector<float>{1.0f, 2.0f, 3.0f, 4.0f};
+    B = std::vector<float>{4.0f, 3.0f, 2.0f, 1.0f};
+
+    Tensor<float> R = A * B;
+    EXPECT_EQ(R.m_mem_loc, MemoryLocation::HOST);
+}
+
+/**
+ * @test TENSOR.operator_multiplication_nan_inputs_throws
+ * @brief Multiplication detects NaN inputs and triggers a runtime_error.
+ *
+ * Creates A and B on DEVICE with a NaN in A, then expects A * B to throw.
+ */
+TEST(TENSOR, operator_multiplication_nan_inputs_throws)
+{
+    Tensor<float> A({2}, MemoryLocation::DEVICE);
+    Tensor<float> B({2}, MemoryLocation::DEVICE);
+
+    float nan = std::numeric_limits<float>::quiet_NaN();
+    A = std::vector<float>{1.0f, nan};
+    B = std::vector<float>{2.0f, 3.0f};
+
+    EXPECT_THROW({ Tensor<float> R = A * B; }, std::runtime_error);
+}
+
+/**
+ * @test TENSOR.operator_multiplication_non_finite_result_throws
+ * @brief Non-finite multiplication result (overflow -> Inf)
+ * triggers runtime_error.
+ *
+ * Multiplies max float by 2 on DEVICE and expects the operation to throw due
+ * to non-finite result detection in the kernel.
+ */
+TEST(TENSOR, operator_multiplication_non_finite_result_throws)
+{
+    Tensor<float> A({1}, MemoryLocation::DEVICE);
+    Tensor<float> B({1}, MemoryLocation::DEVICE);
+
+    float large = std::numeric_limits<float>::max();
+    A = std::vector<float>{large};
+    B = std::vector<float>{2.0f};
+
+    EXPECT_THROW({ Tensor<float> R = A * B; }, std::runtime_error);
+}
+
+/**
+ * @test TENSOR.operator_multiplication_broadcasting_complex_alignment
+ * @brief Verifies broadcasting for A{2,3,4} * B{3,1} (B aligned to {1,3,1}).
+ *
+ * Fills A with values 0..23 and B with {10,20,30}. Expects
+ * R[i,j,k] == A[i,j,k] * B[j,0]. Result is expected to be on DEVICE.
+ */
+TEST(TENSOR, operator_multiplication_broadcasting_complex_alignment)
+{
+    Tensor<float> A({2, 3, 4}, MemoryLocation::DEVICE);
+    Tensor<float> B({3, 1},   MemoryLocation::DEVICE);
+
+    const uint64_t total = 2 * 3 * 4;
+    std::vector<float> avals(total);
+    for (uint64_t i = 0; i < total; ++i)
+    {
+        avals[i] = static_cast<float>(i);
+    }
+
+    std::vector<float> bvals = {10.0f, 20.0f, 30.0f};
+
+    A = avals;
+    B = bvals;
+
+    Tensor<float> R = A * B;
+    EXPECT_EQ(R.m_mem_loc, MemoryLocation::DEVICE);
+
+    std::vector<float> rh(total);
+    g_sycl_queue.memcpy
+        (rh.data(), R.m_p_data.get(), sizeof(float) * total).wait();
+
+    std::vector<float> expected(total);
+    for (uint64_t i = 0; i < 2; ++i)
+    {
+        for (uint64_t j = 0; j < 3; ++j)
+        {
+            float offset = bvals[j];
+            for (uint64_t k = 0; k < 4; ++k)
+            {
+                uint64_t idx = i * 3 * 4 + j * 4 + k;
+                expected[idx] = avals[idx] * offset;
+            }
+        }
+    }
+
+    for (uint64_t idx = 0; idx < total; ++idx)
+    {
+        EXPECT_FLOAT_EQ(rh[idx], expected[idx]);
+    }
+}
+
+/**
+ * @test TENSOR.operator_division
+ * @brief Verifies element-wise division on device memory.
+ *
+ * Creates two 2x3 device tensors A and B with known non-zero divisor
+ * values, computes F = A / B, copies the result back to host and checks
+ * every element equals avals[i] / bvals[i].
+ */
+TEST(TENSOR, operator_division)
+{
+    Tensor<float> A({2,3}, MemoryLocation::DEVICE);
+    Tensor<float> B({2,3}, MemoryLocation::DEVICE);
+
+    std::vector<float> avals = {1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f};
+    std::vector<float> bvals = {6.0f, 5.0f, 4.0f, 3.0f, 2.0f, 1.0f};
+
+    A = avals;
+    B = bvals;
+
+    Tensor<float> F = A / B;
+
+    const uint64_t total = 6;
+    std::vector<float> fh(total);
+    g_sycl_queue.memcpy
+        (fh.data(), F.m_p_data.get(), sizeof(float) * total).wait();
+
+    for (uint64_t i = 0; i < total; ++i)
+    {
+        EXPECT_FLOAT_EQ(fh[i], avals[i] / bvals[i]);
+    }
+}
+
+/**
+ * @test TENSOR.operator_division_broadcasting_1d_to_2d
+ * @brief Verifies broadcasting from 1-D to 2-D for division.
+ *
+ * Creates A (2x3) and B (shape [3]) on device, computes R = A / B,
+ * copies result to host and checks each element equals the expected
+ * broadcasted quotient.
+ */
+TEST(TENSOR, operator_division_broadcasting_1d_to_2d)
+{
+    Tensor<float> A({2, 3}, MemoryLocation::DEVICE);
+    Tensor<float> B({3}, MemoryLocation::DEVICE);
+
+    A = std::vector<float>{10.0f, 20.0f, 30.0f, 40.0f, 50.0f, 60.0f};
+    B = std::vector<float>{1.0f, 2.0f, 3.0f};
+
+    Tensor<float> R = A / B;
+
+    uint64_t total = 6;
+    std::vector<float> rh(total);
+    g_sycl_queue.memcpy
+        (rh.data(), R.m_p_data.get(), sizeof(float) * total).wait();
+
+    std::vector<float> expected = {
+        10.0f / 1.0f, 20.0f / 2.0f, 30.0f / 3.0f,
+        40.0f / 1.0f, 50.0f / 2.0f, 60.0f / 3.0f
+    };
+    for (uint64_t i = 0; i < total; ++i)
+    {
+        EXPECT_FLOAT_EQ(rh[i], expected[i]);
+    }
+}
+
+/**
+ * @test TENSOR.operator_division_broadcasting_scalar
+ * @brief Verifies division broadcasting with a scalar operand.
+ *
+ * Creates A (2x3) and B (shape [1]) on host (non-zero scalar),
+ * computes R = A / B, copies result to host and checks each element
+ * equals the expected scalar-divided value.
+ */
+TEST(TENSOR, operator_division_broadcasting_scalar)
+{
+    Tensor<float> A({2, 3}, MemoryLocation::HOST);
+    Tensor<float> B({1}, MemoryLocation::HOST);
+
+    A = std::vector<float>{1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f};
+    B = std::vector<float>{5.0f};
+
+    Tensor<float> R = A / B;
+
+    uint64_t total = 6;
+    std::vector<float> rh(total);
+    g_sycl_queue.memcpy
+        (rh.data(), R.m_p_data.get(), sizeof(float) * total).wait();
+
+    std::vector<float> expected = {
+        1.0f / 5.0f, 2.0f / 5.0f, 3.0f / 5.0f,
+        4.0f / 5.0f, 5.0f / 5.0f, 6.0f / 5.0f
+    };
+    for (uint64_t i = 0; i < total; ++i)
+    {
+        EXPECT_FLOAT_EQ(rh[i], expected[i]);
+    }
+}
+
+/**
+ * @test TENSOR.operator_division_with_views
+ * @brief Verifies element-wise division between a row view and a tensor.
+ */
+TEST(TENSOR, operator_division_with_views)
+{
+    Tensor<float> T({2,3}, MemoryLocation::DEVICE);
+    T = std::vector<float>{10.0f, 20.0f, 30.0f, 40.0f, 50.0f, 60.0f};
+
+    Tensor<float> row0 = T[0];
+    Tensor<float> divisor({3}, MemoryLocation::DEVICE);
+    divisor = std::vector<float>{2.0f, 4.0f, 5.0f};
+
+    Tensor<float> R = row0 / divisor;
+
+    const uint64_t total = 3;
+    std::vector<float> rh(total);
+    g_sycl_queue.memcpy
+        (rh.data(), R.m_p_data.get(), sizeof(float) * total).wait();
+
+    std::vector<float> expected = {5.0f, 5.0f, 6.0f};
+    for (uint64_t i = 0; i < total; ++i)
+    {
+        EXPECT_FLOAT_EQ(rh[i], expected[i]);
+    }
+}
+
+/**
+ * @test TENSOR.operator_division_incompatible_shapes
+ * @brief Division throws when operand shapes are incompatible.
+ *
+ * Creates A (2x3) and B (2x2) on host and expects an std::invalid_argument
+ * when attempting to compute A / B.
+ */
+TEST(TENSOR, operator_division_incompatible_shapes)
+{
+    Tensor<float> A({2, 3}, MemoryLocation::HOST);
+    Tensor<float> B({2, 2}, MemoryLocation::HOST);
+    A = std::vector<float>{1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f};
+    B = std::vector<float>{1.0f, 2.0f, 3.0f, 4.0f};
+
+    EXPECT_THROW({ Tensor<float> R = A / B; }, std::invalid_argument);
+}
+
+/**
+ * @test TENSOR.operator_division_result_mem_location
+ * @brief Result memory is DEVICE if either operand is DEVICE (division).
+ */
+TEST(TENSOR, operator_division_result_mem_location)
+{
+    Tensor<float> A({2, 2}, MemoryLocation::HOST);
+    Tensor<float> B({2, 2}, MemoryLocation::DEVICE);
+
+    A = std::vector<float>{1.0f, 2.0f, 3.0f, 4.0f};
+    B = std::vector<float>{4.0f, 3.0f, 2.0f, 1.0f};
+
+    Tensor<float> R = A / B;
+    EXPECT_EQ(R.m_mem_loc, MemoryLocation::DEVICE);
+}
+
+/**
+ * @test TENSOR.operator_division_both_host_result_mem_location
+ * @brief Result memory is HOST when both operands are HOST (division).
+ */
+TEST(TENSOR, operator_division_both_host_result_mem_location)
+{
+    Tensor<float> A({2, 2}, MemoryLocation::HOST);
+    Tensor<float> B({2, 2}, MemoryLocation::HOST);
+
+    A = std::vector<float>{1.0f, 2.0f, 3.0f, 4.0f};
+    B = std::vector<float>{4.0f, 3.0f, 2.0f, 1.0f};
+
+    Tensor<float> R = A / B;
+    EXPECT_EQ(R.m_mem_loc, MemoryLocation::HOST);
+}
+
+/**
+ * @test TENSOR.operator_division_by_zero_throws
+ * @brief Division by zero in device kernel should trigger a runtime_error.
+ *
+ * Creates A and B on DEVICE where B contains a zero element, then attempts
+ * R = A / B and expects a std::runtime_error thrown due to division-by-zero.
+ */
+TEST(TENSOR, operator_division_by_zero_throws)
+{
+    Tensor<float> A({2}, MemoryLocation::DEVICE);
+    Tensor<float> B({2}, MemoryLocation::DEVICE);
+
+    A = std::vector<float>{1.0f, -2.0f};
+    B = std::vector<float>{0.0f, 1.0f};
+
+    EXPECT_THROW({
+        Tensor<float> R = A / B;
+    }, std::runtime_error);
+}
+
+/**
+ * @test TENSOR.operator_division_nan_inputs_throws
+ * @brief Division detects NaN inputs and triggers a runtime_error.
+ *
+ * Creates A and B on DEVICE with a NaN in A, then expects A / B to throw.
+ */
+TEST(TENSOR, operator_division_nan_inputs_throws)
+{
+    Tensor<float> A({2}, MemoryLocation::DEVICE);
+    Tensor<float> B({2}, MemoryLocation::DEVICE);
+
+    float nan = std::numeric_limits<float>::quiet_NaN();
+    A = std::vector<float>{1.0f, nan};
+    B = std::vector<float>{2.0f, 3.0f};
+
+    EXPECT_THROW({ Tensor<float> R = A / B; }, std::runtime_error);
+}
+
+/**
+ * @test TENSOR.operator_division_non_finite_result_throws
+ * @brief Division that overflows to Inf should trigger runtime_error.
+ */
+TEST(TENSOR, operator_division_non_finite_result_throws)
+{
+    Tensor<float> A({1}, MemoryLocation::DEVICE);
+    Tensor<float> B({1}, MemoryLocation::DEVICE);
+
+    float large = std::numeric_limits<float>::max();
+    float tiny = std::numeric_limits<float>::min();
+    A = std::vector<float>{ large };
+    B = std::vector<float>{ tiny };
+
+    EXPECT_THROW({ Tensor<float> R = A / B; }, std::runtime_error);
+}
+
+/**
+ * @test TENSOR.operator_division_broadcasting_complex_alignment
+ * @brief Verifies broadcasting for A{2,3,4} / B{3,1} (B aligned to {1,3,1}).
+ *
+ * Fills A with values 0..23 and B with {10,20,30}. Expects
+ * R[i,j,k] == A[i,j,k] / B[j,0]. Result is expected to be on DEVICE.
+ */
+TEST(TENSOR, operator_division_broadcasting_complex_alignment)
+{
+    Tensor<float> A({2, 3, 4}, MemoryLocation::DEVICE);
+    Tensor<float> B({3, 1},   MemoryLocation::DEVICE);
+
+    const uint64_t total = 2 * 3 * 4;
+    std::vector<float> avals(total);
+    for (uint64_t i = 0; i < total; ++i)
+    {
+        avals[i] = static_cast<float>(i);
+    }
+
+    std::vector<float> bvals = {10.0f, 20.0f, 30.0f};
+
+    A = avals;
+    B = bvals;
+
+    Tensor<float> R = A / B;
+    EXPECT_EQ(R.m_mem_loc, MemoryLocation::DEVICE);
+
+    std::vector<float> rh(total);
+    g_sycl_queue.memcpy
+        (rh.data(), R.m_p_data.get(), sizeof(float) * total).wait();
+
+    std::vector<float> expected(total);
+    for (uint64_t i = 0; i < 2; ++i)
+    {
+        for (uint64_t j = 0; j < 3; ++j)
+        {
+            float offset = bvals[j];
+            for (uint64_t k = 0; k < 4; ++k)
+            {
+                uint64_t idx = i * 3 * 4 + j * 4 + k;
+                expected[idx] = avals[idx] / offset;
+            }
+        }
+    }
+
+    for (uint64_t idx = 0; idx < total; ++idx)
+    {
+        EXPECT_FLOAT_EQ(rh[idx], expected[idx]);
+    }
+}
+
+/**
+ * @test TENSOR.operator_unary_negation
+ * @brief Verifies element-wise unary negation.
+ *
+ * Creates A (2x2) on device, computes N = -A, copies result to host and
+ * checks each element equals the negated input (including sign of zero).
+ */
+TEST(TENSOR, operator_unary_negation)
+{
+    Tensor<float> A({2,2}, MemoryLocation::DEVICE);
+    A = std::vector<float>{1.0f, -2.0f, 3.5f, 0.0f};
+
+    Tensor<float> N = -A;
+
+    uint64_t total = 4;
+    std::vector<float> nh(total);
+    g_sycl_queue.memcpy
+        (nh.data(), N.m_p_data.get(), sizeof(float) * total).wait();
+
+    std::vector<float> expected = {-1.0f, 2.0f, -3.5f, -0.0f};
+    for (uint64_t i = 0; i < total; ++i)
+    {
+        EXPECT_EQ(nh[i], expected[i]);
+    }
+}
+
+/**
+ * @test TENSOR.operator_unary_negation_result_mem_location_device
+ * @brief Result memory follows input memory (DEVICE case).
+ *
+ * Verifies that negating a DEVICE tensor yields a result also on DEVICE.
+ */
+TEST(TENSOR, operator_unary_negation_result_mem_location_device)
+{
+    Tensor<float> A({2,2}, MemoryLocation::DEVICE);
+    std::vector<float> avals = {1.0f, -2.0f, 3.5f, 0.0f};
+    A = avals;
+
+    Tensor<float> N = -A;
+    EXPECT_EQ(N.m_mem_loc, MemoryLocation::DEVICE);
+}
+
+/**
+ * @test TENSOR.operator_unary_negation_result_mem_location_host
+ * @brief Result memory follows input memory (HOST case).
+ *
+ * Verifies that negating a HOST tensor yields a result also on HOST.
+ */
+TEST(TENSOR, operator_unary_negation_result_mem_location_host)
+{
+    Tensor<float> A({2,2}, MemoryLocation::HOST);
+    std::vector<float> avals = {1.0f, -2.0f, 3.5f, 0.0f};
+    A = avals;
+
+    Tensor<float> N = -A;
+    EXPECT_EQ(N.m_mem_loc, MemoryLocation::HOST);
+}
+
+/**
+ * @test TENSOR.operator_unary_negation_nan_input_throws
+ * @brief NaN in input should cause the operation to throw.
+ *
+ * Kernel marks NaN and host code throws std::runtime_error; this test
+ * verifies that behavior.
+ */
+TEST(TENSOR, operator_unary_negation_nan_input_throws)
+{
+    Tensor<float> A({2}, MemoryLocation::DEVICE);
+    float nan = std::numeric_limits<float>::quiet_NaN();
+    A = std::vector<float>{1.0f, nan};
+
+    EXPECT_THROW({ Tensor<float> N = -A; }, std::runtime_error);
+}
+
+/**
+ * @test TENSOR.operator_unary_negation_rank0_throws
+ * @brief Negation on a rank-0 tensor must throw std::invalid_argument.
+ */
+TEST(TENSOR, operator_unary_negation_rank0_throws)
+{
+    Tensor<float> T({}, MemoryLocation::HOST);
+    EXPECT_THROW({ Tensor<float> N = -T; }, std::invalid_argument);
+}
+
+/**
+ * @test TENSOR.operator_unary_negation_zero_sized_axis_throws
+ * @brief Negation on a tensor with a zero-sized axis must throw.
+ */
+TEST(TENSOR, operator_unary_negation_zero_sized_axis_throws)
+{
+    Tensor<float> Z({2, 0}, MemoryLocation::HOST);
+    EXPECT_THROW({ Tensor<float> N = -Z; }, std::invalid_argument);
+}
+
+/**
+ * @test TENSOR.operator_unary_negation_with_view
+ * @brief Negating a view returns correct values and does not modify parent.
+ *
+ * Create a parent T, take a row view, negate the view and verify results.
+ */
+TEST(TENSOR, operator_unary_negation_with_view)
+{
+    Tensor<float> T({2,3}, MemoryLocation::DEVICE);
+    std::vector<float> tvals = {1.0f, -2.0f, 3.0f, 4.0f, -5.0f, 6.0f};
+    T = tvals;
+
+    Tensor<float> row0 = T[0];
+    Tensor<float> N = -row0;
+
+    const uint64_t total = 3;
+    std::vector<float> nh(total);
+    g_sycl_queue.memcpy
+        (nh.data(), N.m_p_data.get(), sizeof(float) * total).wait();
+
+    std::vector<float> expected = {-1.0f, 2.0f, -3.0f};
+    for (uint64_t i = 0; i < total; ++i)
+    {
+        EXPECT_FLOAT_EQ(nh[i], expected[i]);
+    }
+
+    // Sanity: parent must remain unchanged.
+    std::vector<float> parent_buf(6);
+    g_sycl_queue.memcpy
+        (parent_buf.data(), T.m_p_data.get(), sizeof(float) * 6).wait();
+    EXPECT_FLOAT_EQ(parent_buf[0], 1.0f);
+    EXPECT_FLOAT_EQ(parent_buf[1], -2.0f);
+    EXPECT_FLOAT_EQ(parent_buf[2], 3.0f);
+}
+
+/**
+ * @test TENSOR.operator_unary_negation_sign_of_zero
+ * @brief Check that negation preserves sign for zero (e.g. -0.0).
+ *
+ * Uses std::signbit to assert that the zero element has expected sign.
+ */
+TEST(TENSOR, operator_unary_negation_sign_of_zero)
+{
+    Tensor<float> A({2,2}, MemoryLocation::DEVICE);
+    A = std::vector<float>{0.0f, 1.0f, -2.0f, 0.0f};
+
+    Tensor<float> N = -A;
+
+    const uint64_t total = 4;
+    std::vector<float> nh(total);
+    g_sycl_queue.memcpy
+        (nh.data(), N.m_p_data.get(), sizeof(float) * total).wait();
+
+    // Check values and signbit for indices where we expect -0.0.
+    EXPECT_FLOAT_EQ(nh[0], -0.0f);
+    EXPECT_TRUE(std::signbit(nh[0]));
+    EXPECT_FLOAT_EQ(nh[3], -0.0f);
+    EXPECT_TRUE(std::signbit(nh[3]));
+
+    //Sanity checks.
+    EXPECT_FLOAT_EQ(nh[1], -1.0f);
+    EXPECT_FLOAT_EQ(nh[2], 2.0f);
+}
+
 } // namespace Test
