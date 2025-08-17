@@ -588,7 +588,6 @@ Tensor<float_t> Tensor<float_t>::operator+(const Tensor & other) const
     return result;
 }
 
-// ---------- operator- (broadcasting) ----------
 template<typename float_t>
 Tensor<float_t> Tensor<float_t>::operator-(const Tensor & other) const
 {
@@ -1338,6 +1337,51 @@ void Tensor<float_t>::to(MemoryLocation target_loc)
     m_p_data = std::move(new_ptr);
     m_mem_loc = target_loc;
 }
+
+template<typename float_t>
+void Tensor<float_t>::reshape(const std::vector<uint64_t>& new_dimensions)
+{
+    if (new_dimensions.empty())
+    {
+        throw std::invalid_argument("Reshape: new_dimensions cannot be empty");
+    }
+
+    uint64_t og_total_size = 1;
+    for (uint64_t dim : m_dimensions)
+    {
+        if (dim == 0)
+        {
+            throw std::runtime_error
+                ("Reshape: tensor with zero dimension cannot be reshaped.");
+        }
+        og_total_size *= dim;
+    }
+
+    uint64_t new_total_size = 1;
+    for (uint64_t dim : new_dimensions)
+    {
+        if (dim == 0)
+        {
+            throw std::invalid_argument
+                ("Reshape: new_dimensions cannot contain zero");
+        }
+        if (dim > UINT64_MAX / new_total_size)
+        {
+            throw std::overflow_error("Reshape: dimension product overflow.");
+        }
+        new_total_size *= dim;
+    }
+
+    if (new_total_size != og_total_size)
+    {
+        throw std::invalid_argument
+            ("Reshape: total number of elements must remain the same");
+    }
+
+    m_dimensions = new_dimensions;
+    compute_strides();
+}
+
 
 template<typename float_t>
 void Tensor<float_t>::print(std::ostream& os) const

@@ -510,8 +510,8 @@ TEST(TENSOR, slice_4d_drops_prefix_axes)
 
 /**
  * @test TENSOR.slice_4d_extracts_3d_volume
- * @brief Extracts a 3D chunk from a 4D tensor by dropping the first axis and verifies
- * shape, stride, and copied values.
+ * @brief Extracts a 3D chunk from a 4D tensor by dropping the first axis and
+ * verifies shape, stride, and copied values.
  */
 TEST(TENSOR, slice_4d_extracts_3d_volume)
 {
@@ -2340,6 +2340,274 @@ TEST(TENSOR, operator_unary_negation_sign_of_zero)
     //Sanity checks.
     EXPECT_FLOAT_EQ(nh[1], -1.0f);
     EXPECT_FLOAT_EQ(nh[2], 2.0f);
+}
+
+/**
+ * @test TENSOR.operator_unary_negation_non_contiguous_view_columns
+ * @brief Negating a non-contiguous 2D view (a single column) produces the
+ * correct contiguous result and does not modify the parent tensor.
+ */
+TEST(TENSOR, operator_unary_negation_non_contiguous_view_columns)
+{
+    Tensor<float> T({3,4}, MemoryLocation::DEVICE);
+    std::vector<float> vals(12);
+    for (uint64_t i = 0; i < 12; ++i)
+    {
+        vals[i] = static_cast<float>(i + 1);
+    }
+    T = vals;
+
+    std::vector<uint64_t> start_indices = {0, 2};
+    std::vector<uint64_t> view_shape = {3, 1};
+    Tensor<float> col = Tensor<float>(T, start_indices, view_shape);
+
+    Tensor<float> N = -col;
+
+    const uint64_t total = 3 * 1;
+    std::vector<float> nh(total);
+    g_sycl_queue.memcpy
+        (nh.data(), N.m_p_data.get(), sizeof(float) * total).wait();
+
+    for (uint64_t r = 0; r < 3; ++r)
+    {
+        float expected = -vals[r * 4 + 2];
+        EXPECT_FLOAT_EQ(nh[r], expected);
+    }
+
+    std::vector<float> parent_buf(12);
+    g_sycl_queue.memcpy
+        (parent_buf.data(), T.m_p_data.get(), sizeof(float) * 12).wait();
+    for (uint64_t i = 0; i < 12; ++i)
+    {
+        EXPECT_FLOAT_EQ(parent_buf[i], vals[i]);
+    }
+}
+
+/**
+ * @test TENSOR.operator_unary_negation_nan_outside_view
+ * @brief If the parent contains a NaN outside the view region, negating the
+ * view should succeed and not throw.
+ */
+TEST(TENSOR, operator_unary_negation_nan_outside_view)
+{
+    Tensor<float> T({2,3}, MemoryLocation::DEVICE);
+    std::vector<float> vals = {1.0f, 2.0f, 3.0f,
+                            4.0f, 5.0f,std::numeric_limits<float>::quiet_NaN()};
+    T = vals;
+    std::vector<uint64_t> start_indices = {0, 0};
+    std::vector<uint64_t> view_shape = {1, 3};
+    Tensor<float> row0 = Tensor<float>(T, start_indices, view_shape);
+
+    EXPECT_NO_THROW({ Tensor<float> N = -row0; });
+
+    Tensor<float> N = -row0;
+    const uint64_t total = 1 * 3;
+    std::vector<float> nh(total);
+    g_sycl_queue.memcpy
+        (nh.data(), N.m_p_data.get(), sizeof(float) * total).wait();
+
+    for (uint64_t i = 0; i < total; ++i)
+    {
+        EXPECT_FLOAT_EQ(nh[i], -vals[i]);
+    }
+
+    std::vector<float> parent_buf(6);
+    g_sycl_queue.memcpy
+        (parent_buf.data(), T.m_p_data.get(), sizeof(float) * 6).wait();
+    EXPECT_TRUE(std::isnan(parent_buf[5]));
+}
+
+/**
+ * @test TENSOR.operator_unary_negation_view_of_view
+ * @brief Negating a view-of-view works and does not change the parent tensor.
+ */
+TEST(TENSOR, operator_unary_negation_view_of_view)
+{
+    Tensor<float> T({2,4}, MemoryLocation::DEVICE);
+    std::vector<float> vals = {1.0f, 2.0f, 3.0f, 4.0f,
+                               5.0f, 6.0f, 7.0f, 8.0f};
+    T = vals;
+
+    Tensor<float> row1 = Tensor<float>(T, {1,0}, {4});
+    Tensor<float> sub = Tensor<float>(row1, {1}, {2});
+    Tensor<float> N = -sub;
+
+    const uint64_t total = 2;
+    std::vector<float> nh(total);
+    g_sycl_queue.memcpy
+        (nh.data(), N.m_p_data.get(), sizeof(float) * total).wait();
+
+    EXPECT_FLOAT_EQ(nh[0], -vals[1 * 4 + 1]);
+    EXPECT_FLOAT_EQ(nh[1], -vals[1 * 4 + 2]);
+
+    std::vector<float> parent_buf(8);
+    g_sycl_queue.memcpy
+        (parent_buf.data(), T.m_p_data.get(), sizeof(float) * 8).wait();
+    for (uint64_t i = 0; i < 8; ++i)
+    {
+        EXPECT_FLOAT_EQ(parent_buf[i], vals[i]);
+    }
+}
+
+/**
+ * @test TENSOR.reshape_preserves_linear_memory_and_strides
+ * @brief Reshaping a tensor (2x3 -> 3x2) preserves the linear memory layout
+ * (raw buffer contents unchanged) and recomputes strides correctly.
+ */
+TEST(TENSOR, reshape_preserves_linear_memory_and_strides)
+{
+    Tensor<float> A({2,3}, MemoryLocation::DEVICE);
+    std::vector<float> vals = {1.0f, 2.0f, 3.0f,
+                               4.0f, 5.0f, 6.0f};
+    A = vals;
+
+    std::vector<uint64_t> new_dims = {3, 2};
+    EXPECT_NO_THROW(A.reshape(new_dims));
+
+    EXPECT_EQ(static_cast<uint64_t>(A.m_dimensions.size()), uint64_t{2});
+    EXPECT_EQ(A.m_dimensions[0], uint64_t{3});
+    EXPECT_EQ(A.m_dimensions[1], uint64_t{2});
+
+    ASSERT_EQ(static_cast<uint64_t>(A.m_strides.size()), uint64_t{2});
+    EXPECT_EQ(A.m_strides[0], uint64_t{2});
+    EXPECT_EQ(A.m_strides[1], uint64_t{1});
+
+    const uint64_t total = 6;
+    std::vector<float> host_buf(total);
+    g_sycl_queue.memcpy(host_buf.data(), A.m_p_data.get(),
+                        sizeof(float) * total).wait();
+
+    for (uint64_t i = 0; i < total; ++i)
+    {
+        EXPECT_FLOAT_EQ(host_buf[i], vals[i]);
+    }
+}
+
+/**
+ * @test TENSOR.reshape_to_flat_vector_preserves_contents
+ * @brief Reshape to a single-dimension tensor (1x6) preserves buffer and
+ * produces stride [1].
+ */
+TEST(TENSOR, reshape_to_flat_vector_preserves_contents)
+{
+    Tensor<float> A({2,3}, MemoryLocation::DEVICE);
+    std::vector<float> vals = {10.0f, 11.0f, 12.0f,
+                               13.0f, 14.0f, 15.0f};
+    A = vals;
+
+    std::vector<uint64_t> new_dims = {6};
+    EXPECT_NO_THROW(A.reshape(new_dims));
+
+    EXPECT_EQ(static_cast<uint64_t>(A.m_dimensions.size()), uint64_t{1});
+    EXPECT_EQ(A.m_dimensions[0], uint64_t{6});
+
+    ASSERT_EQ(static_cast<uint64_t>(A.m_strides.size()), uint64_t{1});
+    EXPECT_EQ(A.m_strides[0], uint64_t{1});
+
+    const uint64_t total = 6;
+    std::vector<float> host_buf(total);
+    g_sycl_queue.memcpy(host_buf.data(), A.m_p_data.get(),
+                        sizeof(float) * total).wait();
+
+    for (uint64_t i = 0; i < total; ++i)
+    {
+        EXPECT_FLOAT_EQ(host_buf[i], vals[i]);
+    }
+}
+
+/**
+ * @test TENSOR.reshape_invalid_size_throws
+ * @brief Reshaping to dimensions whose product differs from the original
+ * total size must throw std::invalid_argument.
+ */
+TEST(TENSOR, reshape_invalid_size_throws)
+{
+    Tensor<float> A({2,3}, MemoryLocation::DEVICE);
+    std::vector<float> vals = {1.0f, 2.0f, 3.0f,
+                               4.0f, 5.0f, 6.0f};
+    A = vals;
+
+    std::vector<uint64_t> bad_dims = {4, 2};
+    EXPECT_THROW({ A.reshape(bad_dims); }, std::invalid_argument);
+}
+
+/**
+ * @test TENSOR.reshape_empty_dimensions_throws
+ * @brief Reshaping with an empty dimensions vector
+ * must throw std::invalid_argument.
+ */
+TEST(TENSOR, reshape_empty_dimensions_throws)
+{
+    Tensor<float> A({2,3}, MemoryLocation::DEVICE);
+    std::vector<uint64_t> bad_dims = {};
+    EXPECT_THROW({ A.reshape(bad_dims); }, std::invalid_argument);
+}
+
+/**
+ * @test TENSOR.reshape_new_dimensions_with_zero_throws
+ * @brief Reshaping with new_dimensions containing zero
+ * must throw std::invalid_argument.
+ */
+TEST(TENSOR, reshape_new_dimensions_with_zero_throws)
+{
+    Tensor<float> A({2,3}, MemoryLocation::DEVICE);
+    std::vector<uint64_t> bad_dims = {2, 0};
+    EXPECT_THROW({ A.reshape(bad_dims); }, std::invalid_argument);
+}
+
+/**
+ * @test TENSOR.reshape_tensor_with_zero_dimension_throws
+ * @brief Attempting to reshape a tensor that has a zero-sized
+ * dimension must throw std::runtime_error.
+ */
+TEST(TENSOR, reshape_tensor_with_zero_dimension_throws)
+{
+    Tensor<float> A({2,0}, MemoryLocation::DEVICE);
+    std::vector<uint64_t> new_dims = {1};
+    EXPECT_THROW({ A.reshape(new_dims); }, std::runtime_error);
+}
+
+/**
+ * @test TENSOR.reshape_dimension_product_overflow_throws
+ * @brief Reshaping with excessively large dimensions
+ * causing uint64_t overflow must throw std::overflow_error.
+ */
+TEST(TENSOR, reshape_dimension_product_overflow_throws)
+{
+    Tensor<float> A({2,2}, MemoryLocation::DEVICE);
+    std::vector<uint64_t> bad_dims = {UINT64_MAX, 2};
+    EXPECT_THROW({ A.reshape(bad_dims); }, std::overflow_error);
+}
+
+/**
+ * @test TENSOR.reshape_multiple_roundtrip_preserves_data
+ * @brief Perform multiple reshapes (2x3 -> 3x2 -> 1x6 -> 2x3) and verify the
+ * linear buffer and final shape return to original values.
+ */
+TEST(TENSOR, reshape_multiple_roundtrip_preserves_data)
+{
+    Tensor<float> A({2,3}, MemoryLocation::DEVICE);
+    std::vector<float> orig = {7.0f, 8.0f, 9.0f,
+                               10.0f, 11.0f, 12.0f};
+    A = orig;
+
+    EXPECT_NO_THROW(A.reshape({3,2}));
+    EXPECT_NO_THROW(A.reshape({6}));
+    EXPECT_NO_THROW(A.reshape({2,3}));
+
+    ASSERT_EQ(static_cast<uint64_t>(A.m_dimensions.size()), uint64_t{2});
+    EXPECT_EQ(A.m_dimensions[0], uint64_t{2});
+    EXPECT_EQ(A.m_dimensions[1], uint64_t{3});
+
+    const uint64_t total = 6;
+    std::vector<float> host_buf(total);
+    g_sycl_queue.memcpy(host_buf.data(), A.m_p_data.get(),
+                        sizeof(float) * total).wait();
+
+    for (uint64_t i = 0; i < total; ++i)
+    {
+        EXPECT_FLOAT_EQ(host_buf[i], orig[i]);
+    }
 }
 
 } // namespace Test

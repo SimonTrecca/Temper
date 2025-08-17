@@ -311,6 +311,26 @@ public:
     void to(MemoryLocation target_loc);
 
     /**
+     * @brief Change tensor shape metadata without moving or reallocating data.
+     *
+     * Sets the tensor's dimensions to @p new_dimensions and recomputes strides.
+     * The underlying linear buffer is preserved, but the logical shape changes.
+     *
+     * @param new_dimensions New shape for the tensor.
+     *
+     * @throws std::invalid_argument if:
+     * - @p new_dimensions is empty
+     * - any entry in @p new_dimensions is zero
+     * - the product of @p new_dimensions differs from the current total
+     * element count
+     * @throws std::runtime_error if the tensor itself has any
+     * zero-sized dimension.
+     * @throws std::overflow_error if the product of dimensions in
+     * @p new_dimensions would overflow uint64_t.
+     */
+    void reshape(const std::vector<uint64_t>& new_dimensions);
+
+    /**
      * @brief Prints the tensor elements to the provided output
      * stream in a nested format.
      *
@@ -335,6 +355,14 @@ public:
      * Set as default.
      */
 	~Tensor() noexcept = default;
+
+    /* TODO
+    sort
+    transpose (both with no argument and axes argument)
+    cumsum
+    sum
+    getters and setters
+    */
 
 };
 
