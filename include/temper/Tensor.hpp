@@ -37,26 +37,29 @@ class Tensor
 private:
 
     /// Member pointer to data.
-	std::shared_ptr<float_t> m_p_data;
+	std::shared_ptr<float_t> m_p_data {};
 
     /// Member dimensions for each axis.
-    std::vector<uint64_t>    m_dimensions;
+    std::vector<uint64_t>    m_dimensions {};
 
     /// Member strides for each axis.
-    std::vector<uint64_t>    m_strides;
+    std::vector<uint64_t>    m_strides {};
 
     /// Member boolean for data ownership; true if it's owned by tensor
-    bool                     m_own_data;
+    bool                     m_own_data {true};
 
     /// Member enumeration to indicate if data is on host or device.
-    MemoryLocation           m_mem_loc;
+    MemoryLocation           m_mem_loc {MemoryLocation::DEVICE};
 
     /**
      * @brief Computes strides using dimensions.
      *
-     * This method resizes the `m_strides` vector
-     * and fills each element so that
-     * m_strides[i] = product of all dimensions to the right of i.
+     * Resizes `m_strides` and fills each element so that
+     * `m_strides[i]` equals the product of all dimensions to the right of `i`.
+     *
+     * @throws std::invalid_argument if any entry in `m_dimensions` is zero.
+     * @throws std::overflow_error if stride multiplication
+     * would overflow `uint64_t`.
      */
     void compute_strides();
 
@@ -70,13 +73,25 @@ public:
     Tensor() = default;
 
     /**
-     * @brief Constructs a Tensor with the given dimensions.
+     * @brief Construct a tensor given the shape and
+     * allocate the memory for its data.
      *
-     * Initializes the Tensor's data buffer with zeros
-     * based on the specified dimensions.
+     * Sets the tensor's dimensions to @p dimensions, computes strides,
+     * and allocates zero-initialized memory on the specified location.
      *
-     * @param dimensions The size of the tensor along each dimension.
-     * @param loc Where data memory should reside.
+     * @param dimensions Shape of the tensor (each entry must be > 0).
+     * @param loc Memory location for data (HOST or DEVICE).
+     *
+     * @throws std::invalid_argument if:
+     * - @p dimensions is empty
+     * - any entry in @p dimensions is zero
+     * @throws std::overflow_error if:
+     * - the product of @p dimensions would overflow uint64_t
+     * - the total allocation size in bytes would not fit into size_t
+     * @throws std::runtime_error if:
+     * - the requested allocation exceeds device @c max_mem_alloc_size
+     * - the requested allocation exceeds device @c global_mem_size
+     * @throws std::bad_alloc if memory allocation fails.
      */
     Tensor(const std::vector<uint64_t>& dimensions,
         MemoryLocation loc = MemoryLocation::DEVICE);
@@ -100,25 +115,40 @@ public:
     Tensor(Tensor && other) noexcept;
 
     /**
-     * @brief Constructs a non-owning view into another Tensor.
-     * View can live beyond owner's lifespan.
+     * @brief Construct a non-owning view into another tensor.
      *
-     * @param other Tensor to view into (must outlive the view).
-     * @param start_indices Starting coordinate for the view (per axis).
+     * Creates a view that aliases the owner’s linear buffer (no reallocation).
+     * The view logically does not own separate storage,
+     * but it holds an aliasing `shared_ptr` to the owner's buffer so the buffer
+     * remains alive while either control block is retained.
+     *
+     * @param other Tensor to view into.
+     * @param start_indices Starting coordinate of the view (one per owner axis).
      * @param view_shape Shape of the view.
-     * @throws std::invalid_argument on rank mismatch or bounds error.
+     *
+     * @throws std::invalid_argument if:
+     * - @p start_indices.size() does not equal the owner's rank
+     * - @p view_shape is empty or its rank is greater than the owner's rank
+     * @throws std::out_of_range if:
+     * - any entry in @p start_indices is >= the corresponding owner dimension
+     * - any entry in @p view_shape is zero
+     * - any start + length in @p view_shape extends beyond the owner dimension
+     * @throws std::runtime_error if:
+     * - @p other has no data (default-constructed or moved-from)
      */
     Tensor(Tensor & other,
-           const std::vector<uint64_t>& start_indices,
-           const std::vector<uint64_t>& view_shape);
+           const std::vector<uint64_t> & start_indices,
+           const std::vector<uint64_t> & view_shape);
 
     /**
      * @brief Copy assignment operator.
      *
-     * Performs a deep copy of data and metadata.
+     * Performs a deep copy of metadata and (if owning) the underlying buffer.
      *
      * @param other The tensor to assign from.
      * @return Reference to this tensor.
+     *
+     * @throws std::bad_alloc if allocation fails.
      */
     Tensor& operator=(const Tensor & other);
 
@@ -133,12 +163,17 @@ public:
     Tensor& operator=(Tensor && other) noexcept;
 
     /**
-     * @brief Assignment from flat std::vector.
+     * @brief Assign values from a flat std::vector into the tensor.
      *
-     * Size must match total size of the tensor.
+     * Copies the contents of @p values into the tensor.
+     * The length of @p values must equal the tensor's total element count.
      *
-     * @param values The flat vector of values.
+     * @param values Flat input vector.
      * @return Reference to this tensor.
+     *
+     * @throws std::invalid_argument if:
+     * - the tensor has no dimensions
+     * - the length of @p values differs from the tensor's total element count
      */
     Tensor& operator=(const std::vector<float_t> & values);
 
@@ -207,8 +242,8 @@ public:
      * @param other Tensor to add.
      * @return New tensor containing the broadcasted element-wise sum.
      *
-     * @throws std::invalid_argument if either tensor is rank-0,
-     * has a zero-sized axis, or shapes are incompatible for broadcasting.
+     * @throws std::invalid_argument if either tensor is empty
+     * or shapes are incompatible for broadcasting.
      * @throws std::runtime_error "NaN detected in inputs." if a NaN was observed.
      * @throws std::runtime_error "Non-finite result (overflow or Inf)."
      * if a non-finite result was produced.
@@ -228,8 +263,8 @@ public:
      * @param other Tensor to subtract.
      * @return New tensor containing the broadcasted element-wise difference.
      *
-     * @throws std::invalid_argument if either tensor is rank-0,
-     * has a zero-sized axis, or shapes are incompatible for broadcasting.
+     * @throws std::invalid_argument if either tensor is empty
+     * or shapes are incompatible for broadcasting.
      * @throws std::runtime_error "NaN detected in inputs." if a NaN was observed.
      * @throws std::runtime_error "Non-finite result (overflow or Inf)."
      * if a non-finite result was produced.
@@ -249,8 +284,8 @@ public:
      * @param other Tensor to multiply.
      * @return New tensor containing the broadcasted element-wise product.
      *
-     * @throws std::invalid_argument if either tensor is rank-0,
-     * has a zero-sized axis, or shapes are incompatible for broadcasting.
+     * @throws std::invalid_argument if either tensor is empty
+     * or shapes are incompatible for broadcasting.
      * @throws std::runtime_error "NaN detected in inputs." if a NaN was observed.
      * @throws std::runtime_error "Non-finite result (overflow or Inf)."
      * if a non-finite result was produced.
@@ -272,8 +307,8 @@ public:
      * @param other Divisor tensor.
      * @return New tensor containing the broadcasted element-wise quotient.
      *
-     * @throws std::invalid_argument if either tensor is rank-0,
-     * has a zero-sized axis, or shapes are incompatible for broadcasting.
+     * @throws std::invalid_argument if either tensor is empty
+     * or shapes are incompatible for broadcasting.
      * @throws std::runtime_error "NaN detected in inputs." if a NaN was observed.
      * @throws std::runtime_error "Division by zero detected."
      * if any divisor element equals zero.
@@ -294,8 +329,7 @@ public:
      *
      * @return New tensor containing element-wise negated values.
      *
-     * @throws std::invalid_argument if this tensor is rank-0
-     * or has a zero-sized axis.
+     * @throws std::invalid_argument if this tensor empty.
      * @throws std::runtime_error "NaN detected in input." if a NaN was observed.
      */
     Tensor operator-() const;
@@ -304,9 +338,12 @@ public:
      * @brief Moves tensor data between host (shared) and device memory.
      *
      * Transfers owned data to the specified memory location.
+     * Only tensors that own their data can be moved.
      *
      * @param target_loc Target memory location (HOST or DEVICE).
      * @throws std::runtime_error if called on a non-owning tensor (view).
+     * @throws std::invalid_argument if tensor has no elements.
+     * @throws std::bad_alloc if memory allocation fails.
      */
     void to(MemoryLocation target_loc);
 
@@ -323,8 +360,6 @@ public:
      * - any entry in @p new_dimensions is zero
      * - the product of @p new_dimensions differs from the current total
      * element count
-     * @throws std::runtime_error if the tensor itself has any
-     * zero-sized dimension.
      * @throws std::overflow_error if the product of dimensions in
      * @p new_dimensions would overflow uint64_t.
      */

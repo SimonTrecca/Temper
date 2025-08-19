@@ -13,13 +13,37 @@ void Tensor<float_t>::compute_strides()
 {
     m_strides.resize(m_dimensions.size());
 
-    if (!m_dimensions.empty())
+    // Empty shape: nothing to do; callers should normally prevent this.
+    if (m_dimensions.empty())
     {
-        m_strides.back() = 1;
-        for (uint64_t i = m_dimensions.size() - 1; i > 0; --i)
+        return;
+    }
+
+    // Use uint64_t limits for overflow guards below.
+    constexpr uint64_t U64_MAX = std::numeric_limits<uint64_t>::max();
+
+    m_strides.back() = 1;
+
+    for (uint64_t i = m_dimensions.size() - 1; i > 0; --i)
+    {
+        uint64_t dim = m_dimensions[i];
+        if (dim == 0)
         {
-            m_strides[i - 1] = m_strides[i] * m_dimensions[i];
+            // Zero-sized dims are invalid.
+            throw std::invalid_argument
+                (R"(Tensor(compute_strides):
+                    zero-sized dimension encountered.)");
         }
+        uint64_t next_stride = m_strides[i];
+
+        if (next_stride > U64_MAX / dim)
+        {
+            // Prevent silent wraparound on multiplication.
+            throw std::overflow_error
+                (R"(Tensor(compute_strides):
+                    stride multiplication overflow.)");
+        }
+        m_strides[i - 1] = next_stride * dim;
     }
 }
 
@@ -31,26 +55,96 @@ Tensor<float_t>::Tensor(const std::vector<uint64_t> & dimensions,
       m_own_data(true),
       m_mem_loc(loc)
 {
-    compute_strides();
 
-    uint64_t total_size = 1;
-    for (uint64_t d : dimensions)
+    if (m_dimensions.empty())
     {
+        // Reject rank-0: caller must provide a non-empty shape.
+        throw std::invalid_argument(R"(Tensor(main constructor):
+            dims must not be empty (rank-0 not supported).)");
+    }
+
+    constexpr uint64_t U64_MAX = std::numeric_limits<uint64_t>::max();
+
+    // Compute total element count with overflow guard.
+    uint64_t total_size = 1;
+    for (uint64_t d : m_dimensions)
+    {
+        if (d == 0)
+        {
+            // Zero-sized dims are invalid.
+            throw std::invalid_argument(R"(Tensor(main constructor):
+                zero-sized dimension is not allowed.)");
+        }
+        if (total_size > U64_MAX / d)
+        {
+            // Prevent silent wraparound on multiplication.
+            throw std::overflow_error(R"(Tensor(main constructor):
+                total element count overflow (too many elements).)");
+        }
         total_size *= d;
     }
 
+    // Compute byte count safely and ensure it fits in size_t.
+    const uint64_t elem_size_u64 = static_cast<uint64_t>(sizeof(float_t));
+
+    if (total_size > U64_MAX / elem_size_u64)
+    {
+        // Total_size * elem_size_u64 must not overflow uint64_t.
+        throw std::overflow_error(R"(Tensor(main constructor):
+            allocation size (bytes) overflow (uint64_t).)");
+    }
+
+    // Compute byte count in uint64_t.
+    const uint64_t alloc_bytes_u64 = total_size * elem_size_u64;
+
+    const uint64_t max_size_t_u64 = static_cast<uint64_t>
+        (std::numeric_limits<size_t>::max());
+    if (alloc_bytes_u64 > max_size_t_u64)
+    {
+        // Byte count must fit in platform size_t.
+        throw std::overflow_error(R"(Tensor(main constructor): allocation size
+            (bytes) doesn't fit into size_t on this platform.)");
+    }
+    // Safe to narrow to size_t.
+    const size_t allocation_bytes = static_cast<size_t>(alloc_bytes_u64);
+
+    // Compute strides now that dimensions are validated.
+    compute_strides();
+
+    // Query device limits and fail early if the request is impossible.
+    auto dev = g_sycl_queue.get_device();
+    const uint64_t dev_max_alloc = static_cast<uint64_t>(
+        dev.get_info<sycl::info::device::max_mem_alloc_size>());
+    const uint64_t dev_global_mem = static_cast<uint64_t>(
+        dev.get_info<sycl::info::device::global_mem_size>());
+    if (alloc_bytes_u64 > dev_max_alloc)
+    {
+        throw std::runtime_error(R"(Tensor(main constructor):
+            requested allocation exceeds device max_mem_alloc_size.)");
+    }
+    if (alloc_bytes_u64 > dev_global_mem)
+    {
+        throw std::runtime_error(R"(Tensor(main constructor):
+            requested allocation exceeds device global_mem_size.)");
+    }
+
+    // Allocate USM (shared for HOST, device for DEVICE).
     float_t* raw_ptr = nullptr;
     if (m_mem_loc == MemoryLocation::HOST)
     {
         raw_ptr = static_cast<float_t*>(
-            sycl::malloc_shared(total_size * sizeof(float_t), g_sycl_queue));
+            sycl::malloc_shared(allocation_bytes, g_sycl_queue));
     }
     else
     {
         raw_ptr = static_cast<float_t*>(
-            sycl::malloc_device(total_size * sizeof(float_t), g_sycl_queue));
+            sycl::malloc_device(allocation_bytes, g_sycl_queue));
     }
-
+    if (!raw_ptr)
+    {
+        // Allocation failed; throw bad_alloc.
+        throw std::bad_alloc();
+    }
     m_p_data = std::shared_ptr<float_t>(raw_ptr,
         [](float_t* p)
         {
@@ -61,9 +155,9 @@ Tensor<float_t>::Tensor(const std::vector<uint64_t> & dimensions,
         }
     );
 
-    g_sycl_queue.memset(m_p_data.get(), 0, sizeof(float_t) * total_size).wait();
+    // Zero-initialize the buffer.
+    g_sycl_queue.memset(m_p_data.get(), 0, allocation_bytes).wait();
 }
-
 
 template<typename float_t>
 Tensor<float_t>::Tensor(const Tensor & other)
@@ -74,39 +168,50 @@ Tensor<float_t>::Tensor(const Tensor & other)
 {
     if (m_own_data)
     {
+        // If other has been default constructed, build an empty ptr and return.
+        if (m_dimensions.empty())
+        {
+            m_p_data = std::shared_ptr<float_t>(nullptr);
+            return;
+        }
+
         uint64_t total_size = 1;
         for (uint64_t d : m_dimensions)
         {
             total_size *= d;
         }
 
+        const size_t alloc_bytes =
+            static_cast<size_t>(total_size) * sizeof(float_t);
+
+        // Allocate same kind of USM as other's mem_loc.
         float_t* raw_ptr = nullptr;
         if (m_mem_loc == MemoryLocation::HOST)
         {
-            raw_ptr = static_cast<float_t*>(
-                sycl::malloc_shared(total_size * sizeof(float_t), g_sycl_queue));
+            raw_ptr = static_cast<float_t*>
+                (sycl::malloc_shared(alloc_bytes, g_sycl_queue));
         }
         else
         {
-            raw_ptr = static_cast<float_t*>(
-                sycl::malloc_device(total_size * sizeof(float_t), g_sycl_queue));
+            raw_ptr = static_cast<float_t*>
+                (sycl::malloc_device(alloc_bytes, g_sycl_queue));
+        }
+
+        if (!raw_ptr)
+        {
+            throw std::bad_alloc();
         }
 
         m_p_data = std::shared_ptr<float_t>(raw_ptr,
-            [](float_t* p)
-            {
-                if (p)
-                {
-                    sycl::free(p, g_sycl_queue);
-                }
-            }
-        );
+            [](float_t* p) { if (p) sycl::free(p, g_sycl_queue); });
 
-        g_sycl_queue.memcpy(m_p_data.get(), other.m_p_data.get(),
-                            sizeof(float_t) * total_size).wait();
+        // Copy contents (assume other.m_p_data is valid).
+        g_sycl_queue.memcpy
+            (m_p_data.get(), other.m_p_data.get(), alloc_bytes).wait();
     }
     else
     {
+        // Share control block (view).
         m_p_data = other.m_p_data;
     }
 }
@@ -119,6 +224,8 @@ Tensor<float_t>::Tensor(Tensor && other) noexcept
       m_own_data(other.m_own_data),
       m_mem_loc(other.m_mem_loc)
 {
+    other.m_dimensions.clear();
+    other.m_strides.clear();
     other.m_p_data.reset();
     other.m_own_data = true;
 }
@@ -133,34 +240,41 @@ Tensor<float_t>::Tensor(Tensor & other,
     const uint64_t original_rank = other.m_dimensions.size();
     const uint64_t view_rank = view_shape.size();
 
+    if (!other.m_p_data) {
+        throw std::runtime_error(R"(Tensor(view constructor):
+            cannot create view from uninitialized tensor.)");
+    }
+
     if (start_indices.size() != original_rank)
     {
-        throw std::invalid_argument("Start_indices must match tensor rank.");
+        throw std::invalid_argument(R"(Tensor(view constructor):
+            start_indices must match tensor rank.)");
     }
 
     if (view_rank == 0 || view_rank > original_rank)
     {
         throw std::invalid_argument
-            ("View shape rank must be between 1 and tensor rank.");
+            (R"(Tensor(view constructor):
+                view shape rank must be between 1 and tensor rank.)");
     }
 
+    // Check bounds for start indices and view dimensions.
     for (uint64_t i = 0; i < original_rank; ++i)
     {
-        uint64_t start = start_indices[i];
-        uint64_t dim = other.m_dimensions[i];
-        if (start >= dim)
+        if (start_indices[i] >= other.m_dimensions[i])
         {
-            throw std::out_of_range("Start index out of bounds.");
+            throw std::out_of_range(R"(Tensor(view constructor):
+                start index out of bounds.)");
         }
     }
     for (uint64_t j = 0; j < view_rank; ++j)
     {
         uint64_t i = original_rank - view_rank + j;
-        uint64_t len = view_shape[j];
-        uint64_t dim = other.m_dimensions[i];
-        if (len == 0 || start_indices[i] + len > dim)
+        if (view_shape[j] == 0 ||
+            start_indices[i] + view_shape[j] > other.m_dimensions[i])
         {
-            throw std::out_of_range("View shape out of bounds.");
+            throw std::out_of_range(R"(Tensor(view constructor):
+                view shape out of bounds.)");
         }
     }
 
@@ -173,14 +287,9 @@ Tensor<float_t>::Tensor(Tensor & other,
     m_p_data = std::shared_ptr<float_t>
         (other.m_p_data, other.m_p_data.get() + offset);
 
-    m_dimensions.resize(view_rank);
-    m_strides.resize(view_rank);
-    for (uint64_t j = 0; j < view_rank; ++j)
-    {
-        uint64_t i = original_rank - view_rank + j;
-        m_dimensions[j] = view_shape[j];
-        m_strides[j] = other.m_strides[i];
-    }
+    // Set dimensions and strides for the view.
+    m_dimensions.assign(view_shape.begin(), view_shape.end());
+    m_strides.assign(other.m_strides.end() - view_rank, other.m_strides.end());
 }
 
 template<typename float_t>
@@ -195,22 +304,35 @@ Tensor<float_t> & Tensor<float_t>::operator=(const Tensor & other)
 
         if (m_own_data)
         {
+            if (m_dimensions.empty())
+            {
+                m_p_data = std::shared_ptr<float_t>(nullptr);
+                return *this;
+            }
+
             uint64_t total_size = 1;
             for (uint64_t d : m_dimensions)
             {
                 total_size *= d;
             }
 
+            const size_t alloc_bytes =
+                static_cast<size_t>(total_size) * sizeof(float_t);
+
             float_t* raw_ptr = nullptr;
             if (m_mem_loc == MemoryLocation::HOST)
             {
                 raw_ptr = static_cast<float_t*>(sycl::malloc_shared
-                    (total_size * sizeof(float_t), g_sycl_queue));
+                    (alloc_bytes, g_sycl_queue));
             }
             else
             {
                 raw_ptr = static_cast<float_t*>(sycl::malloc_device
-                    (total_size * sizeof(float_t), g_sycl_queue));
+                    (alloc_bytes, g_sycl_queue));
+            }
+
+            if (!raw_ptr){
+                throw std::bad_alloc();
             }
 
             m_p_data = std::shared_ptr<float_t>(raw_ptr,
@@ -224,7 +346,7 @@ Tensor<float_t> & Tensor<float_t>::operator=(const Tensor & other)
             );
 
             g_sycl_queue.memcpy(m_p_data.get(), other.m_p_data.get(),
-                                sizeof(float_t) * total_size).wait();
+                                alloc_bytes).wait();
         }
         else
         {
@@ -246,6 +368,8 @@ Tensor<float_t>& Tensor<float_t>::operator=(Tensor && other) noexcept
         m_mem_loc = other.m_mem_loc;
 
         other.m_p_data.reset();
+        other.m_dimensions.clear();
+        other.m_strides.clear();
         other.m_own_data = true;
     }
     return *this;
@@ -255,19 +379,29 @@ Tensor<float_t>& Tensor<float_t>::operator=(Tensor && other) noexcept
 template<typename float_t>
 Tensor<float_t> & Tensor<float_t>::operator=(const std::vector<float_t> & values)
 {
+    if (m_dimensions.empty())
+    {
+        throw std::invalid_argument(R"(Tensor(values assignment):
+            target tensor has no elements.)");
+    }
     uint64_t total_size = 1;
     for (uint64_t d : m_dimensions)
     {
         total_size *= d;
     }
 
-    if (values.size() != total_size)
+    uint64_t values_size = static_cast<uint64_t>(values.size());
+    if (values_size != total_size)
     {
-        throw std::invalid_argument("Size mismatch in 1D vector assignment.");
+        throw std::invalid_argument(R"(Tensor(values assignment):
+            size mismatch in 1D vector assignment.)");
     }
 
+    const size_t alloc_bytes =
+                static_cast<size_t>(total_size) * sizeof(float_t);
+
     g_sycl_queue.memcpy
-        (m_p_data.get(), values.data(), sizeof(float_t) * values.size()).wait();
+        (m_p_data.get(), values.data(), alloc_bytes).wait();
 
     return *this;
 }
@@ -306,12 +440,15 @@ Tensor<float_t> & Tensor<float_t>::operator=(float_t val)
     }
 
     uint64_t total_size = 1;
-    for (uint64_t d : m_dimensions) total_size *= d;
+    for (uint64_t d : m_dimensions)
+    {
+        total_size *= d;
+    }
 
     if (total_size != 1)
     {
-        throw std::invalid_argument(
-            "Scalar assignment only allowed for tensors with single element.");
+        throw std::invalid_argument(R"(Tensor(single value assignment):
+            scalar assignment only allowed for tensors with single element.)");
     }
 
     g_sycl_queue.memcpy(m_p_data.get(), &val, sizeof(float_t)).wait();
@@ -324,11 +461,13 @@ Tensor<float_t> Tensor<float_t>::operator[](uint64_t idx)
     const uint64_t rank = static_cast<uint64_t>(m_dimensions.size());
     if (rank == 0)
     {
-        throw std::out_of_range("Tensor has no dimensions.");
+        throw std::out_of_range(R"(Tensor(operator[]):
+            tensor has no elements.)");
     }
     if (idx >= m_dimensions[0])
     {
-        throw std::out_of_range("Index out of bounds (operator[]).");
+        throw std::out_of_range(R"(Tensor(operator[]):
+            Index out of bounds (operator[]).)");
     }
 
     if (rank == 1)
@@ -353,11 +492,13 @@ Tensor<float_t> Tensor<float_t>::operator[](uint64_t idx) const
     const uint64_t rank = static_cast<uint64_t>(m_dimensions.size());
     if (rank == 0)
     {
-        throw std::out_of_range("Tensor has no dimensions.");
+        throw std::out_of_range(R"(Tensor(operator[]):
+            tensor has no elements.)");
     }
     if (idx >= m_dimensions[0])
     {
-        throw std::out_of_range("Index out of bounds (operator[] const).");
+        throw std::out_of_range(R"(Tensor(operator[]):
+            Index out of bounds (operator[]).)");
     }
 
     if (rank == 1)
@@ -379,6 +520,12 @@ Tensor<float_t> Tensor<float_t>::operator[](uint64_t idx) const
 template<typename float_t>
 Tensor<float_t>::operator float_t() const
 {
+    if (m_dimensions.empty())
+    {
+        throw std::invalid_argument(R"(Tensor(implicit type conversion):
+            tensor has no elements.)");
+    }
+
     uint64_t total_size = 1;
     for (uint64_t d : m_dimensions)
     {
@@ -388,7 +535,8 @@ Tensor<float_t>::operator float_t() const
     if (total_size != 1)
     {
         throw std::invalid_argument
-            ("Scalar read only allowed for tensors with single element.");
+            (R"(Tensor(implicit type conversion):
+                scalar read only allowed for tensors with single element.)");
     }
 
     float_t tmp;
@@ -402,9 +550,11 @@ Tensor<float_t> Tensor<float_t>::operator+(const Tensor & other) const
 {
     if (m_dimensions.empty() || other.m_dimensions.empty())
     {
-        throw std::invalid_argument("Rank-0 tensors not supported.");
+        throw std::invalid_argument(R"(Tensor(operator+):
+            either tensor has no elements.)");
     }
 
+    // Align the shapes for broadcasting.
     const uint64_t rank_a = static_cast<uint64_t>(m_dimensions.size());
     const uint64_t rank_b = static_cast<uint64_t>(other.m_dimensions.size());
     const uint64_t max_rank = std::max(rank_a, rank_b);
@@ -420,7 +570,6 @@ Tensor<float_t> Tensor<float_t>::operator+(const Tensor & other) const
         a_shape_aligned[max_rank - rank_a + i] = m_dimensions[i];
         a_strides_aligned[max_rank - rank_a + i] = m_strides[i];
     }
-
     for (uint64_t i = 0; i < rank_b; ++i)
     {
         b_shape_aligned[max_rank - rank_b + i] = other.m_dimensions[i];
@@ -454,17 +603,14 @@ Tensor<float_t> Tensor<float_t>::operator+(const Tensor & other) const
         }
         else
         {
-            throw std::invalid_argument("Incompatible shapes for broadcasting.");
+            throw std::invalid_argument(R"(Tensor(operator+):
+                incompatible shapes for broadcasting.)");
         }
     }
 
     uint64_t total_size = 1;
     for (uint64_t dim : out_shape)
     {
-        if (dim == 0)
-        {
-            throw std::invalid_argument("Zero-sized axis not supported.");
-        }
         total_size *= dim;
     }
 
@@ -576,13 +722,16 @@ Tensor<float_t> Tensor<float_t>::operator+(const Tensor & other) const
     {
         if (err == 1)
         {
-            throw std::runtime_error("NaN detected in inputs.");
+            throw std::runtime_error(R"(Tensor(operator+):
+                NaN detected in inputs.)");
         }
         if (err == 2)
         {
-            throw std::runtime_error("Non-finite result (overflow or Inf).");
+            throw std::runtime_error(R"(Tensor(operator+):
+                non-finite result (overflow or Inf).)");
         }
-        throw std::runtime_error("Numeric error during element-wise addition.");
+        throw std::runtime_error(R"(Tensor(operator+):
+            numeric error during element-wise addition.)");
     }
 
     return result;
@@ -593,7 +742,8 @@ Tensor<float_t> Tensor<float_t>::operator-(const Tensor & other) const
 {
     if (m_dimensions.empty() || other.m_dimensions.empty())
     {
-        throw std::invalid_argument("Rank-0 tensors not supported.");
+        throw std::invalid_argument(R"(Tensor(operator-):
+            either tensor has no elements.)");
     }
 
     const uint64_t rank_a = static_cast<uint64_t>(m_dimensions.size());
@@ -645,17 +795,14 @@ Tensor<float_t> Tensor<float_t>::operator-(const Tensor & other) const
         }
         else
         {
-            throw std::invalid_argument("Incompatible shapes for broadcasting.");
+            throw std::invalid_argument(R"(Tensor(operator-):
+                incompatible shapes for broadcasting.)");
         }
     }
 
     uint64_t total_size = 1;
     for (uint64_t dim : out_shape)
     {
-        if (dim == 0)
-        {
-            throw std::invalid_argument("Zero-sized axis not supported.");
-        }
         total_size *= dim;
     }
 
@@ -713,6 +860,7 @@ Tensor<float_t> Tensor<float_t>::operator-(const Tensor & other) const
             uint64_t offset_a = 0;
             uint64_t offset_b = 0;
 
+            // Generic loop to find the index given the coordinates.
             for (uint64_t dim = 0; dim < max_rank; ++dim)
             {
                 uint64_t stride = p_result_strides[dim];
@@ -767,13 +915,16 @@ Tensor<float_t> Tensor<float_t>::operator-(const Tensor & other) const
     {
         if (err == 1)
         {
-            throw std::runtime_error("NaN detected in inputs.");
+            throw std::runtime_error(R"(Tensor(operator-):
+                NaN detected in inputs.)");
         }
         if (err == 2)
         {
-            throw std::runtime_error("Non-finite result (overflow or Inf).");
+            throw std::runtime_error(R"(Tensor(operator-):
+                non-finite result (overflow or Inf).)");
         }
-        throw std::runtime_error("Numeric error during element-wise addition.");
+        throw std::runtime_error(R"(Tensor(operator-):
+            numeric error during element-wise addition.)");
     }
 
     return result;
@@ -784,7 +935,8 @@ Tensor<float_t> Tensor<float_t>::operator*(const Tensor & other) const
 {
     if (m_dimensions.empty() || other.m_dimensions.empty())
     {
-        throw std::invalid_argument("Rank-0 tensors not supported.");
+        throw std::invalid_argument(R"(Tensor(operator*):
+            either tensor has no elements.)");
     }
 
     const uint64_t rank_a = static_cast<uint64_t>(m_dimensions.size());
@@ -836,17 +988,14 @@ Tensor<float_t> Tensor<float_t>::operator*(const Tensor & other) const
         }
         else
         {
-            throw std::invalid_argument("Incompatible shapes for broadcasting.");
+            throw std::invalid_argument(R"(Tensor(operator*):
+                incompatible shapes for broadcasting.)");
         }
     }
 
     uint64_t total_size = 1;
     for (uint64_t dim : out_shape)
     {
-        if (dim == 0)
-        {
-            throw std::invalid_argument("Zero-sized axis not supported.");
-        }
         total_size *= dim;
     }
 
@@ -904,6 +1053,7 @@ Tensor<float_t> Tensor<float_t>::operator*(const Tensor & other) const
             uint64_t offset_a = 0;
             uint64_t offset_b = 0;
 
+            // Generic loop to find the index given the coordinates.
             for (uint64_t dim = 0; dim < max_rank; ++dim)
             {
                 uint64_t stride = p_result_strides[dim];
@@ -958,13 +1108,16 @@ Tensor<float_t> Tensor<float_t>::operator*(const Tensor & other) const
     {
         if (err == 1)
         {
-            throw std::runtime_error("NaN detected in inputs.");
+            throw std::runtime_error(R"(Tensor(operator*):
+                NaN detected in inputs.)");
         }
         if (err == 2)
         {
-            throw std::runtime_error("Non-finite result (overflow or Inf).");
+            throw std::runtime_error(R"(Tensor(operator*):
+                non-finite result (overflow or Inf).)");
         }
-        throw std::runtime_error("Numeric error during element-wise addition.");
+        throw std::runtime_error(R"(Tensor(operator*):
+            numeric error during element-wise addition.)");
     }
 
     return result;
@@ -975,7 +1128,8 @@ Tensor<float_t> Tensor<float_t>::operator/(const Tensor & other) const
 {
     if (m_dimensions.empty() || other.m_dimensions.empty())
     {
-        throw std::invalid_argument("Rank-0 tensors not supported.");
+        throw std::invalid_argument(R"(Tensor(operator/):
+            either tensor has no elements.)");
     }
 
     const uint64_t rank_a = static_cast<uint64_t>(m_dimensions.size());
@@ -1026,17 +1180,14 @@ Tensor<float_t> Tensor<float_t>::operator/(const Tensor & other) const
         }
         else
         {
-            throw std::invalid_argument("Incompatible shapes for broadcasting.");
+            throw std::invalid_argument(R"(Tensor(operator/):
+                incompatible shapes for broadcasting.)");
         }
     }
 
     uint64_t total_size = 1;
     for (uint64_t dim : out_shape)
     {
-        if (dim == 0)
-        {
-            throw std::invalid_argument("Zero-sized axis not supported.");
-        }
         total_size *= dim;
     }
 
@@ -1068,12 +1219,12 @@ Tensor<float_t> Tensor<float_t>::operator/(const Tensor & other) const
     g_sycl_queue.memcpy(p_b_strides,
         b_strides_broadcasted.data(), sizeof(uint64_t) * max_rank).wait();
 
-    /**
-     * Shared error flag:
-     * 0 = OK,
-     * 1 = NaN in inputs,
-     * 2 = division by zero,
-     * 3 = non-finite result
+    /*
+      Shared error flag:
+      0 = OK,
+      1 = NaN in inputs,
+      2 = division by zero,
+      3 = non-finite result
      */
     int32_t* p_error_flag = static_cast<int32_t*>
         (sycl::malloc_shared(sizeof(int32_t), g_sycl_queue));
@@ -1098,6 +1249,7 @@ Tensor<float_t> Tensor<float_t>::operator/(const Tensor & other) const
             uint64_t offset_a = 0;
             uint64_t offset_b = 0;
 
+            // Generic loop to find the index given the coordinates.
             for (uint64_t dim = 0; dim < max_rank; ++dim)
             {
                 uint64_t stride = p_result_strides[dim];
@@ -1170,17 +1322,21 @@ Tensor<float_t> Tensor<float_t>::operator/(const Tensor & other) const
     {
         if (err == 1)
         {
-            throw std::runtime_error("NaN detected in inputs.");
+            throw std::runtime_error(R"(Tensor(operator/):
+                NaN detected in inputs.)");
         }
         if (err == 2)
         {
-            throw std::runtime_error("Division by zero detected.");
+            throw std::runtime_error(R"(Tensor(operator/):
+                division by zero detected.)");
         }
         if (err == 3)
         {
-            throw std::runtime_error("Non-finite result detected.");
+            throw std::runtime_error(R"(Tensor(operator/):
+                non-finite result detected.)");
         }
-        throw std::runtime_error("Numeric error during element-wise division.");
+        throw std::runtime_error(R"(Tensor(operator/):
+            numeric error during element-wise division.)");
     }
 
     return result;
@@ -1191,26 +1347,14 @@ Tensor<float_t> Tensor<float_t>::operator-() const
 {
     if (m_dimensions.empty())
     {
-        throw std::invalid_argument("Rank-0 tensors not supported.");
+        throw std::invalid_argument(R"(Tensor(operator-):
+            tensor has no elements.)");
     }
 
     const uint64_t rank = static_cast<uint64_t>(m_dimensions.size());
 
-    std::vector<uint64_t> shape_aligned(rank);
-    std::vector<uint64_t> strides_aligned(rank);
-
-    for (uint64_t i = 0; i < rank; ++i)
-    {
-        if (m_dimensions[i] == 0)
-        {
-            throw std::invalid_argument("Zero-sized axis not supported.");
-        }
-        shape_aligned[i] = m_dimensions[i];
-        strides_aligned[i] = m_strides[i];
-    }
-
     uint64_t total_size = 1;
-    for (auto dim : shape_aligned)
+    for (uint64_t dim : m_dimensions)
     {
         total_size *= dim;
     }
@@ -1224,9 +1368,9 @@ Tensor<float_t> Tensor<float_t>::operator-() const
         (sycl::malloc_device(sizeof(uint64_t) * rank, g_sycl_queue));
 
     g_sycl_queue.memcpy
-        (p_shape, shape_aligned.data(), sizeof(uint64_t) * rank).wait();
+        (p_shape, m_dimensions.data(), sizeof(uint64_t) * rank).wait();
     g_sycl_queue.memcpy
-        (p_strides, strides_aligned.data(), sizeof(uint64_t) * rank).wait();
+        (p_strides, m_strides.data(), sizeof(uint64_t) * rank).wait();
 
     int32_t* p_error_flag = static_cast<int32_t*>
         (sycl::malloc_shared(sizeof(int32_t), g_sycl_queue));
@@ -1249,6 +1393,7 @@ Tensor<float_t> Tensor<float_t>::operator-() const
             uint64_t remainder = flat_idx;
             uint64_t offset = 0;
 
+            // Generic loop to find the index given the coordinates.
             for (uint64_t dim = 0; dim < rank; ++dim)
             {
                 uint64_t divisor = 1;
@@ -1283,7 +1428,8 @@ Tensor<float_t> Tensor<float_t>::operator-() const
 
     if (err != 0)
     {
-        throw std::runtime_error("NaN detected in input.");
+        throw std::runtime_error(R"(Tensor(operator-):
+            NaN detected in input.)");
     }
 
     return result;
@@ -1292,10 +1438,16 @@ Tensor<float_t> Tensor<float_t>::operator-() const
 template<typename float_t>
 void Tensor<float_t>::to(MemoryLocation target_loc)
 {
+    if (m_dimensions.empty())
+    {
+        throw std::invalid_argument(R"(Tensor(to):
+            tensor has no elements.)");
+    }
     if (!m_own_data)
     {
         throw std::runtime_error
-            ("Cannot move memory of a Tensor view (non-owning).");
+            (R"(Tensor(to):
+                cannot move memory of a Tensor view (non-owning).)");
     }
 
     if (m_mem_loc == target_loc)
@@ -1320,6 +1472,10 @@ void Tensor<float_t>::to(MemoryLocation target_loc)
         raw_ptr = static_cast<float_t*>(
             sycl::malloc_device(total_size * sizeof(float_t), g_sycl_queue));
     }
+    if (!raw_ptr)
+    {
+        throw std::bad_alloc();
+    }
 
     std::shared_ptr<float_t> new_ptr = std::shared_ptr<float_t>(raw_ptr,
         [](float_t* p)
@@ -1343,17 +1499,15 @@ void Tensor<float_t>::reshape(const std::vector<uint64_t>& new_dimensions)
 {
     if (new_dimensions.empty())
     {
-        throw std::invalid_argument("Reshape: new_dimensions cannot be empty");
+        throw std::invalid_argument(R"(Tensor(reshape):
+            new_dimensions cannot be empty.)");
     }
+
+    constexpr uint64_t U64_MAX = std::numeric_limits<uint64_t>::max();
 
     uint64_t og_total_size = 1;
     for (uint64_t dim : m_dimensions)
     {
-        if (dim == 0)
-        {
-            throw std::runtime_error
-                ("Reshape: tensor with zero dimension cannot be reshaped.");
-        }
         og_total_size *= dim;
     }
 
@@ -1363,11 +1517,12 @@ void Tensor<float_t>::reshape(const std::vector<uint64_t>& new_dimensions)
         if (dim == 0)
         {
             throw std::invalid_argument
-                ("Reshape: new_dimensions cannot contain zero");
+                ("Tensor(reshape): new_dimensions cannot contain zero.");
         }
-        if (dim > UINT64_MAX / new_total_size)
+        if (new_total_size > U64_MAX / dim)
         {
-            throw std::overflow_error("Reshape: dimension product overflow.");
+            throw std::overflow_error
+                ("Tensor(reshape): dimension product overflow.");
         }
         new_total_size *= dim;
     }
@@ -1375,7 +1530,8 @@ void Tensor<float_t>::reshape(const std::vector<uint64_t>& new_dimensions)
     if (new_total_size != og_total_size)
     {
         throw std::invalid_argument
-            ("Reshape: total number of elements must remain the same");
+            (R"(Tensor(reshape):
+                total number of elements must remain the same.)");
     }
 
     m_dimensions = new_dimensions;

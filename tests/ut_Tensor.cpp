@@ -144,11 +144,42 @@ TEST(TENSOR, compute_strides_larger_tensor)
 }
 
 /**
- * @test TENSOR.constructor_sets_dimensions_and_strides
+ * @test TENSOR.compute_strides_zero_dimension_throws
+ * @brief compute_strides() should throw if any dimension is zero.
+ */
+TEST(TENSOR, compute_strides_zero_dimension_throws)
+{
+    Tensor<float> t;
+    t.m_dimensions = { 3, 0, 2 };
+    EXPECT_THROW(t.compute_strides(), std::invalid_argument);
+}
+
+/**
+ * @test TENSOR.compute_strides_overflow_throws
+ * @brief compute_strides() should throw if stride multiplication would overflow.
+ *
+ * Choose suffix dims so their product exceeds uint64_t and triggers overflow.
+ */
+TEST(TENSOR, compute_strides_overflow_throws)
+{
+    const uint64_t U64_MAX = std::numeric_limits<uint64_t>::max();
+
+    uint64_t dim1 = (U64_MAX / 2) + 1;
+    uint64_t dim2 = 2;
+
+    Tensor<float> t;
+    t.m_dimensions = { 1, dim1, dim2 };
+
+    EXPECT_THROW(t.compute_strides(), std::overflow_error);
+}
+
+
+/**
+ * @test TENSOR.main_constructor_sets_dimensions_and_strides
  * @brief Tests that the Tensor constructor
  * correctly sets dimensions and computes strides.
  */
-TEST(TENSOR, constructor_sets_dimensions_and_strides)
+TEST(TENSOR, main_constructor_sets_dimensions_and_strides)
 {
     std::vector<uint64_t> dims = { 2, 3, 4 };
     Tensor<float> t(dims, MemoryLocation::DEVICE);
@@ -161,11 +192,11 @@ TEST(TENSOR, constructor_sets_dimensions_and_strides)
 }
 
 /**
- * @test TENSOR.constructor_zero_initializes_data
+ * @test TENSOR.main_constructor_zero_initializes_data
  * @brief Tests that the Tensor constructor allocates the
  * correct amount of memory and initializes it to zero.
  */
-TEST(TENSOR, constructor_zero_initializes_data)
+TEST(TENSOR, main_constructor_zero_initializes_data)
 {
     std::vector<uint64_t> dims = { 2, 3 };
     Tensor<float> t(dims, MemoryLocation::HOST);
@@ -193,54 +224,10 @@ TEST(TENSOR, constructor_zero_initializes_data)
 }
 
 /**
- * @test TENSOR.copy_constructor
- * @brief Tests copy constructor.
- */
-TEST(TENSOR, copy_constructor)
-{
-    Tensor<float> t1({2, 2}, MemoryLocation::DEVICE);
-    std::vector<float> values = {1.0f, 2.0f, 3.0f, 4.0f};
-    t1 = values;
-
-    Tensor<float> t2(t1);
-
-    EXPECT_EQ(t2.m_mem_loc, t1.m_mem_loc);
-
-    std::vector<float> host(4);
-    g_sycl_queue.memcpy
-        (host.data(), t2.m_p_data.get(), sizeof(float) * 4).wait();
-
-    EXPECT_EQ(host[0], 1.0f);
-    EXPECT_EQ(host[1], 2.0f);
-    EXPECT_EQ(host[2], 3.0f);
-    EXPECT_EQ(host[3], 4.0f);
-}
-
-/**
- * @test TENSOR.move_constructor
- * @brief Tests move constructor.
- */
-TEST(TENSOR, move_constructor)
-{
-    Tensor<float> t1({2, 2}, MemoryLocation::HOST);
-    std::vector<float> values = {5.0f, 6.0f, 7.0f, 8.0f};
-    t1 = values;
-
-    float* original_ptr = t1.m_p_data.get();
-    MemoryLocation original_loc = t1.m_mem_loc;
-
-    Tensor<float> t2(std::move(t1));
-
-    EXPECT_EQ(t2.m_p_data.get(), original_ptr);
-    EXPECT_EQ(t2.m_mem_loc, original_loc);
-    EXPECT_EQ(t1.m_p_data.get(), nullptr);
-}
-
-/**
- * @test TENSOR.constructor_memory_location_and_access
+ * @test TENSOR.main_constructor_memory_location_and_access
  * @brief Tests correct memory location assignment.
  */
-TEST(TENSOR, constructor_memory_location_and_access)
+TEST(TENSOR, main_constructor_memory_location_and_access)
 {
     // DEVICE tensor test: write via kernel, then copy back to host and verify.
     Tensor<float> t_device({1, 1}, MemoryLocation::DEVICE);
@@ -273,17 +260,108 @@ TEST(TENSOR, constructor_memory_location_and_access)
 }
 
 /**
- * @test TENSOR.copy_assignment_operator
- * @brief Tests copy assignment operator.
+ * @test TENSOR.main_constructor_empty_dimensions
+ * @brief Throws invalid_argument when dimensions vector is empty.
  */
-TEST(TENSOR, copy_assignment_operator)
+TEST(TENSOR, main_constructor_empty_dimensions)
+{
+    std::vector<uint64_t> dims = {};
+    EXPECT_THROW(
+        Tensor<float> t(dims, MemoryLocation::HOST),
+        std::invalid_argument
+    );
+}
+
+/**
+ * @test TENSOR.main_constructor_zero_dimension
+ * @brief Throws invalid_argument when any dimension is zero.
+ */
+TEST(TENSOR, main_constructor_zero_dimension)
+{
+    std::vector<uint64_t> dims = { 2, 0, 3 };
+
+    EXPECT_THROW(
+        Tensor<float> t(dims, MemoryLocation::HOST),
+        std::invalid_argument
+    );
+}
+
+/**
+ * @test TENSOR.main_constructor_element_count_overflow
+ * @brief Throws overflow_error when total_size would overflow uint64_t.
+ */
+TEST(TENSOR, main_constructor_element_count_overflow)
+{
+    std::vector<uint64_t> dims = { std::numeric_limits<uint64_t>::max(), 2 };
+
+    EXPECT_THROW(
+        Tensor<float> t(dims, MemoryLocation::HOST),
+        std::overflow_error
+    );
+}
+
+/**
+ * @test TENSOR.main_constructor_allocation_bytes_overflow
+ * @brief Throws overflow_error when allocation size exceeds uint64_t.
+ */
+TEST(TENSOR, main_constructor_allocation_bytes_overflow)
+{
+    std::vector<uint64_t> dims =
+        { std::numeric_limits<uint64_t>::max() / sizeof(float) + 1 };
+
+    EXPECT_THROW(
+        Tensor<float> t(dims, MemoryLocation::HOST),
+        std::overflow_error
+    );
+}
+
+/**
+ * @test TENSOR.main_constructor_exceeds_device_max_alloc
+ * @brief Throws runtime_error if requested allocation exceeds
+ * device max_mem_alloc_size.
+ */
+TEST(TENSOR, main_constructor_exceeds_device_max_alloc)
+{
+    auto dev = g_sycl_queue.get_device();
+    uint64_t dev_max_alloc =
+        dev.get_info<sycl::info::device::max_mem_alloc_size>();
+
+    std::vector<uint64_t> dims = { (dev_max_alloc / sizeof(float)) + 1 };
+    EXPECT_THROW(
+        Tensor<float> t(dims, MemoryLocation::DEVICE),
+        std::runtime_error
+    );
+}
+
+/**
+ * @test TENSOR.main_constructor_exceeds_device_global_mem
+ * @brief Throws runtime_error if requested allocation exceeds
+ * device global_mem_size.
+ */
+TEST(TENSOR, main_constructor_exceeds_device_global_mem)
+{
+    auto dev = g_sycl_queue.get_device();
+    uint64_t dev_global_mem =
+        dev.get_info<sycl::info::device::global_mem_size>();
+
+    std::vector<uint64_t> dims = { (dev_global_mem / sizeof(float)) + 1 };
+    EXPECT_THROW(
+        Tensor<float> t(dims, MemoryLocation::DEVICE),
+        std::runtime_error
+    );
+}
+
+/**
+ * @test TENSOR.copy_constructor
+ * @brief Tests copy constructor.
+ */
+TEST(TENSOR, copy_constructor)
 {
     Tensor<float> t1({2, 2}, MemoryLocation::DEVICE);
-    std::vector<float> values = {9.0f, 10.0f, 11.0f, 12.0f};
+    std::vector<float> values = {1.0f, 2.0f, 3.0f, 4.0f};
     t1 = values;
 
-    Tensor<float> t2;
-    t2 = t1;
+    Tensor<float> t2(t1);
 
     EXPECT_EQ(t2.m_mem_loc, t1.m_mem_loc);
 
@@ -291,27 +369,85 @@ TEST(TENSOR, copy_assignment_operator)
     g_sycl_queue.memcpy
         (host.data(), t2.m_p_data.get(), sizeof(float) * 4).wait();
 
-    EXPECT_EQ(host[0], 9.0f);
-    EXPECT_EQ(host[1], 10.0f);
-    EXPECT_EQ(host[2], 11.0f);
-    EXPECT_EQ(host[3], 12.0f);
+    EXPECT_EQ(host[0], 1.0f);
+    EXPECT_EQ(host[1], 2.0f);
+    EXPECT_EQ(host[2], 3.0f);
+    EXPECT_EQ(host[3], 4.0f);
 }
 
 /**
- * @test TENSOR.move_assignment_operator
- * @brief Tests move assignment operator.
+ * @test TENSOR.copy_constructor_default
+ * @brief Tests that copying a default-constructed tensor
+ * results in another empty tensor with nullptr data.
  */
-TEST(TENSOR, move_assignment_operator)
+TEST(TENSOR, copy_constructor_on_default_constructed)
+{
+    Tensor<float> t1;
+
+    Tensor<float> t2(t1);
+
+    EXPECT_TRUE(t2.m_dimensions.empty());
+    EXPECT_EQ(t2.m_p_data, nullptr);
+    EXPECT_TRUE(t2.m_own_data);
+}
+
+/**
+ * @test TENSOR.copy_constructor_host
+ * @brief Tests copy constructor with a tensor allocated in HOST memory.
+ * Ensures contents are copied correctly.
+ */
+TEST(TENSOR, copy_constructor_host)
 {
     Tensor<float> t1({2, 2}, MemoryLocation::HOST);
-    std::vector<float> values = {13.0f, 14.0f, 15.0f, 16.0f};
+    std::vector<float> values = {10.0f, 20.0f, 30.0f, 40.0f};
+    t1 = values;
+
+    Tensor<float> t2(t1);
+
+    std::vector<float> host(4);
+    std::memcpy(host.data(), t2.m_p_data.get(), sizeof(float) * 4);
+
+    EXPECT_EQ(host[0], 10.0f);
+    EXPECT_EQ(host[1], 20.0f);
+    EXPECT_EQ(host[2], 30.0f);
+    EXPECT_EQ(host[3], 40.0f);
+}
+
+/**
+ * @test TENSOR.copy_constructor_view
+ * @brief Tests copy constructor on a view tensor (non-owning).
+ * Copying a view must produce another view, sharing the same memory.
+ */
+TEST(TENSOR, copy_constructor_view)
+{
+    Tensor<float> t1({4}, MemoryLocation::DEVICE);
+    std::vector<float> values = {1, 2, 3, 4};
+    t1 = values;
+
+    Tensor<float> view(t1, {2}, {2});
+    ASSERT_FALSE(view.m_own_data);
+
+    Tensor<float> copy(view);
+
+    EXPECT_EQ(copy.m_dimensions, view.m_dimensions);
+    EXPECT_FALSE(copy.m_own_data);
+    EXPECT_EQ(copy.m_p_data.get(), view.m_p_data.get());
+}
+
+/**
+ * @test TENSOR.move_constructor
+ * @brief Tests move constructor.
+ */
+TEST(TENSOR, move_constructor)
+{
+    Tensor<float> t1({2, 2}, MemoryLocation::HOST);
+    std::vector<float> values = {5.0f, 6.0f, 7.0f, 8.0f};
     t1 = values;
 
     float* original_ptr = t1.m_p_data.get();
     MemoryLocation original_loc = t1.m_mem_loc;
 
-    Tensor<float> t2;
-    t2 = std::move(t1);
+    Tensor<float> t2(std::move(t1));
 
     EXPECT_EQ(t2.m_p_data.get(), original_ptr);
     EXPECT_EQ(t2.m_mem_loc, original_loc);
@@ -319,47 +455,12 @@ TEST(TENSOR, move_assignment_operator)
 }
 
 /**
- * @test TENSOR.assignment_from_flat_vector
- * @brief Tests assignment from flat std::vector.
- */
-TEST(TENSOR, assignment_from_flat_vector)
-{
-    std::vector<float> values = {3.3f, 3.4f, 3.5f, 3.6f};
-
-    Tensor<float> t({2, 2});
-    t = values;
-
-    std::vector<float> host(4);
-    g_sycl_queue.memcpy
-        (host.data(), t.m_p_data.get(), sizeof(float) * 4).wait();
-
-    EXPECT_FLOAT_EQ(host[0], 3.3f);
-    EXPECT_FLOAT_EQ(host[1], 3.4f);
-    EXPECT_FLOAT_EQ(host[2], 3.5f);
-    EXPECT_FLOAT_EQ(host[3], 3.6f);
-}
-
-/**
- * @test TENSOR.assign_flat_vector_size_mismatch_throws
- * @brief Throws if assigning flat vector with incorrect size.
- */
-TEST(TENSOR, assign_flat_vector_size_mismatch_throws)
-{
-    Tensor<float> t({2, 2});
-    std::vector<float> values = {1.0f, 2.0f};
-
-    EXPECT_THROW({
-        t = values;
-    }, std::invalid_argument);
-}
-
-/**
- * @test TENSOR.slice_view_preserves_strides_and_data
+ * @test TENSOR.view_constructor_preserves_strides_and_data
  * @brief Tests that slicing a CHW-format tensor creates
  * a view with correct strides and verifies that the data
  * accessed via the view matches expected values.
  */
-TEST(TENSOR, slice_view_preserves_strides_and_data)
+TEST(TENSOR, view_constructor_preserves_strides_and_data)
 {
     Tensor<float> img({3, 4, 5}, MemoryLocation::DEVICE);
     EXPECT_EQ(img.m_mem_loc, MemoryLocation::DEVICE);
@@ -406,11 +507,11 @@ TEST(TENSOR, slice_view_preserves_strides_and_data)
 }
 
 /**
- * @test TENSOR.slice_identity_preserves_layout
+ * @test TENSOR.view_constructor_identity_preserves_layout
  * @brief Verifies that slicing a tensor without dropping
  * any axes returns a view with identical dimensions, strides, and values.
  */
-TEST(TENSOR, slice_identity_preserves_layout)
+TEST(TENSOR, view_constructor_identity_preserves_layout)
 {
     Tensor<float> t({2, 3}, MemoryLocation::DEVICE);
     EXPECT_EQ(t.m_mem_loc, MemoryLocation::DEVICE);
@@ -439,12 +540,12 @@ TEST(TENSOR, slice_identity_preserves_layout)
 }
 
 /**
- * @test TENSOR.slice_invalid_arguments_throw
+ * @test TENSOR.view_constructor_invalid_arguments_throw
  * @brief Ensures that invalid slice arguments
  * (e.g., mismatched ranks, out-of-bounds access)
  * correctly throw exceptions.
  */
-TEST(TENSOR, slice_invalid_arguments_throw)
+TEST(TENSOR, view_constructor_invalid_arguments_throw)
 {
     Tensor<float> t({2, 2, 2});
 
@@ -464,14 +565,14 @@ TEST(TENSOR, slice_invalid_arguments_throw)
 }
 
 /**
- * @test TENSOR.slice_4d_drops_prefix_axes
+ * @test TENSOR.view_constructor_4d_drops_prefix_axes
  * @brief Tests slicing a 4D tensor while dropping the first two axes,
  * verifying correct shape, strides, and values in the resulting view.
  *
  * The original tensor has shape {2, 3, 4, 5} and is filled with values from 1 to 120.
  * The slice extracts the {4, 5} sub-tensor at position (0, 0, :, :)
  */
-TEST(TENSOR, slice_4d_drops_prefix_axes)
+TEST(TENSOR, view_constructor_4d_drops_prefix_axes)
 {
     Tensor<float> t({2, 3, 4, 5});
     std::vector<float> vals(120);
@@ -509,11 +610,11 @@ TEST(TENSOR, slice_4d_drops_prefix_axes)
 }
 
 /**
- * @test TENSOR.slice_4d_extracts_3d_volume
+ * @test TENSOR.view_constructor_4d_extracts_3d_volume
  * @brief Extracts a 3D chunk from a 4D tensor by dropping the first axis and
  * verifies shape, stride, and copied values.
  */
-TEST(TENSOR, slice_4d_extracts_3d_volume)
+TEST(TENSOR, view_constructor_4d_extracts_3d_volume)
 {
     Tensor<float> t({2, 3, 4, 5});
     std::vector<float> vals(120);
@@ -549,11 +650,11 @@ TEST(TENSOR, slice_4d_extracts_3d_volume)
 }
 
 /**
- * @test TENSOR.slice_4d_extracts_1d_row
+ * @test TENSOR.view_constructor_4d_extracts_1d_row
  * @brief Slices a single row (1D) from the last dimension of a 4D tensor,
  * and verifies the extracted values.
  */
-TEST(TENSOR, slice_4d_extracts_1d_row)
+TEST(TENSOR, view_constructor_4d_extracts_1d_row)
 {
     Tensor<float> t({2, 3, 4, 5});
     std::vector<float> vals(120);
@@ -584,12 +685,12 @@ TEST(TENSOR, slice_4d_extracts_1d_row)
 }
 
 /**
- * @test TENSOR.slice_chw_extracts_large_patch
+ * @test TENSOR.view_constructor_chw_extracts_large_patch
  * @brief Slices a 100x100 patch from a 3D CHW-format tensor
  * at a specified spatial location.
  * Verifies shape, stride, and content correctness.
  */
-TEST(TENSOR, slice_chw_extracts_large_patch)
+TEST(TENSOR, view_constructor_chw_extracts_large_patch)
 {
     Tensor<float> img({3, 256, 256});
     std::vector<float> vals(3 * 256 * 256);
@@ -633,14 +734,14 @@ TEST(TENSOR, slice_chw_extracts_large_patch)
 }
 
 /**
- * @test TENSOR.tensor_view_modification_reflects_in_original
+ * @test TENSOR.view_constructor_modification_reflects_in_original
  * @brief Tests that modifying a tensor view updates the original tensor's memory.
  *
  * A view is created on a region of the tensor. Data is written via the view and
  * then read again from a second view on the original tensor. The test verifies
  * that the data matches, confirming memory is shared.
  */
-TEST(TENSOR, tensor_view_modification_reflects_in_original)
+TEST(TENSOR, view_constructor_modification_reflects_in_original)
 {
     Tensor<float> t({3, 4, 5});
     std::vector<float> vals(3 * 4 * 5, 0.0f);
@@ -683,12 +784,12 @@ TEST(TENSOR, tensor_view_modification_reflects_in_original)
 }
 
 /**
- * @test TENSOR.owner_destroyed_before_view
+ * @test TENSOR.view_constructor_owner_destroyed_before_view
  * @brief Ensure a view's aliasing shared_ptr keeps the underlying buffer alive
  * after the original owner goes out of scope.
  */
 
-TEST(TENSOR, owner_destroyed_before_view)
+TEST(TENSOR, view_constructor_owner_destroyed_before_view)
 {
     std::weak_ptr<float> weak_data_ptr;
     Tensor<float> view;
@@ -707,12 +808,12 @@ TEST(TENSOR, owner_destroyed_before_view)
 }
 
 /**
- * @test TENSOR.view_destroyed_before_owner
+ * @test TENSOR.view_constructor_view_destroyed_before_owner
  * @brief Ensure the buffer remains alive while the owner exists and is freed
  * after the owner releases ownership.
  */
 
-TEST(TENSOR, view_destroyed_before_owner)
+TEST(TENSOR, view_constructor_view_destroyed_before_owner)
 {
     std::weak_ptr<float> weak_data_ptr;
 
@@ -736,172 +837,372 @@ TEST(TENSOR, view_destroyed_before_owner)
 }
 
 /**
- * @test TENSOR.to_device_to_host
- * @brief Moves a tensor from DEVICE to HOST
- * and verifies data integrity and metadata.
+ * @test TENSOR.view_constructor_from_uninitialized_throws
+ * @brief Creating a view from a default-constructed/moved-from
+ * tensor must throw.
  */
-TEST(TENSOR, to_device_to_host)
+TEST(TENSOR, view_constructor_from_uninitialized_throws)
 {
-    Tensor<float> t({4, 4}, MemoryLocation::DEVICE);
+    Tensor<float> owner;
 
-    uint64_t total_size = 1;
-    for (uint64_t d : t.m_dimensions)
-    {
-        total_size *= d;
-    }
+    std::vector<uint64_t> start = {0};
+    std::vector<uint64_t> shape = {1};
 
-    std::vector<float> values(total_size);
-    for (uint64_t i = 0; i < total_size; ++i)
-    {
-        values[i] = static_cast<float>(i + 1);
-    }
+    EXPECT_THROW(
+        Tensor<float> view(owner, start, shape),
+        std::runtime_error
+    );
 
+    Tensor<float> valid({2,2}, MemoryLocation::HOST);
+    std::vector<float> vals = {1,2,3,4};
+    valid = vals;
+
+    Tensor<float> moved = std::move(valid);
+    EXPECT_THROW(
+        Tensor<float> view2
+            (valid, std::vector<uint64_t>{0,0}, std::vector<uint64_t>{1,1}),
+        std::runtime_error
+    );
+}
+
+/**
+ * @test TENSOR.view_constructor_alias_pointer_offset
+ * @brief View constructor must alias the owner's pointer at the correct offset.
+ */
+TEST(TENSOR, view_constructor_alias_pointer_offset)
+{
+    Tensor<float> owner({2,3}, MemoryLocation::HOST);
+    std::vector<float> vals = { 10,11,12, 20,21,22 };
+    owner = vals;
+
+    std::vector<uint64_t> start = {1, 1};
+    std::vector<uint64_t> shape = {1, 2};
+
+    Tensor<float> view(owner, start, shape);
+
+    uint64_t offset =
+        start[0] * owner.m_strides[0] + start[1] * owner.m_strides[1];
+
+    EXPECT_EQ(view.m_p_data.get(), owner.m_p_data.get() + offset);
+
+    std::vector<float> dst(2);
+    g_sycl_queue.memcpy
+        (dst.data(), view.m_p_data.get(), sizeof(float) * 2).wait();
+    EXPECT_FLOAT_EQ(dst[0], vals[offset + 0]);
+    EXPECT_FLOAT_EQ(dst[1], vals[offset + 1]);
+}
+
+/**
+ * @test TENSOR.operator_equals_copy_assignment
+ * @brief Tests copy assignment operator.
+ */
+TEST(TENSOR, operator_equals_copy_assignment)
+{
+    Tensor<float> t1({2, 2}, MemoryLocation::DEVICE);
+    std::vector<float> values = {9.0f, 10.0f, 11.0f, 12.0f};
+    t1 = values;
+
+    Tensor<float> t2;
+    t2 = t1;
+
+    EXPECT_EQ(t2.m_mem_loc, t1.m_mem_loc);
+
+    std::vector<float> host(4);
+    g_sycl_queue.memcpy
+        (host.data(), t2.m_p_data.get(), sizeof(float) * 4).wait();
+
+    EXPECT_EQ(host[0], 9.0f);
+    EXPECT_EQ(host[1], 10.0f);
+    EXPECT_EQ(host[2], 11.0f);
+    EXPECT_EQ(host[3], 12.0f);
+}
+
+/**
+ * @test TENSOR.operator_equals_copy_from_default
+ * @brief Assigning from a default-constructed tensor
+ * yields an empty owning tensor.
+ */
+TEST(TENSOR, operator_equals_copy_from_default)
+{
+    Tensor<float> dst({2, 2}, MemoryLocation::HOST);
+    std::vector<float> v = {7.0f, 8.0f, 9.0f, 10.0f};
+    dst = v;
+
+    Tensor<float> src;
+
+    dst = src;
+
+    EXPECT_TRUE(dst.m_dimensions.empty());
+    EXPECT_TRUE(dst.m_strides.empty());
+    EXPECT_TRUE(dst.m_own_data);
+    EXPECT_EQ(dst.m_p_data, nullptr);
+}
+
+/**
+ * @test TENSOR.operator_equals_copy_self_assignment
+ * @brief Self-assignment must be safe and preserve data.
+ */
+TEST(TENSOR, operator_equals_copy_self_assignment)
+{
+    Tensor<float> t({2,2}, MemoryLocation::DEVICE);
+    std::vector<float> v = {1.0f,2.0f,3.0f,4.0f};
+    t = v;
+
+    t = t;
+
+    std::vector<float> host(4);
+    g_sycl_queue.memcpy(host.data(), t.m_p_data.get(), sizeof(float)*4).wait();
+    EXPECT_FLOAT_EQ(host[0], 1.0f);
+    EXPECT_FLOAT_EQ(host[1], 2.0f);
+    EXPECT_FLOAT_EQ(host[2], 3.0f);
+    EXPECT_FLOAT_EQ(host[3], 4.0f);
+}
+
+/**
+ * @test TENSOR.operator_equals_copy_from_view
+ * @brief Assigning from a view (non-owning) yields
+ * a non-owning alias to same buffer.
+ */
+TEST(TENSOR, operator_equals_copy_from_view)
+{
+    Tensor<float> owner({2,3}, MemoryLocation::DEVICE);
+    std::vector<float> vals = { 10,11,12, 20,21,22 };
+    owner = vals;
+
+    Tensor<float> view(owner, {1,1}, {1,2});
+    ASSERT_FALSE(view.m_own_data);
+
+    Tensor<float> dst;
+    dst = view;
+
+    EXPECT_FALSE(dst.m_own_data);
+    EXPECT_EQ(dst.m_dimensions, view.m_dimensions);
+    EXPECT_EQ(dst.m_strides, view.m_strides);
+    EXPECT_EQ(dst.m_p_data.get(), view.m_p_data.get());
+
+    std::vector<float> out(2);
+    g_sycl_queue.memcpy(out.data(), dst.m_p_data.get(), sizeof(float)*2).wait();
+    EXPECT_FLOAT_EQ(out[0], vals[4]);
+    EXPECT_FLOAT_EQ(out[1], vals[5]);
+}
+
+/**
+ * @test TENSOR.operator_equals_move
+ * @brief Basic move-assignment: resources are transferred and source is emptied.
+ */
+TEST(TENSOR, operator_equals_move)
+{
+    Tensor<float> src({2, 2}, MemoryLocation::HOST);
+    std::vector<float> values = {13.0f, 14.0f, 15.0f, 16.0f};
+    src = values;
+
+    float* original_ptr = src.m_p_data.get();
+    MemoryLocation original_loc = src.m_mem_loc;
+
+    Tensor<float> dst;
+    dst = std::move(src);
+
+    EXPECT_EQ(dst.m_p_data.get(), original_ptr);
+    EXPECT_EQ(dst.m_mem_loc, original_loc);
+
+    EXPECT_EQ(src.m_p_data.get(), nullptr);
+
+    std::vector<float> host(4);
+    std::memcpy(host.data(), dst.m_p_data.get(), sizeof(float) * 4);
+    EXPECT_FLOAT_EQ(host[0], 13.0f);
+    EXPECT_FLOAT_EQ(host[1], 14.0f);
+    EXPECT_FLOAT_EQ(host[2], 15.0f);
+    EXPECT_FLOAT_EQ(host[3], 16.0f);
+}
+
+/**
+ * @test TENSOR.operator_equals_move_from_default
+ * @brief Moving from a default-constructed (empty) tensor
+ * makes destination empty.
+ */
+TEST(TENSOR, operator_equals_move_from_default)
+{
+    Tensor<float> dst({2, 2}, MemoryLocation::HOST);
+    std::vector<float> vals = {7.0f, 8.0f, 9.0f, 10.0f};
+    dst = vals;
+
+    Tensor<float> src;
+
+    dst = std::move(src);
+
+    EXPECT_TRUE(dst.m_dimensions.empty());
+    EXPECT_TRUE(dst.m_strides.empty());
+    EXPECT_TRUE(dst.m_own_data);
+    EXPECT_EQ(dst.m_p_data, nullptr);
+
+    EXPECT_TRUE(src.m_dimensions.empty());
+    EXPECT_TRUE(src.m_own_data);
+    EXPECT_EQ(src.m_p_data, nullptr);
+}
+
+/**
+ * @test TENSOR.operator_equals_move_self_assignment
+ * @brief Self move-assignment must be safe and preserve contents.
+ */
+TEST(TENSOR, operator_equals_move_self_assignment)
+{
+    Tensor<float> t({2,2}, MemoryLocation::HOST);
+    std::vector<float> v = {1.0f,2.0f,3.0f,4.0f};
+    t = v;
+
+    t = std::move(t);
+
+    std::vector<float> host(4);
+    std::memcpy(host.data(), t.m_p_data.get(), sizeof(float) * 4);
+    EXPECT_FLOAT_EQ(host[0], 1.0f);
+    EXPECT_FLOAT_EQ(host[1], 2.0f);
+    EXPECT_FLOAT_EQ(host[2], 3.0f);
+    EXPECT_FLOAT_EQ(host[3], 4.0f);
+}
+
+/**
+ * @test TENSOR.operator_equals_move_from_view
+ * @brief Moving a non-owning view transfers
+ * the aliasing shared_ptr to destination.
+ */
+TEST(TENSOR, operator_equals_move_from_view)
+{
+    Tensor<float> owner({2,3}, MemoryLocation::HOST);
+    std::vector<float> vals = { 10.0f,11.0f,12.0f, 20.0f,21.0f,22.0f };
+    owner = vals;
+
+    Tensor<float> view(owner, {1,1}, {1,2});
+    ASSERT_FALSE(view.m_own_data);
+
+    float* view_ptr = view.m_p_data.get();
+
+    Tensor<float> dst;
+    dst = std::move(view);
+
+    EXPECT_FALSE(dst.m_own_data);
+    EXPECT_EQ(dst.m_p_data.get(), view_ptr);
+
+    EXPECT_EQ(view.m_p_data.get(), nullptr);
+    EXPECT_TRUE(view.m_own_data);
+
+    std::vector<float> out(2);
+    std::memcpy(out.data(), dst.m_p_data.get(), sizeof(float) * 2);
+    EXPECT_FLOAT_EQ(out[0], vals[4]);
+    EXPECT_FLOAT_EQ(out[1], vals[5]);
+}
+
+/**
+ * @test TENSOR.operator_equals_vector_assignment
+ * @brief Tests assignment from flat std::vector.
+ */
+TEST(TENSOR, operator_equals_vector_assignment)
+{
+    std::vector<float> values = {3.3f, 3.4f, 3.5f, 3.6f};
+
+    Tensor<float> t({2, 2});
     t = values;
 
-    EXPECT_EQ(t.m_mem_loc, MemoryLocation::DEVICE);
-
-    t.to(MemoryLocation::HOST);
-
-    EXPECT_EQ(t.m_mem_loc, MemoryLocation::HOST);
-
-    std::vector<float> host_data(total_size);
+    std::vector<float> host(4);
     g_sycl_queue.memcpy
-        (host_data.data(), t.m_p_data.get(), sizeof(float) * total_size).wait();
+        (host.data(), t.m_p_data.get(), sizeof(float) * 4).wait();
 
-    for (uint64_t i = 0; i < total_size; ++i)
-    {
-        EXPECT_FLOAT_EQ(host_data[i], static_cast<float>(i + 1));
-    }
+    EXPECT_FLOAT_EQ(host[0], 3.3f);
+    EXPECT_FLOAT_EQ(host[1], 3.4f);
+    EXPECT_FLOAT_EQ(host[2], 3.5f);
+    EXPECT_FLOAT_EQ(host[3], 3.6f);
 }
 
 /**
- * @test TENSOR.to_host_to_device
- * @brief Moves a tensor from HOST to DEVICE
- * and verifies data integrity and metadata.
+ * @test TENSOR.operator_equals_vector_size_mismatch_throws
+ * @brief Throws if assigning flat vector with incorrect size.
  */
-TEST(TENSOR, to_host_to_device)
+TEST(TENSOR, operator_equals_vector_size_mismatch_throws)
 {
-    Tensor<float> t({3, 5}, MemoryLocation::HOST);
+    Tensor<float> t({2, 2});
+    std::vector<float> values = {1.0f, 2.0f};
 
-    uint64_t total_size = 1;
-    for (uint64_t d : t.m_dimensions)
-    {
-        total_size *= d;
-    }
-
-    std::vector<float> values(total_size);
-    for (uint64_t i = 0; i < total_size; ++i)
-    {
-        values[i] = static_cast<float>(i + 1);
-    }
-
-    t = values;
-
-    EXPECT_EQ(t.m_mem_loc, MemoryLocation::HOST);
-
-    t.to(MemoryLocation::DEVICE);
-
-    EXPECT_EQ(t.m_mem_loc, MemoryLocation::DEVICE);
-
-    std::vector<float> host_data(total_size);
-    g_sycl_queue.memcpy
-        (host_data.data(), t.m_p_data.get(), sizeof(float) * total_size).wait();
-
-    for (uint64_t i = 0; i < total_size; ++i)
-    {
-        EXPECT_FLOAT_EQ(host_data[i], static_cast<float>(i + 1));
-    }
+    EXPECT_THROW({
+        t = values;
+    }, std::invalid_argument);
 }
 
 /**
- * @test TENSOR.to_noop_when_already_in_target
- * @brief Calling to() with current memory location should do nothing.
+ * @test TENSOR.operator_equals_vector_assign_to_default_throws
+ * @brief Assigning a vector to a default-constructed tensor must throw.
  */
-TEST(TENSOR, to_noop_when_already_in_target)
+TEST(TENSOR, operator_equals_vector_assign_to_default_throws)
 {
-    Tensor<float> t_host({2, 2}, MemoryLocation::HOST);
+    Tensor<float> t_default;
+    std::vector<float> values = { 1.0f };
 
-    uint64_t total_size = 1;
-    for (uint64_t d : t_host.m_dimensions)
-    {
-        total_size *= d;
-    }
-
-    std::vector<float> values(total_size);
-    for (uint64_t i = 0; i < total_size; ++i)
-    {
-        values[i] = static_cast<float>(i + 1);
-    }
-
-    t_host = values;
-
-    t_host.to(MemoryLocation::HOST);
-    EXPECT_EQ(t_host.m_mem_loc, MemoryLocation::HOST);
-
-    std::vector<float> host_data_host(total_size);
-    g_sycl_queue.memcpy(host_data_host.data(),
-        t_host.m_p_data.get(), sizeof(float) * total_size).wait();
-
-    for (uint64_t i = 0; i < total_size; ++i)
-    {
-        EXPECT_FLOAT_EQ(host_data_host[i], static_cast<float>(i + 1));
-    }
-
-
-    Tensor<float> t_device({2, 2}, MemoryLocation::DEVICE);
-
-    t_device = values;
-
-    t_device.to(MemoryLocation::DEVICE);
-    EXPECT_EQ(t_device.m_mem_loc, MemoryLocation::DEVICE);
-
-    std::vector<float> host_data_device(total_size);
-    g_sycl_queue.memcpy(host_data_device.data(),
-        t_device.m_p_data.get(), sizeof(float) * total_size).wait();
-
-    for (uint64_t i = 0; i < total_size; ++i)
-    {
-        EXPECT_FLOAT_EQ(host_data_device[i], static_cast<float>(i + 1));
-    }
-
+    EXPECT_THROW({
+        t_default = values;
+    }, std::invalid_argument);
 }
 
 /**
- * @test TENSOR.to_throws_for_view
- * @brief Calling to() on a view (non-owning tensor) should throw.
+ * @test TENSOR.operator_equals_scalar_assignment_and_conversion
+ * @brief Tests operator=(float_t)
+ * and operator float_t() on 1-element tensors / views.
  */
-TEST(TENSOR, to_throws_for_view)
+TEST(TENSOR, operator_equals_scalar_assignment_and_conversion)
 {
-    Tensor<float> t_owner({2, 2}, MemoryLocation::HOST);
+    Tensor<float> s({1}, MemoryLocation::HOST);
+    s = 5.5f;
+    float sval = s;
+    EXPECT_FLOAT_EQ(sval, 5.5f);
 
-    uint64_t total_size = 1;
-    for (uint64_t d : t_owner.m_dimensions)
-    {
-        total_size *= d;
-    }
+    Tensor<float> t({2, 2}, MemoryLocation::HOST);
+    std::vector<float> vals = { 1.0f, 2.0f, 3.0f, 4.0f };
+    t = vals;
 
-    std::vector<float> values(total_size);
-    for (uint64_t i = 0; i < total_size; ++i)
-    {
-        values[i] = static_cast<float>(i + 1);
-    }
-
-    t_owner = values;
-
-    Tensor<float> t_view(t_owner, {0, 0}, {2, 1});
-
-    EXPECT_FALSE(t_view.m_own_data);
-
-    EXPECT_THROW(t_view.to(MemoryLocation::DEVICE), std::runtime_error);
-    EXPECT_THROW(t_view.to(MemoryLocation::HOST), std::runtime_error);
+    t[1][1] = 99.25f;
+    float read_back = t[1][1];
+    EXPECT_FLOAT_EQ(read_back, 99.25f);
 }
 
 /**
- * @test TENSOR.operator_index_chain_assign_and_read
+ * @test TENSOR.operator_equals_scalar_assignment_to_default_constructed_tensor
+ * @brief Tests that assigning a scalar to a default-constructed tensor
+ * automatically initializes it as a scalar tensor of shape {1} and stores
+ * the assigned value correctly.
+ *
+ * Also verifies that assigning a scalar to a tensor with more than one element
+ * throws std::invalid_argument.
+ */
+TEST(TENSOR, operator_equals_scalar_assignment_to_default_constructed_tensor) {
+    Tensor<float> t;
+    t = 42.5f;
+
+    ASSERT_EQ(t.m_dimensions.size(), 1);
+    EXPECT_EQ(t.m_dimensions[0], 1);
+
+    float val = static_cast<float>(t);
+    EXPECT_FLOAT_EQ(val, 42.5f);
+
+    Tensor<float> big({2, 2});
+    EXPECT_THROW(big = 1.0f, std::invalid_argument);
+}
+
+/**
+ * @test TENSOR.operator_equals_scalar_assignment_wrong_size_throws
+ * @brief Assigning a scalar to a non-1-element tensor must throw.
+ */
+TEST(TENSOR, operator_equals_scalar_assignment_wrong_size_throws)
+{
+    Tensor<float> t({2, 2}, MemoryLocation::HOST);
+    EXPECT_THROW(
+    {
+        t = 3.14f;
+    }, std::invalid_argument);
+}
+
+/**
+ * @test TENSOR.operator_brackets_index_chain_assign_and_read
  * @brief Tests that chained operator[] returns views
  * and allows assignment and reading.
  */
-TEST(TENSOR, operator_index_chain_assign_and_read)
+TEST(TENSOR, operator_brackets_index_chain_assign_and_read)
 {
     Tensor<float> t({2, 3, 4}, MemoryLocation::HOST);
     std::vector<float> vals(2 * 3 * 4);
@@ -925,10 +1226,10 @@ TEST(TENSOR, operator_index_chain_assign_and_read)
 }
 
 /**
- * @test TENSOR.operator_index_chain_const_access
+ * @test TENSOR.operator_brackets_index_chain_const_access
  * @brief Tests that const Tensor supports chained operator[] reading.
  */
-TEST(TENSOR, operator_index_chain_const_access)
+TEST(TENSOR, operator_brackets_index_chain_const_access)
 {
     Tensor<float> t({2, 2, 2}, MemoryLocation::HOST);
     std::vector<float> vals(8);
@@ -945,67 +1246,10 @@ TEST(TENSOR, operator_index_chain_const_access)
 }
 
 /**
- * @test TENSOR.scalar_assignment_and_conversion
- * @brief Tests operator=(float_t)
- * and operator float_t() on 1-element tensors / views.
- */
-TEST(TENSOR, scalar_assignment_and_conversion)
-{
-    Tensor<float> s({1}, MemoryLocation::HOST);
-    s = 5.5f;
-    float sval = s;
-    EXPECT_FLOAT_EQ(sval, 5.5f);
-
-    Tensor<float> t({2, 2}, MemoryLocation::HOST);
-    std::vector<float> vals = { 1.0f, 2.0f, 3.0f, 4.0f };
-    t = vals;
-
-    t[1][1] = 99.25f;
-    float read_back = t[1][1];
-    EXPECT_FLOAT_EQ(read_back, 99.25f);
-}
-
-/**
- * @test TENSOR.scalar_assignment_to_default_constructed_tensor
- * @brief Tests that assigning a scalar to a default-constructed tensor
- * automatically initializes it as a scalar tensor of shape {1} and stores
- * the assigned value correctly.
- *
- * Also verifies that assigning a scalar to a tensor with more than one element
- * throws std::invalid_argument.
- */
-TEST(TENSOR, scalar_assignment_to_default_constructed_tensor) {
-    Tensor<float> t;
-    t = 42.5f;
-
-    ASSERT_EQ(t.m_dimensions.size(), 1);
-    EXPECT_EQ(t.m_dimensions[0], 1);
-
-    float val = static_cast<float>(t);
-    EXPECT_FLOAT_EQ(val, 42.5f);
-
-    Tensor<float> big({2, 2});
-    EXPECT_THROW(big = 1.0f, std::invalid_argument);
-}
-
-/**
- * @test TENSOR.scalar_assignment_wrong_size_throws
- * @brief Assigning a scalar to a non-1-element tensor must throw.
- */
-TEST(TENSOR, scalar_assignment_wrong_size_throws)
-{
-    Tensor<float> t({2, 2}, MemoryLocation::HOST);
-    EXPECT_THROW(
-    {
-        t = 3.14f;
-    }, std::invalid_argument);
-}
-
-/**
- * @test TENSOR.operator_index_out_of_bounds_throws
+ * @test TENSOR.operator_brackets_index_out_of_bounds_throws
  * @brief operator[] should throw when index is out of range.
  */
-TEST(TENSOR, operator_index_out_of_bounds_throws)
+TEST(TENSOR, operator_brackets_index_out_of_bounds_throws)
 {
     Tensor<float> t({2, 2, 2}, MemoryLocation::HOST);
 
@@ -1026,13 +1270,13 @@ TEST(TENSOR, operator_index_out_of_bounds_throws)
 }
 
 /**
- * @test TENSOR.view_constructor_middle_chunk_write_and_read
+ * @test TENSOR.operator_brackets_view_constructor_middle_chunk_write_and_read
  * @brief Create a 3D tensor, take a chunk in the middle of a channel
  * with the view constructor, write via chained operator[] on the view
  * and verify reads from both the view and the original tensor
  * at the expected positions.
  */
-TEST(TENSOR, view_constructor_middle_chunk_write_and_read)
+TEST(TENSOR, operator_brackets_view_constructor_middle_chunk_write_and_read)
 {
     Tensor<float> img({3, 6, 7}, MemoryLocation::HOST);
 
@@ -1098,39 +1342,104 @@ TEST(TENSOR, view_constructor_middle_chunk_write_and_read)
 }
 
 /**
- * @test TENSOR.print_tensor
- * @brief Checks that print correctly outputs a 2x2 tensor with assigned values.
- *
- * Creates a 2x2 tensor, assigns values {1,2,3,4}, and verifies
- * that print outputs the expected nested format.
+ * @test TENSOR.operator_float_valid_scalar
+ * @brief Tests implicit conversion to scalar for a 1-element tensor.
  */
-TEST(TENSOR, print_tensor)
+TEST(TENSOR, operator_float_valid_scalar)
 {
-    temper::Tensor<float> t({2, 2}, temper::MemoryLocation::HOST);
-    std::vector<float> vals = {1.0f, 2.0f, 3.0f, 4.0f};
-    t = vals;
+    Tensor<float> t({1}, MemoryLocation::HOST);
+    float val = 42.5f;
+    t = val;  // uses scalar assignment
 
-    std::stringstream ss;
-    t.print(ss);
-
-    std::string expected = "[[1, 2],\n [3, 4]]\n";
-
-    EXPECT_EQ(ss.str(), expected);
+    float converted = static_cast<float>(t);
+    EXPECT_FLOAT_EQ(converted, 42.5f);
 }
 
 /**
- * @test TENSOR.print_empty_tensor
- * @brief Checks that print correctly outputs an empty tensor.
- *
- * Creates a tensor with no dimensions and verifies that print
- * outputs the string "[]\n".
+ * @test TENSOR.operator_float_throws_no_dimensions
+ * @brief Tests that converting a moved-from tensor throws (no dimensions).
  */
-TEST(TENSOR, print_empty_tensor)
+TEST(TENSOR, operator_float_throws_no_dimensions)
 {
-    temper::Tensor<float> t({}, temper::MemoryLocation::HOST);
-    std::stringstream ss;
-    t.print(ss);
-    EXPECT_EQ(ss.str(), "[]\n");
+    Tensor<float> t1({1}, MemoryLocation::HOST);
+    t1 = 3.14f;
+
+    Tensor<float> t2 = std::move(t1);
+    EXPECT_THROW({
+        float converted = static_cast<float>(t1);
+        (void)converted;
+    }, std::invalid_argument);
+}
+
+/**
+ * @test TENSOR.operator_float_throws_multiple_elements_rank1
+ * @brief Tests that conversion throws for rank-1 tensor with size > 1.
+ */
+TEST(TENSOR, operator_float_throws_multiple_elements_rank1)
+{
+    Tensor<float> t({3}, MemoryLocation::HOST);
+    std::vector<float> vals = {1.0f, 2.0f, 3.0f};
+    t = vals;
+
+    EXPECT_THROW({
+        float converted = static_cast<float>(t);
+        (void)converted;
+    }, std::invalid_argument);
+}
+
+/**
+ * @test TENSOR.operator_float_throws_multi_dimensional
+ * @brief Tests that conversion throws for rank > 1 tensor.
+ */
+TEST(TENSOR, operator_float_throws_multi_dimensional)
+{
+    Tensor<float> t({2, 2}, MemoryLocation::HOST);
+    std::vector<float> vals = {1, 2, 3, 4};
+    t = vals;
+
+    EXPECT_THROW({
+        float converted = static_cast<float>(t);
+        (void)converted;
+    }, std::invalid_argument);
+}
+
+/**
+ * @test TENSOR.to_device_to_host
+ * @brief Moves a tensor from DEVICE to HOST
+ * and verifies data integrity and metadata.
+ */
+TEST(TENSOR, to_device_to_host)
+{
+    Tensor<float> t({4, 4}, MemoryLocation::DEVICE);
+
+    uint64_t total_size = 1;
+    for (uint64_t d : t.m_dimensions)
+    {
+        total_size *= d;
+    }
+
+    std::vector<float> values(total_size);
+    for (uint64_t i = 0; i < total_size; ++i)
+    {
+        values[i] = static_cast<float>(i + 1);
+    }
+
+    t = values;
+
+    EXPECT_EQ(t.m_mem_loc, MemoryLocation::DEVICE);
+
+    t.to(MemoryLocation::HOST);
+
+    EXPECT_EQ(t.m_mem_loc, MemoryLocation::HOST);
+
+    std::vector<float> host_data(total_size);
+    g_sycl_queue.memcpy
+        (host_data.data(), t.m_p_data.get(), sizeof(float) * total_size).wait();
+
+    for (uint64_t i = 0; i < total_size; ++i)
+    {
+        EXPECT_FLOAT_EQ(host_data[i], static_cast<float>(i + 1));
+    }
 }
 
 /**
@@ -2259,23 +2568,13 @@ TEST(TENSOR, operator_unary_negation_nan_input_throws)
 }
 
 /**
- * @test TENSOR.operator_unary_negation_rank0_throws
+ * @test TENSOR.operator_unary_negation_empty_tensor_throws
  * @brief Negation on a rank-0 tensor must throw std::invalid_argument.
  */
-TEST(TENSOR, operator_unary_negation_rank0_throws)
+TEST(TENSOR, operator_unary_negation_empty_tensor_throws)
 {
-    Tensor<float> T({}, MemoryLocation::HOST);
+    Tensor<float> T;
     EXPECT_THROW({ Tensor<float> N = -T; }, std::invalid_argument);
-}
-
-/**
- * @test TENSOR.operator_unary_negation_zero_sized_axis_throws
- * @brief Negation on a tensor with a zero-sized axis must throw.
- */
-TEST(TENSOR, operator_unary_negation_zero_sized_axis_throws)
-{
-    Tensor<float> Z({2, 0}, MemoryLocation::HOST);
-    EXPECT_THROW({ Tensor<float> N = -Z; }, std::invalid_argument);
 }
 
 /**
@@ -2450,6 +2749,168 @@ TEST(TENSOR, operator_unary_negation_view_of_view)
 }
 
 /**
+ * @test TENSOR.to_host_to_device
+ * @brief Moves a tensor from HOST to DEVICE
+ * and verifies data integrity and metadata.
+ */
+TEST(TENSOR, to_host_to_device)
+{
+    Tensor<float> t({3, 5}, MemoryLocation::HOST);
+
+    uint64_t total_size = 1;
+    for (uint64_t d : t.m_dimensions)
+    {
+        total_size *= d;
+    }
+
+    std::vector<float> values(total_size);
+    for (uint64_t i = 0; i < total_size; ++i)
+    {
+        values[i] = static_cast<float>(i + 1);
+    }
+
+    t = values;
+
+    EXPECT_EQ(t.m_mem_loc, MemoryLocation::HOST);
+
+    t.to(MemoryLocation::DEVICE);
+
+    EXPECT_EQ(t.m_mem_loc, MemoryLocation::DEVICE);
+
+    std::vector<float> host_data(total_size);
+    g_sycl_queue.memcpy
+        (host_data.data(), t.m_p_data.get(), sizeof(float) * total_size).wait();
+
+    for (uint64_t i = 0; i < total_size; ++i)
+    {
+        EXPECT_FLOAT_EQ(host_data[i], static_cast<float>(i + 1));
+    }
+}
+
+/**
+ * @test TENSOR.to_noop_when_already_in_target
+ * @brief Calling to() with current memory location should do nothing.
+ */
+TEST(TENSOR, to_noop_when_already_in_target)
+{
+    Tensor<float> t_host({2, 2}, MemoryLocation::HOST);
+
+    uint64_t total_size = 1;
+    for (uint64_t d : t_host.m_dimensions)
+    {
+        total_size *= d;
+    }
+
+    std::vector<float> values(total_size);
+    for (uint64_t i = 0; i < total_size; ++i)
+    {
+        values[i] = static_cast<float>(i + 1);
+    }
+
+    t_host = values;
+
+    t_host.to(MemoryLocation::HOST);
+    EXPECT_EQ(t_host.m_mem_loc, MemoryLocation::HOST);
+
+    std::vector<float> host_data_host(total_size);
+    g_sycl_queue.memcpy(host_data_host.data(),
+        t_host.m_p_data.get(), sizeof(float) * total_size).wait();
+
+    for (uint64_t i = 0; i < total_size; ++i)
+    {
+        EXPECT_FLOAT_EQ(host_data_host[i], static_cast<float>(i + 1));
+    }
+
+
+    Tensor<float> t_device({2, 2}, MemoryLocation::DEVICE);
+
+    t_device = values;
+
+    t_device.to(MemoryLocation::DEVICE);
+    EXPECT_EQ(t_device.m_mem_loc, MemoryLocation::DEVICE);
+
+    std::vector<float> host_data_device(total_size);
+    g_sycl_queue.memcpy(host_data_device.data(),
+        t_device.m_p_data.get(), sizeof(float) * total_size).wait();
+
+    for (uint64_t i = 0; i < total_size; ++i)
+    {
+        EXPECT_FLOAT_EQ(host_data_device[i], static_cast<float>(i + 1));
+    }
+
+}
+
+/**
+ * @test TENSOR.to_throws_for_view
+ * @brief Calling to() on a view (non-owning tensor) should throw.
+ */
+TEST(TENSOR, to_throws_for_view)
+{
+    Tensor<float> t_owner({2, 2}, MemoryLocation::HOST);
+
+    uint64_t total_size = 1;
+    for (uint64_t d : t_owner.m_dimensions)
+    {
+        total_size *= d;
+    }
+
+    std::vector<float> values(total_size);
+    for (uint64_t i = 0; i < total_size; ++i)
+    {
+        values[i] = static_cast<float>(i + 1);
+    }
+
+    t_owner = values;
+
+    Tensor<float> t_view(t_owner, {0, 0}, {2, 1});
+
+    EXPECT_FALSE(t_view.m_own_data);
+
+    EXPECT_THROW(t_view.to(MemoryLocation::DEVICE), std::runtime_error);
+    EXPECT_THROW(t_view.to(MemoryLocation::HOST), std::runtime_error);
+}
+
+/**
+ * @test TENSOR.to_throws_for_empty_tensor
+ * @brief Calling to() on a tensor with no elements should throw.
+ */
+TEST(TENSOR, to_throws_for_empty_tensor)
+{
+    Tensor<float> t_empty;
+    EXPECT_THROW(t_empty.to(MemoryLocation::DEVICE), std::invalid_argument);
+}
+
+/**
+ * @test TENSOR.to_host_to_device_and_back
+ * @brief Moves tensor from HOST to DEVICE and back, verifying data integrity.
+ */
+TEST(TENSOR, to_host_to_device_and_back)
+{
+    Tensor<float> t({4, 4}, MemoryLocation::HOST);
+    uint64_t total_size = 16;
+    std::vector<float> values(total_size);
+    for (uint64_t i = 0; i < total_size; ++i)
+    {
+        values[i] = static_cast<float>(i + 10);
+    }
+
+    t = values;
+    t.to(MemoryLocation::DEVICE);
+    EXPECT_EQ(t.m_mem_loc, MemoryLocation::DEVICE);
+
+    t.to(MemoryLocation::HOST);
+    EXPECT_EQ(t.m_mem_loc, MemoryLocation::HOST);
+
+    std::vector<float> host_data(total_size);
+    g_sycl_queue.memcpy
+        (host_data.data(), t.m_p_data.get(), sizeof(float) * total_size).wait();
+    for (uint64_t i = 0; i < total_size; ++i)
+    {
+        EXPECT_FLOAT_EQ(host_data[i], static_cast<float>(i + 10));
+    }
+}
+
+/**
  * @test TENSOR.reshape_preserves_linear_memory_and_strides
  * @brief Reshaping a tensor (2x3 -> 3x2) preserves the linear memory layout
  * (raw buffer contents unchanged) and recomputes strides correctly.
@@ -2556,18 +3017,6 @@ TEST(TENSOR, reshape_new_dimensions_with_zero_throws)
 }
 
 /**
- * @test TENSOR.reshape_tensor_with_zero_dimension_throws
- * @brief Attempting to reshape a tensor that has a zero-sized
- * dimension must throw std::runtime_error.
- */
-TEST(TENSOR, reshape_tensor_with_zero_dimension_throws)
-{
-    Tensor<float> A({2,0}, MemoryLocation::DEVICE);
-    std::vector<uint64_t> new_dims = {1};
-    EXPECT_THROW({ A.reshape(new_dims); }, std::runtime_error);
-}
-
-/**
  * @test TENSOR.reshape_dimension_product_overflow_throws
  * @brief Reshaping with excessively large dimensions
  * causing uint64_t overflow must throw std::overflow_error.
@@ -2608,6 +3057,42 @@ TEST(TENSOR, reshape_multiple_roundtrip_preserves_data)
     {
         EXPECT_FLOAT_EQ(host_buf[i], orig[i]);
     }
+}
+
+/**
+ * @test TENSOR.print_tensor
+ * @brief Checks that print correctly outputs a 2x2 tensor with assigned values.
+ *
+ * Creates a 2x2 tensor, assigns values {1,2,3,4}, and verifies
+ * that print outputs the expected nested format.
+ */
+TEST(TENSOR, print_tensor)
+{
+    temper::Tensor<float> t({2, 2}, temper::MemoryLocation::HOST);
+    std::vector<float> vals = {1.0f, 2.0f, 3.0f, 4.0f};
+    t = vals;
+
+    std::stringstream ss;
+    t.print(ss);
+
+    std::string expected = "[[1, 2],\n [3, 4]]\n";
+
+    EXPECT_EQ(ss.str(), expected);
+}
+
+/**
+ * @test TENSOR.print_empty_tensor
+ * @brief Checks that print correctly outputs an empty tensor.
+ *
+ * Creates a tensor with no dimensions and verifies that print
+ * outputs the string "[]\n".
+ */
+TEST(TENSOR, print_empty_tensor)
+{
+    temper::Tensor<float> t;
+    std::stringstream ss;
+    t.print(ss);
+    EXPECT_EQ(ss.str(), "[]\n");
 }
 
 } // namespace Test
