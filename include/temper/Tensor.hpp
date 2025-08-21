@@ -366,6 +366,19 @@ public:
     void reshape(const std::vector<uint64_t>& new_dimensions);
 
     /**
+     * @brief Sort tensor elements (device merge-sort).
+     *
+     * Sorts the tensor either flattened (axis = -1) or independently along a
+     * single axis. Uses device buffers and SYCL kernels; sorting is done
+     * in place.
+     *
+     * @param axis Axis to sort along, -1 = flatten, otherwise 0..rank-1.
+     * @throws std::invalid_argument if axis is out of range.
+     * @throws std::bad_alloc if required device memory cannot be allocated.
+     */
+    void sort(int64_t axis = -1);
+
+    /**
      * @brief Prints the tensor elements to the provided output
      * stream in a nested format.
      *

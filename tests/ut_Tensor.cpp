@@ -3095,4 +3095,386 @@ TEST(TENSOR, print_empty_tensor)
     EXPECT_EQ(ss.str(), "[]\n");
 }
 
+/**
+ * @test TENSOR.sort_empty
+ * @brief Sorting an empty tensor should not throw.
+ */
+TEST(TENSOR, sort_empty)
+{
+    Tensor<float> t;
+    EXPECT_NO_THROW(t.sort(0));
+}
+
+/**
+ * @test TENSOR.sort_axis_out_of_bounds
+ * @brief Sorting with invalid axis should throw.
+ */
+TEST(TENSOR, sort_axis_out_of_bounds)
+{
+    Tensor<float> t({3}, MemoryLocation::HOST);
+    EXPECT_THROW(t.sort(1), std::invalid_argument);
+    EXPECT_THROW(t.sort(-2), std::invalid_argument);
+}
+
+/**
+ * @test TENSOR.sort_axis_size_one
+ * @brief Sorting along axis with size <= 1 should not modify tensor.
+ */
+TEST(TENSOR, sort_axis_size_one)
+{
+    Tensor<float> t({1}, MemoryLocation::HOST);
+    t = 123.0f;
+    EXPECT_NO_THROW(t.sort(0));
+    EXPECT_FLOAT_EQ(static_cast<float>(t), 123.0f);
+}
+
+/**
+ * @test TENSOR.sort_1D_basic
+ * @brief Sorting a 1D tensor with random values.
+ */
+TEST(TENSOR, sort_1D_basic)
+{
+    Tensor<float> t({5}, MemoryLocation::HOST);
+    std::vector<float> vals =  {3.0f, -1.0f, 2.5f, 0.0f, 10.0f};
+    t = vals;
+    t.sort(0);
+    std::vector<float> expected = {-1.0f, 0.0f, 2.5f, 3.0f, 10.0f};
+    for (uint64_t i = 0; i < 5; i++)
+    {
+        EXPECT_FLOAT_EQ(t[i], expected[i]);
+    }
+}
+
+/**
+ * @test TENSOR.sort_2D_axis0
+ * @brief Sorting a 2D tensor along axis 0 (rows).
+ */
+TEST(TENSOR, sort_2D_axis0)
+{
+    Tensor<float> t({3, 2}, MemoryLocation::HOST);
+    // [[3, 2],
+    //  [1, 5],
+    //  [4, 0]]
+    std::vector<float> vals = {3, 2, 1, 5, 4, 0};
+    t = vals;
+    t.sort(0);
+    // Sorted along rows => [[1,0],[3,2],[4,5]]
+    EXPECT_FLOAT_EQ(t[0][0], 1.0f);
+    EXPECT_FLOAT_EQ(t[0][1], 0.0f);
+    EXPECT_FLOAT_EQ(t[1][0], 3.0f);
+    EXPECT_FLOAT_EQ(t[1][1], 2.0f);
+    EXPECT_FLOAT_EQ(t[2][0], 4.0f);
+    EXPECT_FLOAT_EQ(t[2][1], 5.0f);
+}
+
+/**
+ * @test TENSOR.sort_2D_axis1
+ * @brief Sorting a 2D tensor along axis 1 (columns).
+ */
+TEST(TENSOR, sort_2D_axis1)
+{
+    Tensor<float> t({2, 3}, MemoryLocation::HOST);
+    // [[3, 1, 2],
+    //  [0, -1, 5]]
+    std::vector<float> vals = {3,1,2,0,-1,5};
+    t = vals;
+    t.sort(1);
+    // [[1,2,3], [-1,0,5]]
+    EXPECT_FLOAT_EQ(t[0][0], 1.0f);
+    EXPECT_FLOAT_EQ(t[0][1], 2.0f);
+    EXPECT_FLOAT_EQ(t[0][2], 3.0f);
+    EXPECT_FLOAT_EQ(t[1][0], -1.0f);
+    EXPECT_FLOAT_EQ(t[1][1], 0.0f);
+    EXPECT_FLOAT_EQ(t[1][2], 5.0f);
+}
+
+/**
+ * @test TENSOR.sort_3D_axis2
+ * @brief Sort the last axis of a 3D tensor: shape {2,2,4}.
+ */
+TEST(TENSOR, sort_3D_axis2)
+{
+    Tensor<float> t({2,2,4}, MemoryLocation::HOST);
+    // slices:
+    // t[0][0] = [4,1,3,2]  -> [1,2,3,4]
+    // t[0][1] = [0,-1,5,2] -> [-1,0,2,5]
+    // t[1][0] = [9,7,8,6]  -> [6,7,8,9]
+    // t[1][1] = [3,3,1,2]  -> [1,2,3,3]
+    std::vector<float> vals = {
+        4,1,3,2,
+        0,-1,5,2,
+        9,7,8,6,
+        3,3,1,2
+    };
+    t = vals;
+    t.sort(2);
+
+    EXPECT_FLOAT_EQ(t[0][0][0], 1.0f);
+    EXPECT_FLOAT_EQ(t[0][0][1], 2.0f);
+    EXPECT_FLOAT_EQ(t[0][0][2], 3.0f);
+    EXPECT_FLOAT_EQ(t[0][0][3], 4.0f);
+
+    EXPECT_FLOAT_EQ(t[0][1][0], -1.0f);
+    EXPECT_FLOAT_EQ(t[0][1][1], 0.0f);
+    EXPECT_FLOAT_EQ(t[0][1][2], 2.0f);
+    EXPECT_FLOAT_EQ(t[0][1][3], 5.0f);
+
+    EXPECT_FLOAT_EQ(t[1][0][0], 6.0f);
+    EXPECT_FLOAT_EQ(t[1][0][1], 7.0f);
+    EXPECT_FLOAT_EQ(t[1][0][2], 8.0f);
+    EXPECT_FLOAT_EQ(t[1][0][3], 9.0f);
+
+    EXPECT_FLOAT_EQ(t[1][1][0], 1.0f);
+    EXPECT_FLOAT_EQ(t[1][1][1], 2.0f);
+    EXPECT_FLOAT_EQ(t[1][1][2], 3.0f);
+    EXPECT_FLOAT_EQ(t[1][1][3], 3.0f);
+}
+
+/**
+ * @test TENSOR.sort_3D_flatten
+ * @brief Flatten-sort a 3D tensor (axis = -1) and confirm global ordering.
+ */
+TEST(TENSOR, sort_3D_flatten)
+{
+    Tensor<float> t({2,3,2}, MemoryLocation::HOST);
+    std::vector<float> vals = {
+        5, 1,
+        3, 7,
+        2, 9,
+
+        0, 4,
+        8, 6,
+        -1, 10
+    };
+    t = vals;
+    t.sort(-1);
+
+    std::vector<float> got;
+    for (uint64_t i = 0; i < 2; ++i)
+    {
+        for (uint64_t j = 0; j < 3; ++j)
+        {
+            for (uint64_t k = 0; k < 2; ++k)
+            {
+                got.push_back(t[i][j][k]);
+            }
+        }
+    }
+    for (uint64_t i = 1; i < got.size(); ++i)
+    {
+        EXPECT_LE(got[i-1], got[i]);
+    }
+}
+
+/**
+ * @test TENSOR.sort_with_nan
+ * @brief NaNs should be placed last.
+ */
+TEST(TENSOR, sort_with_nan)
+{
+    Tensor<float> t({5}, MemoryLocation::HOST);
+    std::vector<float> vals = {3.0f, NAN, 1.0f, -2.0f, NAN};
+    t = vals;
+    t.sort(0);
+    // Expect [-2.0, 1.0, 3.0, nan, nan]
+    EXPECT_FLOAT_EQ(t[0], -2.0f);
+    EXPECT_FLOAT_EQ(t[1], 1.0f);
+    EXPECT_FLOAT_EQ(t[2], 3.0f);
+    EXPECT_TRUE(std::isnan(t[3]));
+    EXPECT_TRUE(std::isnan(t[4]));
+}
+
+/**
+ * @test TENSOR.sort_with_inf
+ * @brief -Inf should come first, +Inf after finite numbers.
+ */
+TEST(TENSOR, sort_with_inf)
+{
+    Tensor<float> t({5}, MemoryLocation::HOST);
+    std::vector<float> vals = {INFINITY, -1.0f, -INFINITY, 5.0f, 0.0f};
+    t = vals;
+    t.sort(0);
+    std::vector<float> expected = {-INFINITY, -1.0f, 0.0f, 5.0f, INFINITY};
+    for (uint64_t i = 0; i < 5; i++)
+    {
+        EXPECT_FLOAT_EQ(t[i], expected[i]);
+    }
+}
+
+/**
+ * @test TENSOR.sort_view_tensor
+ * @brief Sorting a tensor view should only affect the view region.
+ */
+TEST(TENSOR, sort_view_tensor)
+{
+    Tensor<float> t({4}, MemoryLocation::HOST);
+    std::vector<float> vals = {4.0f, 3.0f, 2.0f, 1.0f};
+    t = vals;
+    Tensor<float> v(t, {1}, {2});
+    v.sort(0);
+
+    EXPECT_FLOAT_EQ(t[0], 4.0f);
+    EXPECT_FLOAT_EQ(t[1], 2.0f);
+    EXPECT_FLOAT_EQ(t[2], 3.0f);
+    EXPECT_FLOAT_EQ(t[3], 1.0f);
+}
+
+/**
+ * @test TENSOR.sort_view_tensor_2D_row
+ * @brief Sorting a view of a row should only affect that row segment.
+ */
+TEST(TENSOR, sort_view_tensor_2D_row)
+{
+    Tensor<float> t({2, 4}, MemoryLocation::HOST);
+    // [[4,3,2,1],
+    //  [8,7,6,5]]
+    std::vector<float> vals = {4,3,2,1, 8,7,6,5};
+    t = vals;
+
+    Tensor<float> v(t, {0,1}, {1,2});
+    v.sort(1);
+
+    // Expect sorted only inside the view
+    // [[4,2,3,1],
+    //  [8,7,6,5]]
+    EXPECT_FLOAT_EQ(t[0][0], 4.0f);
+    EXPECT_FLOAT_EQ(t[0][1], 2.0f);
+    EXPECT_FLOAT_EQ(t[0][2], 3.0f);
+    EXPECT_FLOAT_EQ(t[0][3], 1.0f);
+    EXPECT_FLOAT_EQ(t[1][0], 8.0f);
+    EXPECT_FLOAT_EQ(t[1][1], 7.0f);
+    EXPECT_FLOAT_EQ(t[1][2], 6.0f);
+    EXPECT_FLOAT_EQ(t[1][3], 5.0f);
+}
+
+/**
+ * @test TENSOR.sort_view_tensor_2D_col
+ * @brief Sorting a view of a column should only affect that column segment.
+ */
+TEST(TENSOR, sort_view_tensor_2D_col)
+{
+    Tensor<float> t({3, 3}, MemoryLocation::HOST);
+    // [[9,8,7],
+    //  [6,5,4],
+    //  [3,2,1]]
+    std::vector<float> vals = {9,8,7, 6,5,4, 3,2,1};
+    t = vals;
+
+    Tensor<float> v(t, {0,1}, {3,1});
+    v.sort(0);
+
+    // [[9,2,7],
+    //  [6,5,4],
+    //  [3,8,1]]
+    EXPECT_FLOAT_EQ(t[0][1], 2.0f);
+    EXPECT_FLOAT_EQ(t[1][1], 5.0f);
+    EXPECT_FLOAT_EQ(t[2][1], 8.0f);
+}
+
+/**
+ * @test TENSOR.sort_view_tensor_3D_subcube
+ * @brief Sorting a subcube view in 3D only changes inside that region.
+ */
+TEST(TENSOR, sort_view_tensor_3D_subcube)
+{
+    Tensor<float> t({2, 2, 4}, MemoryLocation::HOST);
+    // [[[9,7,8,6],
+    //   [5,3,4,2]],
+    //  [[1,-1,0,-2],
+    //   [10,12,11,13]]]
+    std::vector<float> vals = {
+        9,7,8,6,  5,3,4,2,
+        1,-1,0,-2, 10,12,11,13
+    };
+    t = vals;
+
+    Tensor<float> v(t, {0,0,0}, {1,2,4});
+    v.sort(2);
+
+    // [[[6,7,8,9],
+    //   [2,3,4,5]],
+    //  [[1,-1,0,-2],
+    //   [10,12,11,13]]]
+    EXPECT_FLOAT_EQ(t[0][0][0], 6.0f);
+    EXPECT_FLOAT_EQ(t[0][0][3], 9.0f);
+    EXPECT_FLOAT_EQ(t[0][1][0], 2.0f);
+    EXPECT_FLOAT_EQ(t[0][1][3], 5.0f);
+
+    EXPECT_FLOAT_EQ(t[1][0][0], 1.0f);
+    EXPECT_FLOAT_EQ(t[1][1][0], 10.0f);
+}
+
+/**
+ * @test TENSOR.sort_view_non1D_flatten
+ * @brief Sorting a non-1D view with axis = -1
+ * should only flatten-sort the view region.
+ */
+TEST(TENSOR, sort_view_non1D_flatten)
+{
+    Tensor<float> t({2,3,3}, MemoryLocation::HOST);
+
+    std::vector<float> vals = {
+        1,2,3,   13,14,15,   7,8,9,
+        10,11,12, 16,17,18,  4,5,6
+    };
+    t = vals;
+
+    Tensor<float> v(t, {0,1,0}, {2,2,3});
+
+    v.sort(-1);
+
+    std::vector<float> got;
+    for (uint64_t i = 0; i < 2; ++i)
+    {
+        for (uint64_t j = 1; j < 3; ++j)
+        {
+            for (uint64_t k = 0; k < 3; ++k)
+            {
+                got.push_back(t[i][j][k]);
+            }
+        }
+    }
+    ASSERT_EQ(got.size(), 12u);
+    for (uint64_t idx = 1; idx < got.size(); ++idx)
+    {
+        EXPECT_LE(got[idx-1], got[idx]);
+    }
+
+    // Ensure elements outside the view (here: j == 0 rows) are unchanged.
+    for (uint64_t i = 0; i < 2; ++i)
+    {
+        for (uint64_t j = 0; j < 1; ++j)
+        {
+            for (uint64_t k = 0; k < 3; ++k)
+            {
+                uint64_t flat = i * (3 * 3) + j * 3 + k;
+                EXPECT_FLOAT_EQ(t[i][j][k], vals[flat]);
+            }
+        }
+    }
+}
+
+/**
+ * @test TENSOR.sort_idempotence
+ * @brief Sorting twice should give same result.
+ */
+TEST(TENSOR, sort_idempotence)
+{
+    Tensor<float> t({5}, MemoryLocation::HOST);
+    std::vector<float> vals = {4,1,3,2,0};
+    t = vals;
+    t.sort(0);
+    std::vector<float> once(5);
+    for (uint64_t i=0;i<5;i++)
+    {
+        once[i] = t[i];
+    }
+    t.sort(0);
+    for (uint64_t i=0;i<5;i++)
+    {
+        EXPECT_FLOAT_EQ(t[i], once[i]);
+    }
+}
+
+
 } // namespace Test

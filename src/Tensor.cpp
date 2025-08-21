@@ -253,9 +253,8 @@ Tensor<float_t>::Tensor(Tensor & other,
 
     if (view_rank == 0 || view_rank > original_rank)
     {
-        throw std::invalid_argument
-            (R"(Tensor(view constructor):
-                view shape rank must be between 1 and tensor rank.)");
+        throw std::invalid_argument(R"(Tensor(view constructor):
+            view shape rank must be between 1 and tensor rank.)");
     }
 
     // Check bounds for start indices and view dimensions.
@@ -534,9 +533,8 @@ Tensor<float_t>::operator float_t() const
 
     if (total_size != 1)
     {
-        throw std::invalid_argument
-            (R"(Tensor(implicit type conversion):
-                scalar read only allowed for tensors with single element.)");
+        throw std::invalid_argument(R"(Tensor(implicit type conversion):
+            scalar read only allowed for tensors with single element.)");
     }
 
     float_t tmp;
@@ -1445,9 +1443,8 @@ void Tensor<float_t>::to(MemoryLocation target_loc)
     }
     if (!m_own_data)
     {
-        throw std::runtime_error
-            (R"(Tensor(to):
-                cannot move memory of a Tensor view (non-owning).)");
+        throw std::runtime_error(R"(Tensor(to):
+            cannot move memory of a Tensor view (non-owning).)");
     }
 
     if (m_mem_loc == target_loc)
@@ -1516,28 +1513,385 @@ void Tensor<float_t>::reshape(const std::vector<uint64_t>& new_dimensions)
     {
         if (dim == 0)
         {
-            throw std::invalid_argument
-                ("Tensor(reshape): new_dimensions cannot contain zero.");
+            throw std::invalid_argument(R"(Tensor(reshape):
+                new_dimensions cannot contain zero.)");
         }
         if (new_total_size > U64_MAX / dim)
         {
-            throw std::overflow_error
-                ("Tensor(reshape): dimension product overflow.");
+            throw std::overflow_error(R"(Tensor(reshape):
+                dimension product overflow.)");
         }
         new_total_size *= dim;
     }
 
     if (new_total_size != og_total_size)
     {
-        throw std::invalid_argument
-            (R"(Tensor(reshape):
-                total number of elements must remain the same.)");
+        throw std::invalid_argument(R"(Tensor(reshape):
+            total number of elements must remain the same.)");
     }
 
     m_dimensions = new_dimensions;
     compute_strides();
 }
 
+template<typename float_t>
+void Tensor<float_t>::sort(int64_t axis)
+{
+    if (m_dimensions.empty())
+    {
+        return;
+    }
+
+    const uint64_t rank = static_cast<uint64_t>(m_dimensions.size());
+
+    if (axis != -1 && (axis < 0 || static_cast<uint64_t>(axis) >= rank))
+    {
+        throw std::invalid_argument("Tensor(sort): axis out of bounds");
+    }
+
+    std::uint64_t total_size = 1;
+    for (uint64_t d : m_dimensions)
+    {
+        total_size *= d;
+    }
+
+    uint64_t axis_size = 1, axis_stride = 1, slice_count = 1;
+    if (axis == -1)
+    {
+        axis_size = total_size;
+    }
+    else
+    {
+        const uint64_t u_axis = static_cast<uint64_t>(axis);
+        slice_count = 1;
+        for (uint64_t i = 0; i < rank; ++i)
+        {
+            if (i == u_axis)
+            {
+                axis_size = m_dimensions[i];
+                axis_stride = m_strides[i];
+            }
+            else
+            {
+                slice_count *= m_dimensions[i];
+            }
+        }
+    }
+
+    // Offset for each slice.
+    std::vector<uint64_t> host_base(static_cast<size_t>(slice_count), 0);
+
+    if (axis != -1)
+    {
+        // Shape and strides, removing the chosen axis to sort by.
+        std::vector<uint64_t> dims;
+        std::vector<uint64_t> strides_for_dims;
+        const uint64_t u_axis = static_cast<uint64_t>(axis);
+        for (uint64_t i = 0; i < rank; ++i)
+        {
+            if (i == u_axis)
+            {
+                continue;
+            }
+            dims.push_back(m_dimensions[i]);
+            strides_for_dims.push_back(m_strides[i]);
+        }
+        const uint64_t D = static_cast<std::uint64_t>(dims.size());
+
+        // These are the "index factors" (a.k.a. coord divisors):
+        // they let us convert a flat index 's'
+        // into multi-dimensional coordinates.
+        std::vector<uint64_t> index_factors(static_cast<size_t>(D), 1);
+
+        if (D >= 2)
+        {
+            // Compute the product of all dims after j
+            // Example: dims {2,3,4} -> index_factors {12,4,1}
+            for (int64_t j = static_cast<int64_t>(D) - 2; j >= 0; --j)
+            {
+                index_factors[static_cast<size_t>(j)] =
+                    index_factors[static_cast<size_t>(j + 1)] *
+                    dims[static_cast<size_t>(j + 1)];
+            }
+        }
+
+        // Now compute base memory offsets for each slice.
+        for (uint64_t s = 0; s < slice_count; ++s)
+        {
+            uint64_t base = 0;
+            uint64_t rem = s;
+
+            for (uint64_t j = 0; j < D; ++j)
+            {
+                uint64_t coord = rem / index_factors[j];
+                rem = rem % index_factors[j];
+                base += coord * strides_for_dims[j];
+            }
+            host_base[s] = base;
+        }
+    }
+
+    uint64_t* p_slice_base = static_cast<uint64_t*>(sycl::malloc_device
+            (static_cast<size_t>(slice_count) * sizeof(uint64_t), g_sycl_queue));
+
+    if (!p_slice_base)
+    {
+        throw std::bad_alloc();
+    }
+    g_sycl_queue.memcpy(p_slice_base, host_base.data(),
+        static_cast<size_t>(slice_count) * sizeof(uint64_t)).wait();
+
+    std::vector<uint64_t> divisors(static_cast<size_t>(rank), 1);
+    if (rank >= 2)
+    {
+        for (int64_t i = static_cast<int64_t>(rank) - 2; i >= 0; --i)
+        {
+            divisors[static_cast<size_t>(i)] =
+                divisors[static_cast<size_t>(i + 1)]
+                * m_dimensions[static_cast<size_t>(i + 1)];
+        }
+    }
+
+    uint64_t* p_divisors = static_cast<uint64_t*>
+        (sycl::malloc_device(sizeof(uint64_t) * rank, g_sycl_queue));
+    std::uint64_t* p_strides  = static_cast<uint64_t*>
+        (sycl::malloc_device(sizeof(uint64_t) * rank, g_sycl_queue));
+
+    if (!p_divisors || !p_strides) {
+        if (p_divisors)
+        {
+            sycl::free(p_divisors, g_sycl_queue);
+        }
+        if (p_strides)
+        {
+            sycl::free(p_strides, g_sycl_queue);
+        }
+        sycl::free(p_slice_base, g_sycl_queue);
+        throw std::bad_alloc();
+    }
+    g_sycl_queue.memcpy
+        (p_divisors, divisors.data(), sizeof(uint64_t) * rank).wait();
+    g_sycl_queue.memcpy
+        (p_strides, m_strides.data(), sizeof(uint64_t) * rank).wait();
+
+    // Allocate memory buffers.
+    float_t* tensor_data = m_p_data.get();
+    float_t* merge_buffer = static_cast<float_t*>(sycl::malloc_device
+        (static_cast<size_t>(total_size) * sizeof(float_t), g_sycl_queue));
+
+    if (!merge_buffer)
+    {
+        sycl::free(p_slice_base, g_sycl_queue);
+        sycl::free(p_divisors, g_sycl_queue);
+        sycl::free(p_strides, g_sycl_queue);
+        throw std::bad_alloc();
+    }
+
+    // Pointers for current merge pass: read from 'merge_input',
+    // write to 'merge_output'.
+    float_t* merge_input = tensor_data;
+    float_t* merge_output = merge_buffer;
+
+    constexpr uint64_t workgroup_size = 256u;
+
+    // Iterative bottom up merge sort.
+    for (uint64_t width = 1; width < axis_size; width *= 2)
+    {
+        const uint64_t chunks_per_slice =
+            (axis_size + 2 * width - 1) / (2 * width);
+        const uint64_t total_merges =
+            slice_count * chunks_per_slice;
+
+        if (total_merges == 0)
+        {
+            break;
+        }
+
+        const uint64_t global_work_size = total_merges * workgroup_size;
+
+        g_sycl_queue.submit([&](sycl::handler& cgh) {
+            cgh.parallel_for(sycl::nd_range<1>(
+                sycl::range<1>(static_cast<size_t>(global_work_size)),
+                sycl::range<1>(static_cast<size_t>(workgroup_size))),
+                [=](sycl::nd_item<1> item)
+            {
+                const uint64_t group_id = item.get_group_linear_id();
+                const uint64_t local_id = item.get_local_linear_id();
+
+                // Compute which slice and which chunk
+                // of that slice this thread works on.
+                const uint64_t slice_idx = group_id / chunks_per_slice;
+                const uint64_t chunk_idx = group_id % chunks_per_slice;
+                const uint64_t slice_base = p_slice_base[slice_idx];
+
+                // Compute left/mid/right boundaries of the merge.
+                const uint64_t left  = chunk_idx * 2 * width;
+                if (left >= axis_size)
+                {
+                    return;
+                }
+                const uint64_t mid   = sycl::min(left + width, axis_size);
+                const uint64_t right = sycl::min(left + 2 * width, axis_size);
+
+                const uint64_t len_left  = mid - left;
+                const uint64_t len_right = right - mid;
+                const uint64_t total_len = len_left + len_right;
+
+                // Compute the output segment assigned to this thread.
+                const uint64_t merge_start =
+                    (total_len * local_id) / workgroup_size;
+                const uint64_t merge_end   =
+                    (total_len * (local_id + 1)) / workgroup_size;
+                if (merge_start >= merge_end)
+                {
+                    return;
+                }
+
+                // Helper: map logical index to physical buffer index.
+                auto idx_of = [&](uint64_t logical_idx) -> uint64_t
+                {
+                    if (axis == -1)
+                    {
+                        uint64_t rem = logical_idx;
+                        uint64_t offset = 0;
+                        for (uint64_t d = 0; d < rank; ++d) {
+                            const uint64_t div = p_divisors[d];
+                            const uint64_t coord = rem / div;
+                            rem = rem % div;
+                            offset += coord * p_strides[d];
+                        }
+                        return offset;
+                    }
+                    else
+                    {
+                        return slice_base + logical_idx * axis_stride;
+                    }
+                };
+
+                // Merge-path partition function.
+                auto find_partition = [&](uint64_t k) -> uint64_t
+                {
+                    uint64_t i_min;
+                    if (k > len_right)
+                    {
+                        i_min = k - len_right;
+                    }
+                    else
+                    {
+                        i_min = 0;
+                    }
+
+                    uint64_t i_max;
+                    if (k < len_left)
+                    {
+                        i_max = k;
+                    }
+                    else
+                    {
+                        i_max = len_left;
+                    }
+
+                    while (i_min < i_max)
+                    {
+                        // Compute middle index explicitly.
+                        uint64_t i_mid = (i_min + i_max) / 2;
+                        uint64_t j_mid = k - i_mid;
+
+                        const uint64_t idx_a = idx_of(left + i_mid);
+                        const uint64_t idx_b = idx_of(mid + j_mid - 1);
+
+                        bool cmp;
+                        if (!sycl::isnan(merge_input[idx_a])
+                            && sycl::isnan(merge_input[idx_b]))
+                        {
+                            cmp = true;
+                        }
+                        else if (merge_input[idx_a] < merge_input[idx_b])
+                        {
+                            cmp = true;
+                        }
+                        else
+                        {
+                            cmp = false;
+                        }
+
+                        if (cmp)
+                        {
+                            i_min = i_mid + 1;
+                        }
+                        else
+                        {
+                            i_max = i_mid;
+                        }
+                    }
+
+                    return i_min;
+                };
+
+                const uint64_t i_start = find_partition(merge_start);
+                const uint64_t j_start = merge_start - i_start;
+                const uint64_t i_end   = find_partition(merge_end);
+                const uint64_t j_end   = merge_end - i_end;
+
+                // Merge the assigned segment.
+                uint64_t i = i_start;
+                uint64_t j = j_start;
+                uint64_t k = merge_start;
+                while (i < i_end && j < j_end)
+                {
+                    const uint64_t idx_a = idx_of(left + i);
+                    const uint64_t idx_b = idx_of(mid + j);
+                    const float_t val_a = merge_input[idx_a];
+                    const float_t val_b = merge_input[idx_b];
+                    const uint64_t idxOut = idx_of(left + k);
+
+                    if ((!sycl::isnan(val_a) && sycl::isnan(val_b))
+                        || val_a < val_b)
+                    {
+                        merge_output[idxOut] = val_a;
+                        ++i;
+                    }
+                    else
+                    {
+                        merge_output[idxOut] = val_b;
+                        ++j;
+                    }
+                    ++k;
+                }
+                while (i < i_end)
+                {
+                    merge_output[idx_of(left + k)] =
+                        merge_input[idx_of(left + i)];
+                    ++i;
+                    ++k;
+                }
+                while (j < j_end)
+                {
+                    merge_output[idx_of(left + k)] =
+                        merge_input[idx_of(mid + j)];
+                    ++j;
+                    ++k;
+                }
+            });
+        }).wait();
+        // Swap buffers for next merge pass.
+        std::swap(merge_input, merge_output);
+    }
+
+    // Copy back if final result ended up in temporary buffer.
+    if (merge_input != tensor_data)
+    {
+        g_sycl_queue.memcpy(tensor_data,
+            merge_input,
+            static_cast<size_t>(total_size) * sizeof(float_t)).wait();
+    }
+
+    // Free temporary buffers.
+    sycl::free(p_slice_base, g_sycl_queue);
+    sycl::free(merge_buffer, g_sycl_queue);
+    sycl::free(p_divisors, g_sycl_queue);
+    sycl::free(p_strides, g_sycl_queue);
+}
 
 template<typename float_t>
 void Tensor<float_t>::print(std::ostream& os) const
