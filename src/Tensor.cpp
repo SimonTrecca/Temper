@@ -231,16 +231,17 @@ Tensor<float_t>::Tensor(Tensor && other) noexcept
 }
 
 template<typename float_t>
-Tensor<float_t>::Tensor(Tensor & other,
-                  const std::vector<uint64_t> & start_indices,
-                  const std::vector<uint64_t> & view_shape)
+Tensor<float_t>::Tensor(const Tensor & other,
+                        const std::vector<uint64_t> & start_indices,
+                        const std::vector<uint64_t> & view_shape)
     : m_own_data(false),
       m_mem_loc(other.m_mem_loc)
 {
     const uint64_t original_rank = other.m_dimensions.size();
     const uint64_t view_rank = view_shape.size();
 
-    if (!other.m_p_data) {
+    if (!other.m_p_data)
+    {
         throw std::runtime_error(R"(Tensor(view constructor):
             cannot create view from uninitialized tensor.)");
     }
@@ -289,6 +290,109 @@ Tensor<float_t>::Tensor(Tensor & other,
     // Set dimensions and strides for the view.
     m_dimensions.assign(view_shape.begin(), view_shape.end());
     m_strides.assign(other.m_strides.end() - view_rank, other.m_strides.end());
+}
+
+template<typename float_t>
+Tensor<float_t>::Tensor(const Tensor & owner,
+                        const std::vector<uint64_t> & start_indices,
+                        const std::vector<uint64_t> & dims,
+                        const std::vector<uint64_t> & strides)
+    : m_dimensions(dims),
+      m_strides(strides),
+      m_own_data(false),
+      m_mem_loc(owner.m_mem_loc)
+{
+    if (!owner.m_p_data)
+    {
+        throw std::runtime_error(R"(Tensor(alias view constructor):
+            cannot create view from uninitialized tensor.)");
+    }
+
+    const uint64_t owner_rank = static_cast<uint64_t>(owner.m_dimensions.size());
+    const uint64_t view_rank = static_cast<uint64_t>(dims.size());
+
+    if (start_indices.size() != owner_rank)
+    {
+        throw std::invalid_argument(R"(Tensor(alias view constructor):
+            start_indices must match owner's rank.)");
+    }
+
+    if (strides.size() != view_rank)
+    {
+        throw std::invalid_argument(R"(Tensor(alias view constructor):
+            dims and strides must have the same rank.)");
+    }
+
+    if (view_rank == 0)
+    {
+        throw std::invalid_argument(R"(Tensor(alias view constructor):
+            view rank must be >= 1.)");
+    }
+
+    for (uint64_t i = 0; i < owner_rank; ++i)
+    {
+        if (start_indices[i] >= owner.m_dimensions[i])
+        {
+            throw std::out_of_range(R"(Tensor(alias view constructor):
+                start index out of bounds.)");
+        }
+    }
+
+    for (uint64_t j = 0; j < view_rank; ++j)
+    {
+        if (dims[j] == 0)
+        {
+            throw std::invalid_argument(R"(Tensor(alias view constructor):
+                view dimensions must be non-zero.)");
+        }
+    }
+
+    uint64_t offset = 0;
+    for (uint64_t i = 0; i < owner_rank; ++i)
+    {
+        offset += owner.m_strides[i] * start_indices[i];
+    }
+
+    uint64_t owner_total = 1;
+    for (uint64_t d : owner.m_dimensions)
+    {
+        owner_total *= d;
+    }
+
+    constexpr uint64_t U64_MAX = std::numeric_limits<uint64_t>::max();
+
+
+    uint64_t max_index = offset;
+    for (uint64_t j = 0; j < view_rank; ++j)
+    {
+        uint64_t dimm1 = dims[j] - 1;
+        uint64_t vstride = strides[j];
+
+        if (vstride != 0 && dimm1 > 0)
+        {
+            if (vstride > U64_MAX / dimm1)
+            {
+                throw std::overflow_error(R"(Tensor(alias view constructor):
+                    stride * (dim-1) overflow.)");
+            }
+            uint64_t add = vstride * dimm1;
+            if (max_index > U64_MAX - add)
+            {
+                throw std::overflow_error(R"(Tensor(alias view constructor):
+                    max index computation overflow.)");
+            }
+            max_index += add;
+        }
+    }
+
+    if (max_index >= owner_total)
+    {
+        throw std::out_of_range(R"(Tensor(alias view constructor):
+            view exceeds owner's bounds.)");
+    }
+
+    m_p_data =
+        std::shared_ptr<float_t>(owner.m_p_data, owner.m_p_data.get() + offset);
 }
 
 template<typename float_t>
@@ -1676,8 +1780,18 @@ void Tensor<float_t>::sort(int64_t axis)
 
     // Allocate memory buffers.
     float_t* tensor_data = m_p_data.get();
-    float_t* merge_buffer = static_cast<float_t*>(sycl::malloc_device
-        (static_cast<size_t>(total_size) * sizeof(float_t), g_sycl_queue));
+    float_t* merge_buffer = nullptr;
+
+    if (m_mem_loc == MemoryLocation::DEVICE)
+    {
+        merge_buffer = static_cast<float_t*>(sycl::malloc_device
+            (static_cast<size_t>(total_size) * sizeof(float_t), g_sycl_queue));
+    }
+    else
+    {
+        merge_buffer = static_cast<float_t*>(sycl::malloc_shared
+            (static_cast<size_t>(total_size) * sizeof(float_t), g_sycl_queue));
+    }
 
     if (!merge_buffer)
     {
@@ -1891,6 +2005,62 @@ void Tensor<float_t>::sort(int64_t axis)
     sycl::free(merge_buffer, g_sycl_queue);
     sycl::free(p_divisors, g_sycl_queue);
     sycl::free(p_strides, g_sycl_queue);
+}
+
+template<typename float_t>
+Tensor<float_t> Tensor<float_t>::transpose() const
+{
+    const uint64_t rank = m_dimensions.size();
+    if (rank == 0)
+    {
+        throw std::runtime_error(R"(Tensor(transpose):
+            cannot transpose an empty tensor.)");
+    }
+
+    std::vector<uint64_t> axes(rank);
+    for (uint64_t i = 0; i < rank; ++i)
+    {
+        axes[i] = rank - 1 - i;
+    }
+
+    return transpose(axes);
+}
+
+template<typename float_t>
+Tensor<float_t> Tensor<float_t>::transpose(const std::vector<uint64_t> & axes) const
+{
+    const uint64_t rank = m_dimensions.size();
+
+    if (axes.size() != rank)
+    {
+        throw std::invalid_argument(R"(Tensor(transpose):
+            axes vector must have same length as tensor rank.)"
+        );
+    }
+
+    std::vector<bool> seen(rank, false);
+    for (uint64_t ax : axes)
+    {
+        if (ax >= rank || seen[ax])
+        {
+            throw std::invalid_argument(R"(Tensor(transpose):
+                axes must be a permutation of [0..rank-1].)"
+            );
+        }
+        seen[ax] = true;
+    }
+
+    std::vector<uint64_t> new_dims(rank);
+    std::vector<uint64_t> new_strides(rank);
+    for (uint64_t i = 0; i < rank; ++i)
+    {
+        new_dims[i] = m_dimensions[axes[i]];
+        new_strides[i] = m_strides[axes[i]];
+    }
+
+    std::vector<uint64_t> start_indices(rank, 0);
+
+    return Tensor(*this, start_indices, new_dims, new_strides);
 }
 
 template<typename float_t>

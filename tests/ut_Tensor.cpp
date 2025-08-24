@@ -893,6 +893,290 @@ TEST(TENSOR, view_constructor_alias_pointer_offset)
 }
 
 /**
+ * @test TENSOR.alias_view_constructor_extracts_column
+ * @brief Extracts a single column from a 2x4 tensor.
+ * Verifies dimensions, strides, and content correctness.
+ */
+TEST(TENSOR, alias_view_constructor_extracts_column)
+{
+    Tensor<float> t({2, 4}, MemoryLocation::HOST);
+    std::vector<float> vals = {
+        0.f, 1.f, 2.f, 3.f,   // row 0
+        4.f, 5.f, 6.f, 7.f    // row 1
+    };
+    t = vals;
+
+    Tensor<float> col_view(t, {0,1}, {2}, {t.m_strides[0]});
+
+    EXPECT_EQ(col_view.m_dimensions, std::vector<uint64_t>({2}));
+    EXPECT_EQ(col_view.m_strides, std::vector<uint64_t>({4}));
+
+    Tensor<float> host({2}, MemoryLocation::HOST);
+    copy_tensor_data(host, col_view);
+
+    std::vector<float> out(2);
+    g_sycl_queue.memcpy(out.data(), host.m_p_data.get(), sizeof(float)*2).wait();
+
+    EXPECT_FLOAT_EQ(out[0], 1.f);
+    EXPECT_FLOAT_EQ(out[1], 5.f);
+}
+
+/**
+ * @test TENSOR.alias_view_constructor_extracts_row
+ * @brief Extracts a row from a 2x4 tensor.
+ * Verifies dimensions, strides, and content correctness.
+ */
+TEST(TENSOR, alias_view_constructor_extracts_row)
+{
+    Tensor<float> t({2,4}, MemoryLocation::HOST);
+    std::vector<float> vals = {0,1,2,3,4,5,6,7};
+    t = vals;
+
+    Tensor<float> row_view(t, {1,0}, {4}, {t.m_strides[1]});
+
+    EXPECT_EQ(row_view.m_dimensions, std::vector<uint64_t>({4}));
+    EXPECT_EQ(row_view.m_strides, std::vector<uint64_t>({1}));
+
+    Tensor<float> host({4}, MemoryLocation::HOST);
+    copy_tensor_data(host, row_view);
+
+    std::vector<float> out(4);
+    g_sycl_queue.memcpy(out.data(), host.m_p_data.get(), sizeof(float)*4).wait();
+
+    for (uint64_t i=0; i<4; ++i)
+    {
+        EXPECT_FLOAT_EQ(out[i], 4.f+i);
+    }
+}
+
+/**
+ * @test TENSOR.alias_view_constructor_extracts_patch
+ * @brief Extracts a 2x2 patch from a 4x4 tensor.
+ */
+TEST(TENSOR, alias_view_constructor_extracts_patch)
+{
+    Tensor<float> t({4,4}, MemoryLocation::HOST);
+    std::vector<float> vals(16);
+    for (uint64_t i=0; i<16; ++i)
+    {
+        vals[i] = static_cast<float>(i);
+    }
+    t = vals;
+
+    Tensor<float> patch(t, {1,1}, {2,2}, {t.m_strides[0], t.m_strides[1]});
+
+    EXPECT_EQ(patch.m_dimensions, (std::vector<uint64_t>{2,2}));
+    EXPECT_EQ(patch.m_strides, (std::vector<uint64_t>{4,1}));
+
+    Tensor<float> host({2,2}, MemoryLocation::HOST);
+    copy_tensor_data(host, patch);
+
+    std::vector<float> out(4);
+    g_sycl_queue.memcpy(out.data(), host.m_p_data.get(), sizeof(float)*4).wait();
+
+    EXPECT_FLOAT_EQ(out[0], 5.f);
+    EXPECT_FLOAT_EQ(out[1], 6.f);
+    EXPECT_FLOAT_EQ(out[2], 9.f);
+    EXPECT_FLOAT_EQ(out[3], 10.f);
+}
+
+/**
+ * @test TENSOR.alias_view_constructor_mutation_reflects
+ * @brief Mutating a view updates the underlying owner tensor.
+ */
+TEST(TENSOR, alias_view_constructor_mutation_reflects)
+{
+    Tensor<float> t({2,3}, MemoryLocation::HOST);
+    std::vector<float> vals = {0,1,2,3,4,5};
+    t = vals;
+
+    Tensor<float> col1(t, {0,1}, {2}, {t.m_strides[0]});
+
+    col1[0] = 100.f;
+    col1[1] = 200.f;
+
+    Tensor<float> host({2,3}, MemoryLocation::HOST);
+    copy_tensor_data(host, t);
+
+    std::vector<float> out(6);
+    g_sycl_queue.memcpy(out.data(), host.m_p_data.get(), sizeof(float)*6).wait();
+
+    EXPECT_FLOAT_EQ(out[1], 100.f);
+    EXPECT_FLOAT_EQ(out[4], 200.f);
+}
+
+/**
+ * @test TENSOR.alias_view_constructor_broadcasting
+ * @brief Create a broadcasted view (stride 0) of a 1D tensor.
+ */
+TEST(TENSOR, alias_view_constructor_broadcasting)
+{
+    Tensor<float> t({3}, MemoryLocation::HOST);
+    t = std::vector<float>{10,20,30};
+
+    Tensor<float> broadcast_view(t, {1}, {4}, {0});
+
+    EXPECT_EQ(broadcast_view.m_dimensions, std::vector<uint64_t>{4});
+    EXPECT_EQ(broadcast_view.m_strides, std::vector<uint64_t>{0});
+
+    Tensor<float> host({4}, MemoryLocation::HOST);
+    copy_tensor_data(host, broadcast_view);
+
+    std::vector<float> out(4);
+    g_sycl_queue.memcpy(out.data(), host.m_p_data.get(), sizeof(float)*4).wait();
+
+    for (uint64_t i=0; i<4; ++i)
+    {
+        EXPECT_FLOAT_EQ(out[i], 20.f);
+    }
+}
+
+/**
+ * @test TENSOR.alias_view_constructor_reshaping
+ * @brief Create a 2x3 view from a 1D 6-element tensor using strides.
+ */
+TEST(TENSOR, alias_view_constructor_reshaping)
+{
+    Tensor<float> t({6}, MemoryLocation::HOST);
+    t = std::vector<float>{0,1,2,3,4,5};
+
+    Tensor<float> reshaped(t, {0}, {2,3}, {3,1});
+
+    EXPECT_EQ(reshaped.m_dimensions, (std::vector<uint64_t>{2,3}));
+    EXPECT_EQ(reshaped.m_strides, (std::vector<uint64_t>{3,1}));
+
+
+    Tensor<float> host({2,3}, MemoryLocation::HOST);
+    copy_tensor_data(host, reshaped);
+
+    std::vector<float> out(6);
+    g_sycl_queue.memcpy(out.data(), host.m_p_data.get(), sizeof(float)*6).wait();
+
+    EXPECT_FLOAT_EQ(out[0], 0.f);
+    EXPECT_FLOAT_EQ(out[1], 1.f);
+    EXPECT_FLOAT_EQ(out[2], 2.f);
+    EXPECT_FLOAT_EQ(out[3], 3.f);
+    EXPECT_FLOAT_EQ(out[4], 4.f);
+    EXPECT_FLOAT_EQ(out[5], 5.f);
+}
+
+/**
+ * @test TENSOR.alias_view_constructor_out_of_bounds
+ * @brief Check exceptions on invalid start indices or dims.
+ */
+TEST(TENSOR, alias_view_constructor_out_of_bounds)
+{
+    Tensor<float> t({2,2}, MemoryLocation::HOST);
+    t = std::vector<float>{1,2,3,4};
+
+    EXPECT_THROW(Tensor<float>(t,{2,0},{1},{2}), std::out_of_range);
+    EXPECT_THROW(Tensor<float>(t,{0,0},{3},{2}), std::out_of_range);
+    EXPECT_THROW(Tensor<float>(t,{0,0},{2},{2,1}), std::invalid_argument);
+}
+
+/**
+ * @test TENSOR.alias_view_constructor_zero_rank
+ * @brief Creating a view with zero rank should throw.
+ */
+TEST(TENSOR, alias_view_constructor_zero_rank)
+{
+    Tensor<float> t({2,2}, MemoryLocation::HOST);
+    t = std::vector<float>{1,2,3,4};
+
+    EXPECT_THROW(Tensor<float>(t, {0,0}, {}, {}), std::invalid_argument);
+}
+
+/**
+ * @test TENSOR.alias_view_constructor_zero_dim
+ * @brief Creating a view with a zero dimension should throw.
+ */
+TEST(TENSOR, alias_view_constructor_zero_dim)
+{
+    Tensor<float> t({2,2}, MemoryLocation::HOST);
+    t = std::vector<float>{1,2,3,4};
+
+    EXPECT_THROW(Tensor<float>(t, {0,0}, {2,0}, {1,1}), std::invalid_argument);
+}
+
+/**
+ * @test TENSOR.alias_view_constructor_stride_overflow
+ * @brief Creating a view that triggers stride*(dim-1) overflow should throw.
+ */
+TEST(TENSOR, alias_view_constructor_stride_overflow)
+{
+    Tensor<float> t({2,2}, MemoryLocation::HOST);
+    t = std::vector<float>{1,2,3,4};
+
+    std::vector<uint64_t> huge_stride =
+        {std::numeric_limits<uint64_t>::max(), 1};
+    EXPECT_THROW(Tensor<float>(t, {0,0}, {2,2}, huge_stride),
+        std::overflow_error);
+}
+
+/**
+ * @test TENSOR.alias_view_constructor_uninitialized_owner
+ * @brief Creating a view from an uninitialized tensor should throw.
+ */
+TEST(TENSOR, alias_view_constructor_uninitialized_owner)
+{
+    Tensor<float> t;
+    EXPECT_THROW(Tensor<float>(t, {0,0}, {2,2}, {2,1}), std::runtime_error);
+}
+
+/**
+ * @test TENSOR.alias_view_constructor_multi_dim_broadcast
+ * @brief Broadcasting a single row/column in 2D.
+ */
+TEST(TENSOR, alias_view_constructor_multi_dim_broadcast)
+{
+    Tensor<float> t({2,2}, MemoryLocation::HOST);
+    t = std::vector<float>{1,2,3,4};
+
+    Tensor<float> broadcast_view(t, {0,0}, {3,2}, {0,1});
+
+    EXPECT_EQ(broadcast_view.m_dimensions, (std::vector<uint64_t>{3,2}));
+    EXPECT_EQ(broadcast_view.m_strides, (std::vector<uint64_t>{0,1}));
+
+    Tensor<float> host({3,2}, MemoryLocation::HOST);
+    copy_tensor_data(host, broadcast_view);
+
+    std::vector<float> out(6);
+    g_sycl_queue.memcpy(out.data(), host.m_p_data.get(), sizeof(float)*6).wait();
+
+    EXPECT_FLOAT_EQ(out[0], 1.f);
+    EXPECT_FLOAT_EQ(out[1], 2.f);
+    EXPECT_FLOAT_EQ(out[2], 1.f);
+    EXPECT_FLOAT_EQ(out[3], 2.f);
+    EXPECT_FLOAT_EQ(out[4], 1.f);
+    EXPECT_FLOAT_EQ(out[5], 2.f);
+}
+
+/**
+ * @test TENSOR.alias_view_constructor_stride0_invalid
+ * @brief Using stride 0 for non-broadcast dimension >1
+ * should still work as broadcast.
+ */
+TEST(TENSOR, alias_view_constructor_stride0_invalid)
+{
+    Tensor<float> t({2}, MemoryLocation::HOST);
+    t = std::vector<float>{42, 99};
+
+    Tensor<float> view(t, {0}, {2}, {0});
+
+    EXPECT_EQ(view.m_dimensions, (std::vector<uint64_t>{2}));
+    EXPECT_EQ(view.m_strides, (std::vector<uint64_t>{0}));
+
+    Tensor<float> host({2}, MemoryLocation::HOST);
+    copy_tensor_data(host, view);
+
+    std::vector<float> out(2);
+    g_sycl_queue.memcpy(out.data(), host.m_p_data.get(), sizeof(float)*2).wait();
+
+    EXPECT_FLOAT_EQ(out[0], 42.f);
+    EXPECT_FLOAT_EQ(out[1], 42.f);
+}
+
+/**
  * @test TENSOR.operator_equals_copy_assignment
  * @brief Tests copy assignment operator.
  */
@@ -3060,42 +3344,6 @@ TEST(TENSOR, reshape_multiple_roundtrip_preserves_data)
 }
 
 /**
- * @test TENSOR.print_tensor
- * @brief Checks that print correctly outputs a 2x2 tensor with assigned values.
- *
- * Creates a 2x2 tensor, assigns values {1,2,3,4}, and verifies
- * that print outputs the expected nested format.
- */
-TEST(TENSOR, print_tensor)
-{
-    temper::Tensor<float> t({2, 2}, temper::MemoryLocation::HOST);
-    std::vector<float> vals = {1.0f, 2.0f, 3.0f, 4.0f};
-    t = vals;
-
-    std::stringstream ss;
-    t.print(ss);
-
-    std::string expected = "[[1, 2],\n [3, 4]]\n";
-
-    EXPECT_EQ(ss.str(), expected);
-}
-
-/**
- * @test TENSOR.print_empty_tensor
- * @brief Checks that print correctly outputs an empty tensor.
- *
- * Creates a tensor with no dimensions and verifies that print
- * outputs the string "[]\n".
- */
-TEST(TENSOR, print_empty_tensor)
-{
-    temper::Tensor<float> t;
-    std::stringstream ss;
-    t.print(ss);
-    EXPECT_EQ(ss.str(), "[]\n");
-}
-
-/**
  * @test TENSOR.sort_empty
  * @brief Sorting an empty tensor should not throw.
  */
@@ -3476,5 +3724,203 @@ TEST(TENSOR, sort_idempotence)
     }
 }
 
+/**
+ * @test TENSOR.transpose_noargs_reverse_axes
+ * @brief Tests that transpose() with no arguments reverses all axes.
+ */
+TEST(TENSOR, transpose_noargs_reverse_axes)
+{
+    Tensor<float> t({2, 3, 4}, MemoryLocation::HOST);
+    std::vector<float> vals(24);
+    for (uint64_t i = 0; i < 24; ++i)
+    {
+        vals[i] = static_cast<float>(i);
+    }
+    t = vals;
+
+    Tensor<float> t_rev = t.transpose();
+
+    EXPECT_EQ(t_rev.m_dimensions, (std::vector<uint64_t>{4, 3, 2}));
+    EXPECT_EQ(t_rev.m_strides,
+        (std::vector<uint64_t>{t.m_strides[2], t.m_strides[1], t.m_strides[0]}));
+
+    Tensor<float> host({4, 3, 2}, MemoryLocation::HOST);
+    copy_tensor_data(host, t_rev);
+
+    std::vector<float> out(24);
+    g_sycl_queue.memcpy
+        (out.data(), host.m_p_data.get(), sizeof(float) * 24).wait();
+
+    EXPECT_FLOAT_EQ(out[0], vals[0]);
+    EXPECT_FLOAT_EQ(out[23], vals[23]);
+}
+
+/**
+ * @test TENSOR.transpose_explicit_axes
+ * @brief Tests transpose with explicit axis permutation.
+ */
+TEST(TENSOR, transpose_explicit_axes)
+{
+    Tensor<float> t({2, 3, 4}, MemoryLocation::HOST);
+    std::vector<float> vals(24);
+    for (uint64_t i = 0; i < 24; ++i)
+    {
+        vals[i] = static_cast<float>(i);
+    }
+    t = vals;
+
+    Tensor<float> perm = t.transpose({2, 1, 0});
+
+    EXPECT_EQ(perm.m_dimensions, (std::vector<uint64_t>{4, 3, 2}));
+    EXPECT_EQ(perm.m_strides,
+        (std::vector<uint64_t>{t.m_strides[2], t.m_strides[1], t.m_strides[0]}));
+
+    Tensor<float> host({4, 3, 2}, MemoryLocation::HOST);
+    copy_tensor_data(host, perm);
+    std::vector<float> out(24);
+    g_sycl_queue.memcpy
+        (out.data(), host.m_p_data.get(), sizeof(float) * 24).wait();
+
+    EXPECT_FLOAT_EQ(out[0], vals[0]);
+    EXPECT_FLOAT_EQ(out[23], vals[23]);
+}
+
+/**
+ * @test TENSOR.transpose_2d
+ * @brief Tests transpose on a 2D tensor (matrix).
+ */
+TEST(TENSOR, transpose_2d)
+{
+    Tensor<float> t({2, 3}, MemoryLocation::HOST);
+    t = {1,2,3,4,5,6};
+
+    Tensor<float> t_T = t.transpose();
+
+    EXPECT_EQ(t_T.m_dimensions, (std::vector<uint64_t>{3,2}));
+    EXPECT_EQ(t_T.m_strides,
+        (std::vector<uint64_t>{t.m_strides[1], t.m_strides[0]}));
+
+    Tensor<float> host({3,2}, MemoryLocation::HOST);
+    copy_tensor_data(host, t_T);
+    std::vector<float> out(6);
+    g_sycl_queue.memcpy
+        (out.data(), host.m_p_data.get(), sizeof(float) * 6).wait();
+
+    EXPECT_FLOAT_EQ(out[0], 1.f);
+    EXPECT_FLOAT_EQ(out[1], 4.f);
+    EXPECT_FLOAT_EQ(out[2], 2.f);
+    EXPECT_FLOAT_EQ(out[3], 5.f);
+    EXPECT_FLOAT_EQ(out[4], 3.f);
+    EXPECT_FLOAT_EQ(out[5], 6.f);
+}
+
+/**
+ * @test TENSOR.transpose_mutation_reflects
+ * @brief Ensure that modifying the transposed alias updates the original tensor.
+ */
+TEST(TENSOR, transpose_mutation_reflects)
+{
+    Tensor<float> t({2, 3}, MemoryLocation::HOST);
+    t = {0,1,2,3,4,5};
+
+    Tensor<float> t_T = t.transpose();
+    t_T[0][0] = 100.f;
+    t_T[2][1] = 200.f;
+
+    Tensor<float> host({2,3}, MemoryLocation::HOST);
+    copy_tensor_data(host, t);
+    std::vector<float> out(6);
+    g_sycl_queue.memcpy(out.data(), host.m_p_data.get(), sizeof(float)*6).wait();
+
+    EXPECT_FLOAT_EQ(out[0], 100.f);
+    EXPECT_FLOAT_EQ(out[5], 200.f);
+}
+
+/**
+ * @test TENSOR.transpose_invalid_axes
+ * @brief Transpose throws when axes permutation is invalid.
+ */
+TEST(TENSOR, transpose_invalid_axes)
+{
+    Tensor<float> t({2,3,4}, MemoryLocation::HOST);
+    t = std::vector<float>(24, 1.f);
+
+    EXPECT_THROW(t.transpose({0,1}), std::invalid_argument);
+
+    EXPECT_THROW(t.transpose({0,1,1}), std::invalid_argument);
+
+    EXPECT_THROW(t.transpose({0,1,3}), std::invalid_argument);
+}
+
+/**
+ * @test TENSOR.transpose_1d
+ * @brief Transpose a 1D tensor should return a 1D alias (no change).
+ */
+TEST(TENSOR, transpose_1d)
+{
+    Tensor<float> t({5}, MemoryLocation::HOST);
+    t = {0,1,2,3,4};
+
+    Tensor<float> t_tr = t.transpose();
+    EXPECT_EQ(t_tr.m_dimensions, t.m_dimensions);
+    EXPECT_EQ(t_tr.m_strides, t.m_strides);
+
+    Tensor<float> host({5}, MemoryLocation::HOST);
+    copy_tensor_data(host, t_tr);
+    std::vector<float> out(5);
+    g_sycl_queue.memcpy(out.data(), host.m_p_data.get(), sizeof(float)*5).wait();
+
+    for (uint64_t i = 0; i < 5; ++i)
+    {
+        EXPECT_FLOAT_EQ(out[i], static_cast<float>(i));
+    }
+}
+
+/**
+ * @test TENSOR.transpose_empty
+ * @brief Transpose of an empty tensor throws.
+ */
+TEST(TENSOR, transpose_empty)
+{
+    Tensor<float> t;
+    EXPECT_THROW(t.transpose(), std::runtime_error);
+}
+
+
+/**
+ * @test TENSOR.print_tensor
+ * @brief Checks that print correctly outputs a 2x2 tensor with assigned values.
+ *
+ * Creates a 2x2 tensor, assigns values {1,2,3,4}, and verifies
+ * that print outputs the expected nested format.
+ */
+TEST(TENSOR, print_tensor)
+{
+    temper::Tensor<float> t({2, 2}, temper::MemoryLocation::HOST);
+    std::vector<float> vals = {1.0f, 2.0f, 3.0f, 4.0f};
+    t = vals;
+
+    std::stringstream ss;
+    t.print(ss);
+
+    std::string expected = "[[1, 2],\n [3, 4]]\n";
+
+    EXPECT_EQ(ss.str(), expected);
+}
+
+/**
+ * @test TENSOR.print_empty_tensor
+ * @brief Checks that print correctly outputs an empty tensor.
+ *
+ * Creates a tensor with no dimensions and verifies that print
+ * outputs the string "[]\n".
+ */
+TEST(TENSOR, print_empty_tensor)
+{
+    temper::Tensor<float> t;
+    std::stringstream ss;
+    t.print(ss);
+    EXPECT_EQ(ss.str(), "[]\n");
+}
 
 } // namespace Test

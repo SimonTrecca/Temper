@@ -115,7 +115,8 @@ public:
     Tensor(Tensor && other) noexcept;
 
     /**
-     * @brief Construct a non-owning view into another tensor.
+     * @brief View constructor.
+     * Constructs a non-owning view into another tensor.
      *
      * Creates a view that aliases the owner’s linear buffer (no reallocation).
      * The view logically does not own separate storage,
@@ -136,9 +137,46 @@ public:
      * @throws std::runtime_error if:
      * - @p other has no data (default-constructed or moved-from)
      */
-    Tensor(Tensor & other,
-           const std::vector<uint64_t> & start_indices,
-           const std::vector<uint64_t> & view_shape);
+    Tensor(const Tensor & other,
+            const std::vector<uint64_t> & start_indices,
+            const std::vector<uint64_t> & view_shape);
+
+    /**
+     * @brief Alias view constructor.
+     * Constructs a non-owning strided view into another tensor.
+     *
+     * Creates a view that aliases the owner’s linear buffer (no reallocation).
+     * The view logically does not own separate storage,
+     * but it holds an aliasing `shared_ptr` to the owner's buffer so the buffer
+     * remains alive while either control block is retained.
+     * Strides allow accessing elements in non-contiguous memory layouts.
+     *
+     * @param other Tensor to view into.
+     * @param start_indices Starting coordinate of the view (one per owner axis).
+     * @param dims Dimensions of the view (size per axis).
+     * Must have all entries > 0.
+     * @param strides Strides of the view(step size in the underlying data
+     * for each axis). Must have the same size as @p dims.
+     *
+     * @throws std::runtime_error if the owner tensor has no allocated data.
+     * @throws std::invalid_argument if:
+     * - @p start_indices.size() does not match the owner’s rank.
+     * - @p dims.size() != @p strides.size().
+     * - the view rank (number of dimensions) is zero.
+     * - any entry in @p dims is zero.
+     * @throws std::out_of_range if:
+     * - any entry in @p start_indices is >= the corresponding
+     * dimension of the owner.
+     * - the computed maximum index in the owner buffer that the view
+     * will access exceeds the owner’s total size.
+     * @throws std::overflow_error if:
+     * - stride * (dim-1) overflows for any axis.
+     * - computing the maximum index for the view overflows uint64_t.
+     */
+    Tensor(const Tensor & owner,
+            const std::vector<uint64_t> & start_indices,
+            const std::vector<uint64_t> & dims,
+            const std::vector<uint64_t> & strides);
 
     /**
      * @brief Copy assignment operator.
@@ -379,6 +417,38 @@ public:
     void sort(int64_t axis = -1);
 
     /**
+     * @brief Returns a new tensor with axes reversed (full transpose).
+     *
+     * This function returns a view of the tensor with its axes reversed.
+     * For example, a tensor of shape [2,3,4] will become [4,3,2].
+     * The returned tensor shares the same underlying data as
+     * the original tensor, so no data is copied.
+     *
+     * @throws std::runtime_error if the tensor is empty (rank 0).
+     * @return Tensor<float_t> A new tensor view with reversed axes.
+     */
+    Tensor<float_t> transpose() const;
+
+    /**
+     * @brief Returns a new tensor with permuted axes according to
+     * the given order.
+     *
+     * This function creates a view of the tensor with its axes
+     * rearranged according to the `axes` vector.
+     * The returned tensor shares the same underlying data as
+     * the original tensor, so no data is copied.
+     *
+     * @param axes Vector specifying the new order of axes.
+     * Must be a permutation of [0..rank-1], where `rank` is
+     * the number of dimensions of the tensor.
+     *
+     * @throws std::invalid_argument if `axes.size()` != rank or
+     * if `axes` is not a valid permutation.
+     * @return Tensor<float_t> A new tensor view with permuted axes.
+     */
+    Tensor<float_t> transpose(const std::vector<uint64_t> & axes) const;
+
+    /**
      * @brief Prints the tensor elements to the provided output
      * stream in a nested format.
      *
@@ -405,8 +475,6 @@ public:
 	~Tensor() noexcept = default;
 
     /* TODO
-    sort
-    transpose (both with no argument and axes argument)
     cumsum
     sum
     getters and setters
