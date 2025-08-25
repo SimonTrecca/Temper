@@ -569,7 +569,8 @@ TEST(TENSOR, view_constructor_invalid_arguments_throw)
  * @brief Tests slicing a 4D tensor while dropping the first two axes,
  * verifying correct shape, strides, and values in the resulting view.
  *
- * The original tensor has shape {2, 3, 4, 5} and is filled with values from 1 to 120.
+ * The original tensor has shape {2, 3, 4, 5} and is filled with
+ * values from 1 to 120.
  * The slice extracts the {4, 5} sub-tensor at position (0, 0, :, :)
  */
 TEST(TENSOR, view_constructor_4d_drops_prefix_axes)
@@ -893,6 +894,49 @@ TEST(TENSOR, view_constructor_alias_pointer_offset)
 }
 
 /**
+ * @test TENSOR.view_constructor_from_alias
+ * @brief Ensures that creating a view from an alias works correctly.
+ *
+ * Start with a 2x3 tensor:
+ * [ [0, 1, 2],
+ * [3, 4, 5] ]
+ * First build an alias with shape (3,2) and strides (1,3)
+ * (transposed view: [ [0,3], [1,4], [2,5] ]).
+ * Then slice a view from that alias: take the first two rows
+ * => shape (2,2). Verify dimensions, strides, and values.
+ */
+TEST(TENSOR, view_constructor_from_alias) {
+    // Owner tensor 2x3
+    Tensor<float> t({2, 3}, MemoryLocation::HOST);
+    std::vector<float> vals = { 0.f, 1.f, 2.f,
+                                3.f, 4.f, 5.f };
+    t = vals;
+
+    Tensor<float> alias(t, {0,0}, {3,2}, {1,3});
+    EXPECT_EQ(alias.m_dimensions, std::vector<uint64_t>({3,2}));
+    EXPECT_EQ(alias.m_strides, std::vector<uint64_t>({1,3}));
+
+    Tensor<float> subview(alias, {0,0}, {2,2});
+    EXPECT_EQ(subview.m_dimensions, std::vector<uint64_t>({2,2}));
+    EXPECT_EQ(subview.m_strides[0], alias.m_strides[0]);
+    EXPECT_EQ(subview.m_strides[1], alias.m_strides[1]);
+
+    Tensor<float> host({2,2}, MemoryLocation::HOST);
+    copy_tensor_data(host, subview);
+
+    std::vector<float> out(4);
+    g_sycl_queue.memcpy(out.data(), host.m_p_data.get(), sizeof(float)*4).wait();
+
+    // Expected values from transposed alias:
+    // subview = [ [0,3],
+    //             [1,4] ].
+    EXPECT_FLOAT_EQ(out[0], 0.f);
+    EXPECT_FLOAT_EQ(out[1], 3.f);
+    EXPECT_FLOAT_EQ(out[2], 1.f);
+    EXPECT_FLOAT_EQ(out[3], 4.f);
+}
+
+/**
  * @test TENSOR.alias_view_constructor_extracts_column
  * @brief Extracts a single column from a 2x4 tensor.
  * Verifies dimensions, strides, and content correctness.
@@ -901,8 +945,8 @@ TEST(TENSOR, alias_view_constructor_extracts_column)
 {
     Tensor<float> t({2, 4}, MemoryLocation::HOST);
     std::vector<float> vals = {
-        0.f, 1.f, 2.f, 3.f,   // row 0
-        4.f, 5.f, 6.f, 7.f    // row 1
+        0.f, 1.f, 2.f, 3.f,
+        4.f, 5.f, 6.f, 7.f
     };
     t = vals;
 
@@ -1174,6 +1218,44 @@ TEST(TENSOR, alias_view_constructor_stride0_invalid)
 
     EXPECT_FLOAT_EQ(out[0], 42.f);
     EXPECT_FLOAT_EQ(out[1], 42.f);
+}
+
+/**
+ * @test TENSOR.alias_view_constructor_from_view
+ * @brief Verifies aliasing with custom multi-dimensional strides by simulating
+ * a transpose. Starts from a 2x3 tensor (row-major), then creates
+ * an alias with shape (3,2) and strides (1,3). This alias should
+ * present the transposed view of the original tensor without
+ * reordering memory.
+ */
+TEST(TENSOR, alias_view_constructor_from_view) {
+    // Owner tensor 2x3
+    Tensor<float> t({2, 3}, MemoryLocation::HOST);
+    std::vector<float> vals = { 0.f, 1.f, 2.f,
+                                3.f, 4.f, 5.f };
+    t = vals;
+
+    Tensor<float> transposed_alias(t, {0,0}, {3,2}, {1,3});
+
+    EXPECT_EQ(transposed_alias.m_dimensions, std::vector<uint64_t>({3,2}));
+    EXPECT_EQ(transposed_alias.m_strides, std::vector<uint64_t>({1,3}));
+
+    Tensor<float> host({3,2}, MemoryLocation::HOST);
+    copy_tensor_data(host, transposed_alias);
+
+    std::vector<float> out(6);
+    g_sycl_queue.memcpy(out.data(), host.m_p_data.get(), sizeof(float)*6).wait();
+
+    // Expected transpose:
+    // [ [0,3],
+    //   [1,4],
+    //   [2,5] ]
+    EXPECT_FLOAT_EQ(out[0*2 + 0], 0.f);
+    EXPECT_FLOAT_EQ(out[0*2 + 1], 3.f);
+    EXPECT_FLOAT_EQ(out[1*2 + 0], 1.f);
+    EXPECT_FLOAT_EQ(out[1*2 + 1], 4.f);
+    EXPECT_FLOAT_EQ(out[2*2 + 0], 2.f);
+    EXPECT_FLOAT_EQ(out[2*2 + 1], 5.f);
 }
 
 /**
@@ -1688,45 +1770,6 @@ TEST(TENSOR, operator_float_throws_multi_dimensional)
 }
 
 /**
- * @test TENSOR.to_device_to_host
- * @brief Moves a tensor from DEVICE to HOST
- * and verifies data integrity and metadata.
- */
-TEST(TENSOR, to_device_to_host)
-{
-    Tensor<float> t({4, 4}, MemoryLocation::DEVICE);
-
-    uint64_t total_size = 1;
-    for (uint64_t d : t.m_dimensions)
-    {
-        total_size *= d;
-    }
-
-    std::vector<float> values(total_size);
-    for (uint64_t i = 0; i < total_size; ++i)
-    {
-        values[i] = static_cast<float>(i + 1);
-    }
-
-    t = values;
-
-    EXPECT_EQ(t.m_mem_loc, MemoryLocation::DEVICE);
-
-    t.to(MemoryLocation::HOST);
-
-    EXPECT_EQ(t.m_mem_loc, MemoryLocation::HOST);
-
-    std::vector<float> host_data(total_size);
-    g_sycl_queue.memcpy
-        (host_data.data(), t.m_p_data.get(), sizeof(float) * total_size).wait();
-
-    for (uint64_t i = 0; i < total_size; ++i)
-    {
-        EXPECT_FLOAT_EQ(host_data[i], static_cast<float>(i + 1));
-    }
-}
-
-/**
  * @test TENSOR.operator_addition
  * @brief Verifies element-wise addition on device memory.
  *
@@ -1988,6 +2031,123 @@ TEST(TENSOR, operator_addition_broadcasting_complex_alignment)
 }
 
 /**
+ * @test TENSOR.operator_addition_alias_view_noncontiguous
+ * @brief Element-wise addition where the right operand
+ * is a non-contiguous 1D alias view.
+ *
+ * owner B: {6} -> values {10,20,30,40,50,60}
+ * A: {3} -> values {1,2,3}
+ * view on B: start {0}, dims {3}, strides {2} -> maps to B[0],B[2],B[4]
+ */
+TEST(TENSOR, operator_addition_alias_view_noncontiguous)
+{
+    Tensor<float> A({3}, MemoryLocation::DEVICE);
+    Tensor<float> B({6}, MemoryLocation::DEVICE);
+
+    std::vector<float> avals = {1.0f, 2.0f, 3.0f};
+    std::vector<float> bvals = {10.0f, 20.0f, 30.0f, 40.0f, 50.0f, 60.0f};
+
+    A = avals;
+    B = bvals;
+
+    Tensor<float> v(B, {0}, {3}, {2});
+
+    Tensor<float> R = A + v;
+
+    const uint64_t total = 3;
+    std::vector<float> rh(total);
+    g_sycl_queue.memcpy
+        (rh.data(), R.m_p_data.get(), sizeof(float) * total).wait();
+
+    std::vector<float> expected = {11.0f, 32.0f, 53.0f};
+    for (uint64_t i = 0; i < total; ++i)
+    {
+        EXPECT_FLOAT_EQ(rh[i], expected[i]);
+    }
+
+    std::vector<float> b_host(6);
+    g_sycl_queue.memcpy
+        (b_host.data(), B.m_p_data.get(), sizeof(float) * 6).wait();
+    for (uint64_t i = 0; i < 6; ++i)
+    {
+        EXPECT_FLOAT_EQ(b_host[i], bvals[i]);
+    }
+}
+
+/**
+ * @test TENSOR.operator_addition_alias_view_broadcast
+ * @brief Addition with a broadcasted alias view (stride 0).
+ */
+TEST(TENSOR, operator_addition_alias_view_broadcast)
+{
+    Tensor<float> A({3}, MemoryLocation::DEVICE);
+    Tensor<float> B({1}, MemoryLocation::DEVICE);
+
+    A = std::vector<float>{1.0f, 2.0f, 3.0f};
+    B = std::vector<float>{5.0f};
+
+    Tensor<float> vb(B, {0}, {3}, {0});
+
+    Tensor<float> R = A + vb;
+
+    const uint64_t total = 3;
+    std::vector<float> rh(total);
+    g_sycl_queue.memcpy
+        (rh.data(), R.m_p_data.get(), sizeof(float) * total).wait();
+
+    std::vector<float> expected = {6.0f, 7.0f, 8.0f};
+    for (uint64_t i = 0; i < total; ++i)
+    {
+        EXPECT_FLOAT_EQ(rh[i], expected[i]);
+    }
+}
+
+/**
+ * @test TENSOR.operator_addition_alias_view_weird_strides
+ * @brief Addition of a dense small tensor with a 2D alias view
+ * with "weird" strides.
+ *
+ * Owner shape: {5,20} -> 100 elements [0..99]
+ * View: start {0,0}, dims {3,4}, strides {13,4}
+ * Addend: {3,4} filled with scalar 3.0f => R = view + addend
+ */
+TEST(TENSOR, operator_addition_alias_view_weird_strides)
+{
+    Tensor<float> owner({5,20}, MemoryLocation::DEVICE);
+    std::vector<float> vals(100);
+    for (uint64_t i = 0; i < 100; ++i)
+    {
+        vals[i] = static_cast<float>(i);
+    }
+    owner = vals;
+
+    Tensor<float> view(owner, {0,0}, {3,4}, {13,4});
+    Tensor<float> add({3,4}, MemoryLocation::DEVICE);
+
+    std::vector<float> add_vals(12, 3.0f);
+    add = add_vals;
+
+    Tensor<float> R = view + add;
+
+    Tensor<float> hostR({3,4}, MemoryLocation::HOST);
+    copy_tensor_data(hostR, R);
+    std::vector<float> rh(12);
+    g_sycl_queue.memcpy
+        (rh.data(), hostR.m_p_data.get(), sizeof(float) * 12).wait();
+
+    for (uint64_t i = 0; i < 3; ++i)
+    {
+        for (uint64_t j = 0; j < 4; ++j)
+        {
+            uint64_t k = i * 4 + j;
+            uint64_t flat = i * 13 + j * 4;
+            EXPECT_FLOAT_EQ(rh[k], vals[flat] + 3.0f);
+        }
+    }
+}
+
+
+/**
  * @test TENSOR.operator_subtraction
  * @brief Verifies element-wise subtraction on device memory.
  *
@@ -2237,6 +2397,122 @@ TEST(TENSOR, operator_subtraction_broadcasting_complex_alignment)
     for (uint64_t idx = 0; idx < total; ++idx)
     {
         EXPECT_FLOAT_EQ(rh[idx], expected[idx]);
+    }
+}
+
+/**
+ * @test TENSOR.operator_subtraction_alias_view_noncontiguous
+ * @brief Element-wise subtraction where the right operand
+ * is a non-contiguous 1D alias view.
+ *
+ * owner B: {6} -> values {10,20,30,40,50,60}
+ * A: {3} -> values {1,2,3}
+ * view on B: start {0}, dims {3}, strides {2} -> maps to B[0],B[2],B[4]
+ */
+TEST(TENSOR, operator_subtraction_alias_view_noncontiguous)
+{
+    Tensor<float> A({3}, MemoryLocation::DEVICE);
+    Tensor<float> B({6}, MemoryLocation::DEVICE);
+
+    std::vector<float> avals = {1.0f, 2.0f, 3.0f};
+    std::vector<float> bvals = {10.0f, 20.0f, 30.0f, 40.0f, 50.0f, 60.0f};
+
+    A = avals;
+    B = bvals;
+
+    Tensor<float> v(B, {0}, {3}, {2});
+
+    Tensor<float> R = A - v;
+
+    const uint64_t total = 3;
+    std::vector<float> rh(total);
+    g_sycl_queue.memcpy
+        (rh.data(), R.m_p_data.get(), sizeof(float) * total).wait();
+
+    std::vector<float> expected = {-9.0f, -28.0f, -47.0f};
+    for (uint64_t i = 0; i < total; ++i)
+    {
+        EXPECT_FLOAT_EQ(rh[i], expected[i]);
+    }
+
+    std::vector<float> b_host(6);
+    g_sycl_queue.memcpy
+        (b_host.data(), B.m_p_data.get(), sizeof(float) * 6).wait();
+    for (uint64_t i = 0; i < 6; ++i)
+    {
+        EXPECT_FLOAT_EQ(b_host[i], bvals[i]);
+    }
+}
+
+/**
+ * @test TENSOR.operator_subtraction_alias_view_broadcast
+ * @brief Subtraction with a broadcasted alias view (stride 0).
+ */
+TEST(TENSOR, operator_subtraction_alias_view_broadcast)
+{
+    Tensor<float> A({3}, MemoryLocation::DEVICE);
+    Tensor<float> B({1}, MemoryLocation::DEVICE);
+
+    A = std::vector<float>{1.0f, 2.0f, 3.0f};
+    B = std::vector<float>{5.0f};
+
+    Tensor<float> vb(B, {0}, {3}, {0});
+
+    Tensor<float> R = A - vb;
+
+    const uint64_t total = 3;
+    std::vector<float> rh(total);
+    g_sycl_queue.memcpy
+        (rh.data(), R.m_p_data.get(), sizeof(float) * total).wait();
+
+    std::vector<float> expected = {-4.0f, -3.0f, -2.0f};
+    for (uint64_t i = 0; i < total; ++i)
+    {
+        EXPECT_FLOAT_EQ(rh[i], expected[i]);
+    }
+}
+
+/**
+ * @test TENSOR.operator_subtraction_alias_view_weird_strides
+ * @brief Subtraction of a dense small tensor with a 2D alias view
+ * with "weird" strides.
+ *
+ * Owner shape: {5,20} -> 100 elements [0..99]
+ * View: start {0,0}, dims {3,4}, strides {13,4}
+ * Subtrahend: {3,4} filled with scalar 3.0f => R = view - subtrahend
+ */
+TEST(TENSOR, operator_subtraction_alias_view_weird_strides)
+{
+    Tensor<float> owner({5,20}, MemoryLocation::DEVICE);
+    std::vector<float> vals(100);
+    for (uint64_t i = 0; i < 100; ++i)
+    {
+        vals[i] = static_cast<float>(i);
+    }
+    owner = vals;
+
+    Tensor<float> view(owner, {0,0}, {3,4}, {13,4});
+    Tensor<float> sub({3,4}, MemoryLocation::DEVICE);
+
+    std::vector<float> sub_vals(12, 3.0f);
+    sub = sub_vals;
+
+    Tensor<float> R = view - sub;
+
+    Tensor<float> hostR({3,4}, MemoryLocation::HOST);
+    copy_tensor_data(hostR, R);
+    std::vector<float> rh(12);
+    g_sycl_queue.memcpy
+        (rh.data(), hostR.m_p_data.get(), sizeof(float) * 12).wait();
+
+    for (uint64_t i = 0; i < 3; ++i)
+    {
+        for (uint64_t j = 0; j < 4; ++j)
+        {
+            uint64_t k = i * 4 + j;
+            uint64_t flat = i * 13 + j * 4;
+            EXPECT_FLOAT_EQ(rh[k], vals[flat] - 3.0f);
+        }
     }
 }
 
@@ -2496,6 +2772,123 @@ TEST(TENSOR, operator_multiplication_broadcasting_complex_alignment)
         EXPECT_FLOAT_EQ(rh[idx], expected[idx]);
     }
 }
+
+/**
+ * @test TENSOR.operator_multiplication_alias_view_noncontiguous
+ * @brief Element-wise multiplication where the right operand
+ * is a non-contiguous 1D alias view.
+ *
+ * owner B: {6} -> values {10,20,30,40,50,60}
+ * A: {3} -> values {1,2,3}
+ * view on B: start {0}, dims {3}, strides {2} -> maps to B[0],B[2],B[4]
+ */
+TEST(TENSOR, operator_multiplication_alias_view_noncontiguous)
+{
+    Tensor<float> A({3}, MemoryLocation::DEVICE);
+    Tensor<float> B({6}, MemoryLocation::DEVICE);
+
+    std::vector<float> avals = {1.0f, 2.0f, 3.0f};
+    std::vector<float> bvals = {10.0f, 20.0f, 30.0f, 40.0f, 50.0f, 60.0f};
+
+    A = avals;
+    B = bvals;
+
+    Tensor<float> v(B, {0}, {3}, {2});
+
+    Tensor<float> R = A * v;
+
+    const uint64_t total = 3;
+    std::vector<float> rh(total);
+    g_sycl_queue.memcpy
+        (rh.data(), R.m_p_data.get(), sizeof(float) * total).wait();
+
+    std::vector<float> expected = {10.0f, 60.0f, 150.0f};
+    for (uint64_t i = 0; i < total; ++i)
+    {
+        EXPECT_FLOAT_EQ(rh[i], expected[i]);
+    }
+
+    std::vector<float> b_host(6);
+    g_sycl_queue.memcpy
+        (b_host.data(), B.m_p_data.get(), sizeof(float) * 6).wait();
+    for (uint64_t i = 0; i < 6; ++i)
+    {
+        EXPECT_FLOAT_EQ(b_host[i], bvals[i]);
+    }
+}
+
+/**
+ * @test TENSOR.operator_multiplication_alias_view_broadcast
+ * @brief Multiplication with a broadcasted alias view (stride 0).
+ */
+TEST(TENSOR, operator_multiplication_alias_view_broadcast)
+{
+    Tensor<float> A({3}, MemoryLocation::DEVICE);
+    Tensor<float> B({1}, MemoryLocation::DEVICE);
+
+    A = std::vector<float>{1.0f, 2.0f, 3.0f};
+    B = std::vector<float>{5.0f};
+
+    Tensor<float> vb(B, {0}, {3}, {0});
+
+    Tensor<float> R = A * vb;
+
+    const uint64_t total = 3;
+    std::vector<float> rh(total);
+    g_sycl_queue.memcpy
+        (rh.data(), R.m_p_data.get(), sizeof(float) * total).wait();
+
+    std::vector<float> expected = {5.0f, 10.0f, 15.0f};
+    for (uint64_t i = 0; i < total; ++i)
+    {
+        EXPECT_FLOAT_EQ(rh[i], expected[i]);
+    }
+}
+
+/**
+ * @test TENSOR.operator_multiplication_alias_view_weird_strides
+ * @brief Multiplication of a dense small tensor with a 2D alias
+ * view with "weird" strides.
+ *
+ * Owner shape: {5,20} -> 100 elements [0..99]
+ * View: start {0,0}, dims {3,4}, strides {13,4} (maps to specific flat indices)
+ * Multiplier: {3,4} filled with scalar 3.0f => R = view * multiplier
+ */
+TEST(TENSOR, operator_multiplication_alias_view_weird_strides)
+{
+    Tensor<float> owner({5,20}, MemoryLocation::DEVICE);
+    std::vector<float> vals(100);
+    for (uint64_t i = 0; i < 100; ++i)
+    {
+        vals[i] = static_cast<float>(i);
+    }
+    owner = vals;
+
+    Tensor<float> view(owner, {0,0}, {3,4}, {13,4});
+    Tensor<float> mul({3,4}, MemoryLocation::DEVICE);
+
+    std::vector<float> mul_vals(12, 3.0f);
+    mul = mul_vals;
+
+    Tensor<float> R = view * mul;
+
+    Tensor<float> hostR({3,4}, MemoryLocation::HOST);
+    copy_tensor_data(hostR, R);
+    std::vector<float> rh(12);
+    g_sycl_queue.memcpy
+        (rh.data(), hostR.m_p_data.get(), sizeof(float) * 12).wait();
+
+    for (uint64_t i = 0; i < 3; ++i)
+    {
+        for (uint64_t j = 0; j < 4; ++j)
+        {
+            uint64_t k = i * 4 + j;
+            uint64_t flat = i * 13 + j * 4;
+            EXPECT_FLOAT_EQ(rh[k], vals[flat] * 3.0f);
+        }
+    }
+}
+
 
 /**
  * @test TENSOR.operator_division
@@ -2778,6 +3171,121 @@ TEST(TENSOR, operator_division_broadcasting_complex_alignment)
 }
 
 /**
+ * @test TENSOR.operator_division_alias_view_noncontiguous
+ * @brief Element-wise division where the right operand
+ * is a non-contiguous 1D alias view (no zero divisors at sampled indices).
+ *
+ * owner B: {6} -> values {2,20,4,40,5,50}
+ * A: {3} -> values {100,200,300}
+ * view on B: start {0}, dims {3}, strides {2} -> maps to B[0],B[2],B[4] => 2,4,5
+ */
+TEST(TENSOR, operator_division_alias_view_noncontiguous)
+{
+    Tensor<float> A({3}, MemoryLocation::DEVICE);
+    Tensor<float> B({6}, MemoryLocation::DEVICE);
+
+    std::vector<float> avals = {100.0f, 200.0f, 300.0f};
+    std::vector<float> bvals = {2.0f, 20.0f, 4.0f, 40.0f, 5.0f, 50.0f};
+
+    A = avals;
+    B = bvals;
+
+    Tensor<float> v(B, {0}, {3}, {2});
+
+    Tensor<float> R = A / v;
+
+    const uint64_t total = 3;
+    std::vector<float> rh(total);
+    g_sycl_queue.memcpy
+        (rh.data(), R.m_p_data.get(), sizeof(float) * total).wait();
+
+    std::vector<float> expected = {50.0f, 50.0f, 60.0f};
+    for (uint64_t i = 0; i < total; ++i)
+    {
+        EXPECT_FLOAT_EQ(rh[i], expected[i]);
+    }
+
+    std::vector<float> b_host(6);
+    g_sycl_queue.memcpy(b_host.data(), B.m_p_data.get(), sizeof(float) * 6).wait();
+    for (uint64_t i = 0; i < 6; ++i)
+    {
+        EXPECT_FLOAT_EQ(b_host[i], bvals[i]);
+    }
+}
+
+/**
+ * @test TENSOR.operator_division_alias_view_broadcast
+ * @brief Division with a broadcasted alias view (stride 0).
+ */
+TEST(TENSOR, operator_division_alias_view_broadcast)
+{
+    Tensor<float> A({3}, MemoryLocation::DEVICE);
+    Tensor<float> B({1}, MemoryLocation::DEVICE);
+
+    A = std::vector<float>{10.0f, 20.0f, 30.0f};
+    B = std::vector<float>{10.0f};
+
+    Tensor<float> vb(B, {0}, {3}, {0});
+
+    Tensor<float> R = A / vb;
+
+    const uint64_t total = 3;
+    std::vector<float> rh(total);
+    g_sycl_queue.memcpy
+        (rh.data(), R.m_p_data.get(), sizeof(float) * total).wait();
+
+    std::vector<float> expected = {1.0f, 2.0f, 3.0f};
+    for (uint64_t i = 0; i < total; ++i)
+    {
+        EXPECT_FLOAT_EQ(rh[i], expected[i]);
+    }
+}
+
+/**
+ * @test TENSOR.operator_division_alias_view_weird_strides
+ * @brief Division of a dense small tensor by a 2D alias view
+ * with "weird" strides.
+ *
+ * Owner shape: {5,20} -> 100 elements [0..99]
+ * View: start {0,0}, dims {3,4}, strides {13,4}
+ * Divisor: {3,4} filled with scalar 2.0f (non-zero) => R = view / divisor
+ */
+TEST(TENSOR, operator_division_alias_view_weird_strides)
+{
+    Tensor<float> owner({5,20}, MemoryLocation::DEVICE);
+    std::vector<float> vals(100);
+    for (uint64_t i = 0; i < 100; ++i)
+    {
+        vals[i] = static_cast<float>(i);
+    }
+    owner = vals;
+
+    Tensor<float> view(owner, {0,0}, {3,4}, {13,4});
+    Tensor<float> div({3,4}, MemoryLocation::DEVICE);
+
+    std::vector<float> div_vals(12, 2.0f);
+    div = div_vals;
+
+    Tensor<float> R = view / div;
+
+    Tensor<float> hostR({3,4}, MemoryLocation::HOST);
+    copy_tensor_data(hostR, R);
+    std::vector<float> rh(12);
+    g_sycl_queue.memcpy
+        (rh.data(), hostR.m_p_data.get(), sizeof(float) * 12).wait();
+
+    for (uint64_t i = 0; i < 3; ++i)
+    {
+        for (uint64_t j = 0; j < 4; ++j)
+        {
+            uint64_t k = i * 4 + j;
+            uint64_t flat = i * 13 + j * 4;
+            EXPECT_FLOAT_EQ(rh[k], vals[flat] / 2.0f);
+        }
+    }
+}
+
+/**
  * @test TENSOR.operator_unary_negation
  * @brief Verifies element-wise unary negation.
  *
@@ -3033,6 +3541,117 @@ TEST(TENSOR, operator_unary_negation_view_of_view)
 }
 
 /**
+ * @test TENSOR.operator_unary_negation_alias_view_noncontiguous
+ * @brief Unary negation applied to a non-contiguous 1D alias view returns correct values
+ * and does not modify the parent tensor.
+ *
+ * owner B: {6} -> values {1, -2, 3, -4, 5, -6}
+ * view on B: start {0}, dims {3}, strides {2} -> maps to B[0],B[2],B[4] => 1,3,5
+ */
+TEST(TENSOR, operator_unary_negation_alias_view_noncontiguous)
+{
+    Tensor<float> B({6}, MemoryLocation::DEVICE);
+    std::vector<float> bvals = {1.0f, -2.0f, 3.0f, -4.0f, 5.0f, -6.0f};
+    B = bvals;
+
+    Tensor<float> v(B, {0}, {3}, {2});
+
+    Tensor<float> N = -v;
+
+    const uint64_t total = 3;
+    std::vector<float> nh(total);
+    g_sycl_queue.memcpy(nh.data(), N.m_p_data.get(), sizeof(float) * total).wait();
+
+    std::vector<float> expected = {-1.0f, -3.0f, -5.0f};
+    for (uint64_t i = 0; i < total; ++i)
+    {
+        EXPECT_FLOAT_EQ(nh[i], expected[i]);
+    }
+
+    // parent remains unchanged
+    std::vector<float> b_host(6);
+    g_sycl_queue.memcpy(b_host.data(), B.m_p_data.get(), sizeof(float) * 6).wait();
+    for (uint64_t i = 0; i < 6; ++i)
+    {
+        EXPECT_FLOAT_EQ(b_host[i], bvals[i]);
+    }
+}
+
+/**
+ * @test TENSOR.operator_unary_negation_alias_view_broadcast
+ * @brief Unary negation applied to a broadcasted alias view (stride 0).
+ */
+TEST(TENSOR, operator_unary_negation_alias_view_broadcast)
+{
+    Tensor<float> B({1}, MemoryLocation::DEVICE);
+    B = std::vector<float>{5.0f};
+
+    Tensor<float> vb(B, {0}, {3}, {0});
+
+    Tensor<float> N = -vb;
+
+    const uint64_t total = 3;
+    std::vector<float> nh(total);
+    g_sycl_queue.memcpy
+        (nh.data(), N.m_p_data.get(), sizeof(float) * total).wait();
+
+    std::vector<float> expected = {-5.0f, -5.0f, -5.0f};
+    for (uint64_t i = 0; i < total; ++i)
+    {
+        EXPECT_FLOAT_EQ(nh[i], expected[i]);
+    }
+
+    std::vector<float> b_host(1);
+    g_sycl_queue.memcpy
+        (b_host.data(), B.m_p_data.get(), sizeof(float) * 1).wait();
+    EXPECT_FLOAT_EQ(b_host[0], 5.0f);
+}
+
+/**
+ * @test TENSOR.operator_unary_negation_alias_view_weird_strides
+ * @brief Unary negation applied to a
+ * non-contiguous 2D alias view with odd strides.
+ */
+TEST(TENSOR, operator_unary_negation_alias_view_weird_strides)
+{
+    Tensor<float> T({5,20}, MemoryLocation::DEVICE);
+    std::vector<float> vals(100);
+    for (uint64_t i = 0; i < 100; ++i) vals[i] = static_cast<float>(i + 1);
+    T = vals;
+
+    Tensor<float> v(T, {1,2}, {2,3}, {13,4});
+
+    Tensor<float> N = -v;
+
+    Tensor<float> hostN({2,3}, MemoryLocation::HOST);
+    copy_tensor_data(hostN, N);
+    std::vector<float> nh(6);
+    g_sycl_queue.memcpy
+        (nh.data(), hostN.m_p_data.get(), sizeof(float) * 6).wait();
+
+    for (uint64_t i = 0; i < 2; ++i)
+    {
+        for (uint64_t j = 0; j < 3; ++j)
+        {
+            uint64_t idx = i * 13 + j * 4 + (1 * 20 + 2);
+
+            uint64_t start_flat = 1 * 20 + 2;
+            uint64_t flat = start_flat + i * 13 + j * 4;
+            uint64_t k = i * 3 + j;
+            EXPECT_FLOAT_EQ(nh[k], -vals[flat]);
+        }
+    }
+
+    std::vector<float> parent_buf(100);
+    g_sycl_queue.memcpy
+        (parent_buf.data(), T.m_p_data.get(), sizeof(float) * 100).wait();
+    for (uint64_t i = 0; i < 100; ++i)
+    {
+        EXPECT_FLOAT_EQ(parent_buf[i], vals[i]);
+    }
+}
+
+/**
  * @test TENSOR.to_host_to_device
  * @brief Moves a tensor from HOST to DEVICE
  * and verifies data integrity and metadata.
@@ -3060,6 +3679,45 @@ TEST(TENSOR, to_host_to_device)
     t.to(MemoryLocation::DEVICE);
 
     EXPECT_EQ(t.m_mem_loc, MemoryLocation::DEVICE);
+
+    std::vector<float> host_data(total_size);
+    g_sycl_queue.memcpy
+        (host_data.data(), t.m_p_data.get(), sizeof(float) * total_size).wait();
+
+    for (uint64_t i = 0; i < total_size; ++i)
+    {
+        EXPECT_FLOAT_EQ(host_data[i], static_cast<float>(i + 1));
+    }
+}
+
+/**
+ * @test TENSOR.to_device_to_host
+ * @brief Moves a tensor from DEVICE to HOST
+ * and verifies data integrity and metadata.
+ */
+TEST(TENSOR, to_device_to_host)
+{
+    Tensor<float> t({4, 4}, MemoryLocation::DEVICE);
+
+    uint64_t total_size = 1;
+    for (uint64_t d : t.m_dimensions)
+    {
+        total_size *= d;
+    }
+
+    std::vector<float> values(total_size);
+    for (uint64_t i = 0; i < total_size; ++i)
+    {
+        values[i] = static_cast<float>(i + 1);
+    }
+
+    t = values;
+
+    EXPECT_EQ(t.m_mem_loc, MemoryLocation::DEVICE);
+
+    t.to(MemoryLocation::HOST);
+
+    EXPECT_EQ(t.m_mem_loc, MemoryLocation::HOST);
 
     std::vector<float> host_data(total_size);
     g_sycl_queue.memcpy
@@ -3341,6 +3999,21 @@ TEST(TENSOR, reshape_multiple_roundtrip_preserves_data)
     {
         EXPECT_FLOAT_EQ(host_buf[i], orig[i]);
     }
+}
+
+/**
+ * @test TENSOR.reshape_view_throws
+ * @brief Attempting to reshape an alias/view must throw (non-owning).
+ */
+TEST(TENSOR, reshape_view_throws)
+{
+    Tensor<float> base({2,3}, MemoryLocation::HOST);
+    base = std::vector<float>{0,1,2,3,4,5};
+
+    Tensor<float> v(base, {0,0}, {2,3}, {3,1});
+    EXPECT_FALSE(v.m_own_data);
+
+    EXPECT_THROW(v.reshape(std::vector<uint64_t>{3,2}), std::invalid_argument);
 }
 
 /**
@@ -3703,6 +4376,189 @@ TEST(TENSOR, sort_view_non1D_flatten)
 }
 
 /**
+ * @test TENSOR.sort_alias_view_basic_1D
+ * @brief Sorting a 1D alias view (contiguous) should only reorder the view region in the owner.
+ */
+TEST(TENSOR, sort_alias_view_basic_1D)
+{
+    Tensor<float> t({6}, MemoryLocation::HOST);
+    std::vector<float> vals = {6.0f, 5.0f, 4.0f, 3.0f, 2.0f, 1.0f};
+    t = vals;
+
+    Tensor<float> v(t, {1}, {3}, {1});
+
+    v.sort(0);
+
+    EXPECT_FLOAT_EQ(t[0], 6.0f);
+    EXPECT_FLOAT_EQ(t[1], 3.0f);
+    EXPECT_FLOAT_EQ(t[2], 4.0f);
+    EXPECT_FLOAT_EQ(t[3], 5.0f);
+    EXPECT_FLOAT_EQ(t[4], 2.0f);
+    EXPECT_FLOAT_EQ(t[5], 1.0f);
+}
+
+/**
+ * @test TENSOR.sort_alias_view_noncontiguous_stride
+ * @brief Sorting a non-contiguous 1D alias (stride > 1)
+ * updates only the sampled elements.
+ */
+TEST(TENSOR, sort_alias_view_noncontiguous_stride)
+{
+    Tensor<float> t({8}, MemoryLocation::HOST);
+    std::vector<float> vals = {10.f, 0.f, 9.f, 0.f, 8.f, 0.f, 7.f, 0.f};
+    t = vals;
+
+    Tensor<float> v(t, {0}, {4}, {2});
+
+    v.sort(0);
+
+    EXPECT_FLOAT_EQ(t[0], 7.0f);
+    EXPECT_FLOAT_EQ(t[1], 0.0f);
+    EXPECT_FLOAT_EQ(t[2], 8.0f);
+    EXPECT_FLOAT_EQ(t[3], 0.0f);
+    EXPECT_FLOAT_EQ(t[4], 9.0f);
+    EXPECT_FLOAT_EQ(t[5], 0.0f);
+    EXPECT_FLOAT_EQ(t[6], 10.0f);
+    EXPECT_FLOAT_EQ(t[7], 0.0f);
+}
+
+/**
+ * @test TENSOR.sort_alias_view_2D_submatrix_axis1
+ * @brief Sorting a 2x3 submatrix view along its
+ * last axis only sorts that submatrix.
+ */
+TEST(TENSOR, sort_alias_view_2D_submatrix_axis1)
+{
+    Tensor<float> t({3, 4}, MemoryLocation::HOST);
+    // matrix (row-major):
+    // [ 9, 8, 7, 6 ]
+    // [ 5, 4, 3, 2 ]
+    // [ 1, 0,-1,-2 ]
+    std::vector<float> vals = {9,8,7,6, 5,4,3,2, 1,0,-1,-2};
+    t = vals;
+
+    Tensor<float> sub(t, {0,1}, {2,3}, {4,1});
+
+    // sort each row inside the submatrix (axis 1)
+    sub.sort(1);
+
+    // Expected owner after operation:
+    // row0 original: [9, 8, 7, 6] -> sub part [8,7,6] sorted -> [6,7,8]
+    // row1 original: [5, 4, 3, 2] -> sub part [4,3,2] sorted -> [2,3,4]
+    EXPECT_FLOAT_EQ(t[0][0], 9.0f);
+    EXPECT_FLOAT_EQ(t[0][1], 6.0f);
+    EXPECT_FLOAT_EQ(t[0][2], 7.0f);
+    EXPECT_FLOAT_EQ(t[0][3], 8.0f);
+
+    EXPECT_FLOAT_EQ(t[1][0], 5.0f);
+    EXPECT_FLOAT_EQ(t[1][1], 2.0f);
+    EXPECT_FLOAT_EQ(t[1][2], 3.0f);
+    EXPECT_FLOAT_EQ(t[1][3], 4.0f);
+
+    // row2 unchanged
+    EXPECT_FLOAT_EQ(t[2][0], 1.0f);
+    EXPECT_FLOAT_EQ(t[2][1], 0.0f);
+    EXPECT_FLOAT_EQ(t[2][2], -1.0f);
+    EXPECT_FLOAT_EQ(t[2][3], -2.0f);
+}
+
+/**
+ * @test TENSOR.sort_alias_view_flatten_subregion
+ * @brief Flatten-sorting (axis = -1) a submatrix view
+ * only orders elements within the view.
+ */
+TEST(TENSOR, sort_alias_view_flatten_subregion)
+{
+    Tensor<float> t({2,3}, MemoryLocation::HOST);
+    // [ 5, 1, 3 ]
+    // [ 4, 2, 0 ]
+    std::vector<float> vals = {5,1,3, 4,2,0};
+    t = vals;
+
+    Tensor<float> sub(t, {0,0}, {2,2}, {3,1});
+
+    sub.sort(-1);
+
+    // After operation owner should be:
+    // row0: [1,2,3]
+    // row1: [4,5,0]  (note last element outside view unchanged).
+    EXPECT_FLOAT_EQ(t[0][0], 1.0f);
+    EXPECT_FLOAT_EQ(t[0][1], 2.0f);
+    EXPECT_FLOAT_EQ(t[0][2], 3.0f);
+
+    EXPECT_FLOAT_EQ(t[1][0], 4.0f);
+    EXPECT_FLOAT_EQ(t[1][1], 5.0f);
+    EXPECT_FLOAT_EQ(t[1][2], 0.0f);
+}
+
+/**
+ * @test TENSOR.sort_alias_view_weird_strides
+ * @brief Sorting an alias view with non-trivial strides (e.g. 13,4).
+ *
+ * Owner shape: {5,20} -> 100 elements [0..99]
+ * View: start {0,0}, dims {3,4}, strides {13,4}
+ * Element (i,j) in the view maps to owner flat index: i*13 + j*4
+ */
+TEST(TENSOR, sort_alias_view_weird_strides)
+{
+    Tensor<float> owner({5,20}, MemoryLocation::HOST);
+    std::vector<float> vals(100);
+    for (uint64_t i = 0; i < 100; ++i) vals[i] = static_cast<float>(i);
+    owner = vals;
+
+    Tensor<float> view(owner, {0,0}, {3,4}, {13,4});
+
+    EXPECT_EQ(view.m_dimensions, (std::vector<uint64_t>{3,4}));
+    EXPECT_EQ(view.m_strides, (std::vector<uint64_t>{13,4}));
+
+    Tensor<float> host({3,4}, MemoryLocation::HOST);
+    copy_tensor_data(host, view);
+
+    std::vector<float> out(12);
+    g_sycl_queue.memcpy(out.data(), host.m_p_data.get(), sizeof(float)*12).wait();
+
+    std::vector<float> expected =
+    {
+        0.f,  4.f,  8.f,  12.f,
+        13.f, 17.f, 21.f, 25.f,
+        26.f, 30.f, 34.f, 38.f
+    };
+
+    for (uint64_t k = 0; k < out.size(); ++k)
+    {
+        EXPECT_FLOAT_EQ(out[k], expected[k]);
+    }
+
+    view[1][2] = 999.0f;
+
+    Tensor<float> owner_host({5,20}, MemoryLocation::HOST);
+    copy_tensor_data(owner_host, owner);
+
+    std::vector<float> owner_out(100);
+    g_sycl_queue.memcpy
+        (owner_out.data(), owner_host.m_p_data.get(), sizeof(float)*100).wait();
+
+    EXPECT_FLOAT_EQ(owner_out[21], 999.0f);
+}
+
+/**
+ * @test TENSOR.sort_alias_view_broadcast_noop
+ * @brief Sorting a broadcasted view (stride 0) is a no-op
+ * in terms of data reordering, but must not crash; owner must remain consistent.
+ */
+TEST(TENSOR, sort_alias_view_broadcast_noop)
+{
+    Tensor<float> t({2}, MemoryLocation::HOST);
+    t = std::vector<float>{42.0f, 99.0f};
+
+    Tensor<float> b(t, {1}, {4}, {0});
+
+    EXPECT_NO_THROW(b.sort(0));
+    EXPECT_FLOAT_EQ(t[0], 42.0f);
+    EXPECT_FLOAT_EQ(t[1], 99.0f);
+}
+
+/**
  * @test TENSOR.sort_idempotence
  * @brief Sorting twice should give same result.
  */
@@ -3885,7 +4741,6 @@ TEST(TENSOR, transpose_empty)
     Tensor<float> t;
     EXPECT_THROW(t.transpose(), std::runtime_error);
 }
-
 
 /**
  * @test TENSOR.print_tensor

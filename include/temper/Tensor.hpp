@@ -395,6 +395,7 @@ public:
      *
      * @throws std::invalid_argument if:
      * - @p new_dimensions is empty
+     * - tensor is non-owning
      * - any entry in @p new_dimensions is zero
      * - the product of @p new_dimensions differs from the current total
      * element count

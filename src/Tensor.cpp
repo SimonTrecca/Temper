@@ -1604,6 +1604,12 @@ void Tensor<float_t>::reshape(const std::vector<uint64_t>& new_dimensions)
             new_dimensions cannot be empty.)");
     }
 
+    if (!m_own_data)
+    {
+        throw std::invalid_argument(R"(Tensor(reshape):
+            cannot reshape an alias/view tensor.)");
+    }
+
     constexpr uint64_t U64_MAX = std::numeric_limits<uint64_t>::max();
 
     uint64_t og_total_size = 1;
