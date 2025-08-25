@@ -4581,6 +4581,298 @@ TEST(TENSOR, sort_idempotence)
 }
 
 /**
+ * @test TENSOR.sum_all_elements
+ * @brief Sum all elements (axis = -1) on a device tensor and return
+ * a scalar with the correct total value.
+ */
+TEST(TENSOR, sum_all_elements)
+{
+    Tensor<float> t({3}, MemoryLocation::DEVICE);
+    std::vector<float> vals = {1.0f, 2.0f, 3.0f};
+    t = vals;
+
+    Tensor<float> res = t.sum(-1);
+
+    std::vector<float> host(1);
+    g_sycl_queue.memcpy(host.data(), res.m_p_data.get(), sizeof(float)).wait();
+    EXPECT_FLOAT_EQ(host[0], 6.0f);
+}
+
+/**
+ * @test TENSOR.sum_axis0
+ * @brief Sum along axis 0 for a 2x3 tensor stored on device
+ * nd verify per-column sums.
+ */
+TEST(TENSOR, sum_axis0)
+{
+    Tensor<float> t({2, 3}, MemoryLocation::DEVICE);
+
+    std::vector<float> vals = {1.0f, 2.0f, 3.0f,
+                               4.0f, 5.0f, 6.0f};
+    t = vals;
+
+    Tensor<float> res = t.sum(0);
+
+    std::vector<float> host(3);
+    g_sycl_queue.memcpy
+        (host.data(), res.m_p_data.get(), 3 * sizeof(float)).wait();
+
+    EXPECT_FLOAT_EQ(host[0], 1.0f + 4.0f);
+    EXPECT_FLOAT_EQ(host[1], 2.0f + 5.0f);
+    EXPECT_FLOAT_EQ(host[2], 3.0f + 6.0f);
+}
+
+/**
+ * @test TENSOR.sum_axis1
+ * @brief Sum along axis 1 for a 2x3 device tensor and verify per-row sums.
+ */
+TEST(TENSOR, sum_axis1)
+{
+    Tensor<float> t({2, 3}, MemoryLocation::DEVICE);
+
+    std::vector<float> vals = {1.0f, 2.0f, 3.0f,
+                               4.0f, 5.0f, 6.0f};
+    t = vals;
+
+    Tensor<float> res = t.sum(1);
+
+    std::vector<float> host(2);
+    g_sycl_queue.memcpy
+        (host.data(), res.m_p_data.get(), 2 * sizeof(float)).wait();
+
+    EXPECT_FLOAT_EQ(host[0], 1.0f + 2.0f + 3.0f);
+    EXPECT_FLOAT_EQ(host[1], 4.0f + 5.0f + 6.0f);
+}
+
+/**
+ * @test TENSOR.sum_axis0_3D
+ * @brief Sum along axis 0 for a 2x2x2 device tensor and verify resulting values.
+ */
+TEST(TENSOR, sum_axis0_3D)
+{
+    Tensor<float> t({2, 2, 2}, MemoryLocation::DEVICE);
+    std::vector<float> vals = {
+        1.0f, 2.0f, 3.0f, 4.0f,
+        5.0f, 6.0f, 7.0f, 8.0f
+    };
+    t = vals;
+
+    Tensor<float> res = t.sum(0);
+
+    std::vector<float> host(4);
+    g_sycl_queue.memcpy
+        (host.data(), res.m_p_data.get(), 4 * sizeof(float)).wait();
+
+    EXPECT_FLOAT_EQ(host[0], 1.0f + 5.0f);
+    EXPECT_FLOAT_EQ(host[1], 2.0f + 6.0f);
+    EXPECT_FLOAT_EQ(host[2], 3.0f + 7.0f);
+    EXPECT_FLOAT_EQ(host[3], 4.0f + 8.0f);
+}
+
+/**
+ * @test TENSOR.sum_axis1_3D
+ * @brief Sum along axis 1 for a 2x2x2 device tensor and verify resulting values.
+ */
+TEST(TENSOR, sum_axis1_3D)
+{
+    Tensor<float> t({2, 2, 2}, MemoryLocation::DEVICE);
+    std::vector<float> vals = {
+        1.0f, 2.0f, 3.0f, 4.0f,
+        5.0f, 6.0f, 7.0f, 8.0f
+    };
+    t = vals;
+
+    Tensor<float> res = t.sum(1);
+
+    std::vector<float> host(4);
+    g_sycl_queue.memcpy
+        (host.data(), res.m_p_data.get(), 4 * sizeof(float)).wait();
+
+    EXPECT_FLOAT_EQ(host[0], 1.0f + 3.0f);
+    EXPECT_FLOAT_EQ(host[1], 2.0f + 4.0f);
+    EXPECT_FLOAT_EQ(host[2], 5.0f + 7.0f);
+    EXPECT_FLOAT_EQ(host[3], 6.0f + 8.0f);
+}
+
+/**
+ * @test TENSOR.sum_axis2_3D
+ * @brief Sum along axis 2 for a 2x2x2 device tensor and verify resulting values.
+ */
+TEST(TENSOR, sum_axis2_3D)
+{
+    Tensor<float> t({2, 2, 2}, MemoryLocation::DEVICE);
+    std::vector<float> vals = {
+        1.0f, 2.0f, 3.0f, 4.0f,
+        5.0f, 6.0f, 7.0f, 8.0f
+    };
+    t = vals;
+
+    Tensor<float> res = t.sum(2);
+
+    std::vector<float> host(4);
+    g_sycl_queue.memcpy
+        (host.data(), res.m_p_data.get(), 4 * sizeof(float)).wait();
+
+    EXPECT_FLOAT_EQ(host[0], 1.0f + 2.0f);
+    EXPECT_FLOAT_EQ(host[1], 3.0f + 4.0f);
+    EXPECT_FLOAT_EQ(host[2], 5.0f + 6.0f);
+    EXPECT_FLOAT_EQ(host[3], 7.0f + 8.0f);
+}
+
+/**
+ * @test TENSOR.sum_view_tensor
+ * @brief Sum all elements (axis = -1) of a view into a device tensor and
+ * verify the scalar result.
+ */
+TEST(TENSOR, sum_view_tensor)
+{
+    Tensor<float> t({2, 3}, MemoryLocation::DEVICE);
+    std::vector<float> vals = {1.0f, 2.0f, 3.0f,
+                               4.0f, 5.0f, 6.0f};
+    t = vals;
+
+    std::vector<uint64_t> start_indices = {0ull, 0ull};
+    std::vector<uint64_t> view_shape = {3ull};
+
+    Tensor<float> view(t, start_indices, view_shape);
+
+    Tensor<float> res = view.sum(-1);
+
+    std::vector<float> host(1);
+    g_sycl_queue.memcpy(host.data(), res.m_p_data.get(), sizeof(float)).wait();
+
+    EXPECT_FLOAT_EQ(host[0], 1.0f + 2.0f + 3.0f);
+}
+
+/**
+ * @test TENSOR.sum_alias_view_tensor
+ * @brief Sum all elements (axis = -1) of an alias view
+ * with non-unit stride and verify result.
+ */
+TEST(TENSOR, sum_alias_view_tensor)
+{
+    Tensor<float> t({6}, MemoryLocation::DEVICE);
+    std::vector<float> vals = {1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f};
+    t = vals;
+
+    std::vector<uint64_t> start_indices = {0ull};
+    std::vector<uint64_t> dims = {3ull};
+    std::vector<uint64_t> strides = {2ull};
+
+    Tensor<float> alias_view(t, start_indices, dims, strides);
+
+    Tensor<float> res = alias_view.sum(-1);
+
+    std::vector<float> host(1);
+    g_sycl_queue.memcpy(host.data(), res.m_p_data.get(), sizeof(float)).wait();
+
+    EXPECT_FLOAT_EQ(host[0], 1.0f + 3.0f + 5.0f);
+}
+
+/**
+ * @test TENSOR.sum_view_tensor_3d_axis1
+ * @brief Sum along axis 1 on a 3D view and verify the produced values.
+ */
+TEST(TENSOR, sum_view_tensor_3d_axis1)
+{
+    Tensor<float> t({3, 4, 2}, MemoryLocation::DEVICE);
+    std::vector<float> vals(24);
+    for (uint64_t i = 0; i < vals.size(); ++i)
+    {
+        vals[i] = static_cast<float>(i + 1);
+    }
+    t = vals;
+
+    std::vector<uint64_t> start_indices = {1ull, 1ull, 0ull};
+    std::vector<uint64_t> view_shape    = {2ull, 2ull};
+    Tensor<float> view(t, start_indices, view_shape);
+
+    Tensor<float> res = view.sum(1);
+
+    std::vector<float> host(2);
+    g_sycl_queue.memcpy
+        (host.data(), res.m_p_data.get(), sizeof(float) * host.size()).wait();
+
+    EXPECT_FLOAT_EQ(host[0], 23.0f);
+    EXPECT_FLOAT_EQ(host[1], 27.0f);
+}
+
+/**
+ * @test TENSOR.sum_alias_view_tensor_2d_strided
+ * @brief Sum along axis 0 on a 2D alias view with custom strides and verify
+ * each output element.
+ */
+TEST(TENSOR, sum_alias_view_tensor_2d_strided)
+{
+    Tensor<float> t({4, 5}, MemoryLocation::DEVICE);
+    std::vector<float> vals(20);
+    for (uint64_t i = 0; i < vals.size(); ++i)
+    {
+        vals[i] = static_cast<float>(i + 1);
+    }
+    t = vals;
+
+    std::vector<uint64_t> start_indices = {0ull, 1ull};
+    std::vector<uint64_t> dims          = {2ull, 3ull};
+    std::vector<uint64_t> strides       = {5ull, 2ull};
+    Tensor<float> alias_view(t, start_indices, dims, strides);
+
+    Tensor<float> res = alias_view.sum(0);
+
+    std::vector<float> host(3);
+    g_sycl_queue.memcpy
+        (host.data(), res.m_p_data.get(), sizeof(float) * host.size()).wait();
+
+    EXPECT_FLOAT_EQ(host[0], 9.0f);
+    EXPECT_FLOAT_EQ(host[1], 13.0f);
+    EXPECT_FLOAT_EQ(host[2], 17.0f);
+}
+
+/**
+ * @test TENSOR.sum_alias_view_tensor_overlapping_stride_zero
+ * @brief Sum along axis 0 on an alias view that contains overlapping elements
+ * via a zero stride and verify the sums account for repeated elements.
+ */
+TEST(TENSOR, sum_alias_view_tensor_overlapping_stride_zero)
+{
+    Tensor<float> t({2, 3}, MemoryLocation::DEVICE);
+    std::vector<float> vals = {1.0f, 2.0f, 3.0f,
+                               4.0f, 5.0f, 6.0f};
+    t = vals;
+
+    std::vector<uint64_t> start_indices = {1ull, 0ull};
+    std::vector<uint64_t> dims          = {2ull, 2ull};
+    std::vector<uint64_t> strides       = {0ull, 1ull};
+    Tensor<float> alias_view(t, start_indices, dims, strides);
+
+    Tensor<float> res = alias_view.sum(0);
+
+    std::vector<float> host(2);
+    g_sycl_queue.memcpy
+        (host.data(), res.m_p_data.get(), sizeof(float) * host.size()).wait();
+
+    EXPECT_FLOAT_EQ(host[0], 8.0f);
+    EXPECT_FLOAT_EQ(host[1], 10.0f);
+}
+
+/**
+ * @test TENSOR.sum_empty
+ * @brief Summing an empty tensor returns a scalar tensor containing 0.0.
+ */
+TEST(TENSOR, sum_empty)
+{
+    Tensor<float> t;
+
+    Tensor<float> res({1}, MemoryLocation::DEVICE);
+    res = t.sum(-1);
+
+    std::vector<float> host(1);
+    g_sycl_queue.memcpy(host.data(), res.m_p_data.get(), sizeof(float)).wait();
+
+    EXPECT_FLOAT_EQ(host[0], 0.0f);
+}
+
+/**
  * @test TENSOR.transpose_noargs_reverse_axes
  * @brief Tests that transpose() with no arguments reverses all axes.
  */

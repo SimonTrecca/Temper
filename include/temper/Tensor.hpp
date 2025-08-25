@@ -418,6 +418,24 @@ public:
     void sort(int64_t axis = -1);
 
     /**
+     * @brief Compute the sum of tensor elements (device reduction).
+     *
+     * Computes sums either flattened (axis = -1) or independently
+     * along a single axis.
+     * Uses device buffers and SYCL kernels; operation returns a new tensor.
+     *
+     * @param axis Axis to sum along, -1 = flatten (sum all elements),
+     * otherwise 0..rank-1.
+     * @return Tensor<float_t> New tensor containing the sums;
+     * the returned tensor uses the same memory location as the input.
+     * If the input tensor has no dimensions, a tensor
+     * with shape {1} is returned.
+     * @throws std::invalid_argument If axis is not -1 and is out of range.
+     * @throws std::bad_alloc if required device memory cannot be allocated.
+     */
+    Tensor<float_t> sum(int64_t axis) const;
+
+    /**
      * @brief Returns a new tensor with axes reversed (full transpose).
      *
      * This function returns a view of the tensor with its axes reversed.
