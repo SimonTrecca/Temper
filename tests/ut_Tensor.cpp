@@ -4497,16 +4497,20 @@ TEST(TENSOR, sort_alias_view_flatten_subregion)
  *
  * Owner shape: {5,20} -> 100 elements [0..99]
  * View: start {0,0}, dims {3,4}, strides {13,4}
- * Element (i,j) in the view maps to owner flat index: i*13 + j*4
+ * Sort along axis 1.
  */
 TEST(TENSOR, sort_alias_view_weird_strides)
 {
     Tensor<float> owner({5,20}, MemoryLocation::HOST);
     std::vector<float> vals(100);
-    for (uint64_t i = 0; i < 100; ++i) vals[i] = static_cast<float>(i);
+    for (uint64_t i = 0; i < 100; ++i)
+    {
+        vals[99 - i] = static_cast<float>(i);
+    }
     owner = vals;
 
     Tensor<float> view(owner, {0,0}, {3,4}, {13,4});
+    view.sort(1);
 
     EXPECT_EQ(view.m_dimensions, (std::vector<uint64_t>{3,4}));
     EXPECT_EQ(view.m_strides, (std::vector<uint64_t>{13,4}));
@@ -4515,30 +4519,20 @@ TEST(TENSOR, sort_alias_view_weird_strides)
     copy_tensor_data(host, view);
 
     std::vector<float> out(12);
-    g_sycl_queue.memcpy(out.data(), host.m_p_data.get(), sizeof(float)*12).wait();
+    g_sycl_queue.memcpy
+        (out.data(), host.m_p_data.get(), sizeof(float)*12).wait();
 
     std::vector<float> expected =
     {
-        0.f,  4.f,  8.f,  12.f,
-        13.f, 17.f, 21.f, 25.f,
-        26.f, 30.f, 34.f, 38.f
+        87.f,  91.f,  95.f,  99.f,
+        74.f, 78.f, 82.f, 86.f,
+        61.f, 65.f, 69.f, 73.f
     };
 
     for (uint64_t k = 0; k < out.size(); ++k)
     {
         EXPECT_FLOAT_EQ(out[k], expected[k]);
     }
-
-    view[1][2] = 999.0f;
-
-    Tensor<float> owner_host({5,20}, MemoryLocation::HOST);
-    copy_tensor_data(owner_host, owner);
-
-    std::vector<float> owner_out(100);
-    g_sycl_queue.memcpy
-        (owner_out.data(), owner_host.m_p_data.get(), sizeof(float)*100).wait();
-
-    EXPECT_FLOAT_EQ(owner_out[21], 999.0f);
 }
 
 /**
@@ -4856,6 +4850,35 @@ TEST(TENSOR, sum_alias_view_tensor_overlapping_stride_zero)
 }
 
 /**
+ * @test TENSOR.sum_nan_throws
+ * @brief Tests that sum throws std::runtime_error
+ * when the tensor contains NaN values.
+ */
+TEST(TENSOR, sum_nan_throws)
+{
+    Tensor<float> t({3}, MemoryLocation::DEVICE);
+    std::vector<float> vals =
+        {1.0f, std::numeric_limits<float>::quiet_NaN(), 3.0f};
+    t = vals;
+
+    EXPECT_THROW(t.sum(-1), std::runtime_error);
+}
+
+/**
+ * @test TENSOR.sum_non_finite_throws
+ * @brief Tests that sum throws std::runtime_error when
+ * the tensor contains non-finite values (infinity).
+ */
+TEST(TENSOR, sum_non_finite_throws)
+{
+    Tensor<float> t({2}, MemoryLocation::DEVICE);
+    std::vector<float> vals = {std::numeric_limits<float>::infinity(), 1.0f};
+    t = vals;
+
+    EXPECT_THROW(t.sum(-1), std::runtime_error);
+}
+
+/**
  * @test TENSOR.sum_empty
  * @brief Summing an empty tensor returns a scalar tensor containing 0.0.
  */
@@ -4865,6 +4888,294 @@ TEST(TENSOR, sum_empty)
 
     Tensor<float> res({1}, MemoryLocation::DEVICE);
     res = t.sum(-1);
+
+    std::vector<float> host(1);
+    g_sycl_queue.memcpy(host.data(), res.m_p_data.get(), sizeof(float)).wait();
+
+    EXPECT_FLOAT_EQ(host[0], 0.0f);
+}
+
+/**
+ * @test TENSOR.cumsum_all_elements_flatten
+ * @brief Tests cumsum on a 1D tensor, flattening all elements.
+ */
+TEST(TENSOR, cumsum_all_elements_flatten)
+{
+    Tensor<float> t({3}, MemoryLocation::DEVICE);
+    std::vector<float> vals = {1.0f, 2.0f, 3.0f};
+    t = vals;
+
+    Tensor<float> res = t.cumsum(-1);
+
+    std::vector<float> host(3);
+    g_sycl_queue.memcpy
+        (host.data(), res.m_p_data.get(), 3 * sizeof(float)).wait();
+
+    EXPECT_FLOAT_EQ(host[0], 1.0f);
+    EXPECT_FLOAT_EQ(host[1], 1.0f + 2.0f);
+    EXPECT_FLOAT_EQ(host[2], 1.0f + 2.0f + 3.0f);
+}
+
+/**
+ * @test TENSOR.cumsum_axis0_2D
+ * @brief Tests cumsum along axis 0 of a 2D tensor.
+ */
+TEST(TENSOR, cumsum_axis0_2D)
+{
+    Tensor<float> t({2, 3}, MemoryLocation::DEVICE);
+    std::vector<float> vals = {1.0f, 2.0f, 3.0f,
+                               4.0f, 5.0f, 6.0f};
+    t = vals;
+
+    Tensor<float> res = t.cumsum(0);
+
+    std::vector<float> host(6);
+    g_sycl_queue.memcpy
+        (host.data(), res.m_p_data.get(), 6 * sizeof(float)).wait();
+
+    EXPECT_FLOAT_EQ(host[0], 1.0f);
+    EXPECT_FLOAT_EQ(host[1], 2.0f);
+    EXPECT_FLOAT_EQ(host[2], 3.0f);
+    EXPECT_FLOAT_EQ(host[3], 1.0f + 4.0f);
+    EXPECT_FLOAT_EQ(host[4], 2.0f + 5.0f);
+    EXPECT_FLOAT_EQ(host[5], 3.0f + 6.0f);
+}
+
+/**
+ * @test TENSOR.cumsum_axis1_2D
+ * @brief Tests cumsum along axis 1 of a 2D tensor.
+ */
+TEST(TENSOR, cumsum_axis1_2D)
+{
+    Tensor<float> t({2,3}, MemoryLocation::DEVICE);
+    std::vector<float> vals = {1.0f, 2.0f, 3.0f,
+                               4.0f, 5.0f, 6.0f};
+    t = vals;
+
+    Tensor<float> res = t.cumsum(1);
+
+    std::vector<float> host(6);
+    g_sycl_queue.memcpy
+        (host.data(), res.m_p_data.get(), 6 * sizeof(float)).wait();
+
+    EXPECT_FLOAT_EQ(host[0], 1.0f);
+    EXPECT_FLOAT_EQ(host[1], 3.0f);
+    EXPECT_FLOAT_EQ(host[2], 6.0f);
+    EXPECT_FLOAT_EQ(host[3], 4.0f);
+    EXPECT_FLOAT_EQ(host[4], 9.0f);
+    EXPECT_FLOAT_EQ(host[5], 15.0f);
+}
+
+/**
+ * @test TENSOR.cumsum_flatten_3D
+ * @brief Tests cumsum on a 3D tensor flattened along the last axis.
+ */
+TEST(TENSOR, cumsum_flatten_3D)
+{
+    Tensor<float> t({2,2,2}, MemoryLocation::DEVICE);
+    std::vector<float> vals = {1.0f, 2.0f, 3.0f, 4.0f,
+                               5.0f, 6.0f, 7.0f, 8.0f};
+    t = vals;
+    Tensor<float> res = t.cumsum(-1);
+
+    std::vector<float> host(8);
+    g_sycl_queue.memcpy
+        (host.data(), res.m_p_data.get(), 8 * sizeof(float)).wait();
+
+    std::vector<float> expected =
+        {1.0f, 1.0f+2.0f, 1.0f+2.0f+3.0f, 1.0f+2.0f+3.0f+4.0f,
+        1.0f+2.0f+3.0f+4.0f+5.0f, 1.0f+2.0f+3.0f+4.0f+5.0f+6.0f,
+        1.0f+2.0f+3.0f+4.0f+5.0f+6.0f+7.0f,
+        1.0f+2.0f+3.0f+4.0f+5.0f+6.0f+7.0f+8.0f};
+    for (size_t i = 0; i < expected.size(); ++i)
+    {
+        EXPECT_FLOAT_EQ(host[i], expected[i]);
+    }
+}
+
+/**
+ * @test TENSOR.cumsum_view_flatten
+ * @brief Tests cumsum on a view of a 3D tensor flattened along the last axis.
+ */
+TEST(TENSOR, cumsum_view_flatten)
+{
+    Tensor<float> t({3,4,2}, MemoryLocation::DEVICE);
+    std::vector<float> vals(24);
+    for (uint64_t i = 0; i < vals.size(); ++i)
+    {
+        vals[i] = static_cast<float>(i + 1);
+    }
+    t = vals;
+
+    std::vector<uint64_t> start = {1ull, 1ull, 0ull};
+    std::vector<uint64_t> view_shape = {2ull, 2ull};
+    Tensor<float> view(t, start, view_shape);
+
+    Tensor<float> res = view.cumsum(-1);
+
+    std::vector<float> host(4);
+    g_sycl_queue.memcpy
+        (host.data(), res.m_p_data.get(), 4 * sizeof(float)).wait();
+
+    EXPECT_FLOAT_EQ(host[0], 11.0f);
+    EXPECT_FLOAT_EQ(host[1], 23.0f);
+    EXPECT_FLOAT_EQ(host[2], 36.0f);
+    EXPECT_FLOAT_EQ(host[3], 50.0f);
+}
+
+/**
+ * @test TENSOR.cumsum_alias_view_strided
+ * @brief Tests cumsum on an alias view with a stride on a 1D tensor.
+ */
+TEST(TENSOR, cumsum_alias_view_strided)
+{
+    Tensor<float> t({6}, MemoryLocation::DEVICE);
+    std::vector<float> vals = {1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f};
+    t = vals;
+    std::vector<uint64_t> start = {0ull};
+    std::vector<uint64_t> dims  = {3ull};
+    std::vector<uint64_t> strides = {2ull};
+    Tensor<float> alias_view(t, start, dims, strides);
+
+    Tensor<float> res = alias_view.cumsum(-1);
+
+    std::vector<float> host(3);
+    g_sycl_queue.memcpy
+        (host.data(), res.m_p_data.get(), 3 * sizeof(float)).wait();
+
+    EXPECT_FLOAT_EQ(host[0], 1.0f);
+    EXPECT_FLOAT_EQ(host[1], 1.0f + 3.0f);
+    EXPECT_FLOAT_EQ(host[2], 1.0f + 3.0f + 5.0f);
+}
+
+/**
+ * @test TENSOR.cumsum_alias_view_overlapping_stride_zero
+ * @brief Tests cumsum on an alias view with
+ * overlapping stride of zero on a 2D tensor.
+ */
+TEST(TENSOR, cumsum_alias_view_overlapping_stride_zero)
+{
+    Tensor<float> t({2,3}, MemoryLocation::DEVICE);
+    std::vector<float> vals = {1.0f, 2.0f, 3.0f,
+                               4.0f, 5.0f, 6.0f};
+    t = vals;
+
+    std::vector<uint64_t> start   = {1ull, 0ull};
+    std::vector<uint64_t> dims    = {2ull, 2ull};
+    std::vector<uint64_t> strides = {0ull, 1ull};
+    Tensor<float> alias_view(t, start, dims, strides);
+
+    Tensor<float> res = alias_view.cumsum(0);
+
+    std::vector<float> host(4);
+    g_sycl_queue.memcpy
+        (host.data(), res.m_p_data.get(), 4 * sizeof(float)).wait();
+
+    EXPECT_FLOAT_EQ(host[0], 4.0f);
+    EXPECT_FLOAT_EQ(host[1], 5.0f);
+    EXPECT_FLOAT_EQ(host[2], 8.0f);
+    EXPECT_FLOAT_EQ(host[3], 10.0f);
+}
+
+/**
+ * @test TENSOR.cumsum_alias_view_weird_strides
+ * @brief Sorting an alias view with non-trivial strides (e.g. 13,4).
+ *
+ * Owner shape: {5,20} -> 100 elements [0..99]
+ * View: start {0,0}, dims {3,4}, strides {13,4}
+ * Cumsum along axis 1.
+ */
+TEST(TENSOR, cumsum_alias_view_weird_strides)
+{
+    Tensor<float> owner({5,20}, MemoryLocation::HOST);
+    std::vector<float> vals(100);
+    for (uint64_t i = 0; i < 100; ++i)
+    {
+        vals[i] = static_cast<float>(i);
+    }
+    owner = vals;
+
+    Tensor<float> view(owner, {0,0}, {3,4}, {13,4});
+
+    Tensor<float> view2 = view.cumsum(1);
+    EXPECT_EQ(view2.m_dimensions, (std::vector<uint64_t>{3,4}));
+    EXPECT_EQ(view2.m_strides, (std::vector<uint64_t>{4,1}));
+
+    Tensor<float> host({3,4}, MemoryLocation::HOST);
+    copy_tensor_data(host, view2);
+
+    std::vector<float> out(12);
+    g_sycl_queue.memcpy
+        (out.data(), host.m_p_data.get(), sizeof(float)*12).wait();
+
+    std::vector<float> expected =
+    {
+        0.f,  4.f,  12.f,  24.f,
+        13.f, 30.f, 51.f, 76.f,
+        26.f, 56.f, 90.f, 128.f
+    };
+
+    for (uint64_t k = 0; k < out.size(); ++k)
+    {
+        EXPECT_FLOAT_EQ(out[k], expected[k]);
+    }
+}
+
+/**
+ * @test TENSOR.cumsum_axis_out_of_bounds
+ * @brief Tests that cumsum throws std::invalid_argument
+ * when the axis is out of bounds.
+ */
+TEST(TENSOR, cumsum_axis_out_of_bounds)
+{
+    Tensor<float> t({2,2}, MemoryLocation::DEVICE);
+    std::vector<float> vals = {1.0f, 2.0f, 3.0f, 4.0f};
+    t = vals;
+
+    EXPECT_THROW(t.cumsum(2), std::invalid_argument);
+    EXPECT_THROW(t.cumsum(-2), std::invalid_argument);
+}
+
+/**
+ * @test TENSOR.cumsum_nan_throws
+ * @brief Tests that cumsum throws std::runtime_error
+ * when the tensor contains NaN values.
+ */
+TEST(TENSOR, cumsum_nan_throws)
+{
+    Tensor<float> t({3}, MemoryLocation::DEVICE);
+    std::vector<float> vals =
+        {1.0f, std::numeric_limits<float>::quiet_NaN(), 3.0f};
+    t = vals;
+
+    EXPECT_THROW(t.cumsum(-1), std::runtime_error);
+}
+
+/**
+ * @test TENSOR.cumsum_non_finite_throws
+ * @brief Tests that cumsum throws std::runtime_error when
+ * the tensor contains non-finite values (infinity).
+ */
+TEST(TENSOR, cumsum_non_finite_throws)
+{
+    Tensor<float> t({2}, MemoryLocation::DEVICE);
+    std::vector<float> vals = {std::numeric_limits<float>::infinity(), 1.0f};
+    t = vals;
+
+    EXPECT_THROW(t.cumsum(-1), std::runtime_error);
+}
+
+/**
+ * @test TENSOR.cumsum_empty
+ * @brief Tests cumsum on an empty tensor returns a tensor
+ * with a single zero element.
+ */
+TEST(TENSOR, cumsum_empty)
+{
+    Tensor<float> t;
+
+    Tensor<float> res({1}, MemoryLocation::DEVICE);
+    res = t.cumsum(-1);
 
     std::vector<float> host(1);
     g_sycl_queue.memcpy(host.data(), res.m_p_data.get(), sizeof(float)).wait();
@@ -5051,6 +5362,65 @@ TEST(TENSOR, print_tensor)
     t.print(ss);
 
     std::string expected = "[[1, 2],\n [3, 4]]\n";
+
+    EXPECT_EQ(ss.str(), expected);
+}
+
+/**
+ * @test TENSOR.print_view_tensor
+ * @brief Checks that print correctly outputs a 2x2 view of a 3x4 owner tensor.
+ *
+ * Owner shape: {3,4} values 1..12
+ * View: start {1,1}, dims {2,2} -> should print [[6, 7], [10, 11]]
+ */
+TEST(TENSOR, print_view_tensor)
+{
+    Tensor<float> owner({3,4}, MemoryLocation::HOST);
+    std::vector<float> vals(12);
+    for (uint64_t i = 0; i < vals.size(); ++i)
+    {
+        vals[i] = static_cast<float>(i + 1);
+    }
+    owner = vals;
+
+    std::vector<uint64_t> start = {1ull, 1ull};
+    std::vector<uint64_t> view_shape = {2ull, 2ull};
+    Tensor<float> view(owner, start, view_shape);
+
+    std::stringstream ss;
+    view.print(ss);
+
+    std::string expected = "[[6, 7],\n [10, 11]]\n";
+    EXPECT_EQ(ss.str(), expected);
+}
+
+/**
+ * @test TENSOR.print_alias_view_weird_strides
+ * @brief Checks print on an alias view with non-trivial strides (e.g. 13,4).
+ *
+ * Owner shape: {5,20} -> 100 elements [0..99]
+ * View: start {0,0}, dims {3,4}, strides {13,4}
+ * Printed matrix should reflect the stride mapping.
+ */
+TEST(TENSOR, print_alias_view_weird_strides)
+{
+    Tensor<float> owner({5,20}, MemoryLocation::HOST);
+    std::vector<float> vals(100);
+    for (uint64_t i = 0; i < 100; ++i)
+    {
+        vals[i] = static_cast<float>(i);
+    }
+    owner = vals;
+
+    Tensor<float> view(owner, {0,0}, {3,4}, {13,4});
+
+    std::stringstream ss;
+    view.print(ss);
+
+    std::string expected =
+        "[[0, 4, 8, 12],\n"
+        " [13, 17, 21, 25],\n"
+        " [26, 30, 34, 38]]\n";
 
     EXPECT_EQ(ss.str(), expected);
 }

@@ -432,8 +432,31 @@ public:
      * with shape {1} is returned.
      * @throws std::invalid_argument If axis is not -1 and is out of range.
      * @throws std::bad_alloc if required device memory cannot be allocated.
+     * @throws std::runtime_error If NaN or non-finite values are encountered
+     * in the inputs or the results.
      */
     Tensor<float_t> sum(int64_t axis) const;
+
+    /**
+     * @brief Compute the cumulative sum of tensor elements (device scan).
+     *
+     * Computes cumulative sums either flattened (axis = -1) or
+     * independently along a single axis. Uses device buffers and
+     * SYCL kernels; operation returns a new tensor.
+     *
+     * @param axis Axis to scan along, -1 = flatten (treat as 1D and scan
+     * all elements), otherwise 0..rank-1.
+     * @return Tensor<float_t> New tensor containing the cumulative sums;
+     * the returned tensor uses the same memory location as the input.
+     * If the input tensor has no dimensions, a tensor
+     * with shape {1} is returned.
+     *
+     * @throws std::invalid_argument If axis is not -1 and is out of range.
+     * @throws std::bad_alloc If required device memory cannot be allocated.
+     * @throws std::runtime_error If NaN or non-finite values are encountered
+     * in the inputs or the results.
+     */
+    Tensor<float_t> cumsum(int64_t axis) const;
 
     /**
      * @brief Returns a new tensor with axes reversed (full transpose).
@@ -494,8 +517,6 @@ public:
 	~Tensor() noexcept = default;
 
     /* TODO
-    cumsum
-    sum
     getters and setters
     */
 
