@@ -231,16 +231,16 @@ Tensor<float_t>::Tensor(Tensor && other) noexcept
 }
 
 template<typename float_t>
-Tensor<float_t>::Tensor(const Tensor & other,
+Tensor<float_t>::Tensor(const Tensor & owner,
                         const std::vector<uint64_t> & start_indices,
                         const std::vector<uint64_t> & view_shape)
     : m_own_data(false),
-      m_mem_loc(other.m_mem_loc)
+      m_mem_loc(owner.m_mem_loc)
 {
-    const uint64_t original_rank = other.m_dimensions.size();
+    const uint64_t original_rank = owner.m_dimensions.size();
     const uint64_t view_rank = view_shape.size();
 
-    if (!other.m_p_data)
+    if (!owner.m_p_data)
     {
         throw std::runtime_error(R"(Tensor(view constructor):
             cannot create view from uninitialized tensor.)");
@@ -261,7 +261,7 @@ Tensor<float_t>::Tensor(const Tensor & other,
     // Check bounds for start indices and view dimensions.
     for (uint64_t i = 0; i < original_rank; ++i)
     {
-        if (start_indices[i] >= other.m_dimensions[i])
+        if (start_indices[i] >= owner.m_dimensions[i])
         {
             throw std::out_of_range(R"(Tensor(view constructor):
                 start index out of bounds.)");
@@ -271,7 +271,7 @@ Tensor<float_t>::Tensor(const Tensor & other,
     {
         uint64_t i = original_rank - view_rank + j;
         if (view_shape[j] == 0 ||
-            start_indices[i] + view_shape[j] > other.m_dimensions[i])
+            start_indices[i] + view_shape[j] > owner.m_dimensions[i])
         {
             throw std::out_of_range(R"(Tensor(view constructor):
                 view shape out of bounds.)");
@@ -281,15 +281,15 @@ Tensor<float_t>::Tensor(const Tensor & other,
     uint64_t offset = 0;
     for (uint64_t i = 0; i < original_rank; ++i)
     {
-        offset += start_indices[i] * other.m_strides[i];
+        offset += start_indices[i] * owner.m_strides[i];
     }
 
     m_p_data = std::shared_ptr<float_t>
-        (other.m_p_data, other.m_p_data.get() + offset);
+        (owner.m_p_data, owner.m_p_data.get() + offset);
 
     // Set dimensions and strides for the view.
     m_dimensions.assign(view_shape.begin(), view_shape.end());
-    m_strides.assign(other.m_strides.end() - view_rank, other.m_strides.end());
+    m_strides.assign(owner.m_strides.end() - view_rank, owner.m_strides.end());
 }
 
 template<typename float_t>
@@ -2996,6 +2996,85 @@ void Tensor<float_t>::print(std::ostream& os) const
 
     recurse(0, 0);
     os << "\n";
+}
+
+template<typename float_t>
+const float_t * Tensor<float_t>::get_data() const noexcept
+{
+    return m_p_data.get();
+}
+
+template<typename float_t>
+const std::vector<uint64_t> & Tensor<float_t>::get_dimensions() const noexcept
+{
+    return m_dimensions;
+}
+
+template<typename float_t>
+const std::vector<uint64_t> & Tensor<float_t>::get_strides() const noexcept
+{
+    return m_strides;
+}
+
+template<typename float_t>
+const std::vector<uint64_t> & Tensor<float_t>::get_shape() const noexcept
+{
+    return m_dimensions;
+}
+
+template<typename float_t>
+uint64_t Tensor<float_t>::get_rank() const noexcept
+{
+    return static_cast<uint64_t>(m_dimensions.size());
+}
+
+template<typename float_t>
+uint64_t Tensor<float_t>::get_num_elements() const noexcept
+{
+    if (m_dimensions.empty())
+    {
+        return 0;
+    }
+
+    uint64_t total_size = 1;
+    for (uint64_t d : m_dimensions)
+    {
+        total_size *= d;
+    }
+    return total_size;
+}
+
+template<typename float_t>
+MemoryLocation Tensor<float_t>::get_memory_location() const noexcept
+{
+    return m_mem_loc;
+}
+
+template<typename float_t>
+bool Tensor<float_t>::get_owns_data() const noexcept
+{
+    return m_own_data;
+}
+
+template<typename float_t>
+bool Tensor<float_t>::is_view() const noexcept
+{
+    return !m_own_data;
+}
+
+template<typename float_t>
+uint64_t Tensor<float_t>::get_element_size_bytes() const noexcept
+{
+    return static_cast<uint64_t>(sizeof(float_t));
+}
+
+template<typename float_t>
+uint64_t Tensor<float_t>::get_total_bytes() const noexcept
+{
+    const uint64_t elems = get_num_elements();
+    const uint64_t elem_size = get_element_size_bytes();
+
+    return elems * elem_size;
 }
 
 template class Tensor<float>;

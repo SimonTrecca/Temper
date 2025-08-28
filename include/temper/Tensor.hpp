@@ -123,7 +123,7 @@ public:
      * but it holds an aliasing `shared_ptr` to the owner's buffer so the buffer
      * remains alive while either control block is retained.
      *
-     * @param other Tensor to view into.
+     * @param owner Tensor to view into.
      * @param start_indices Starting coordinate of the view (one per owner axis).
      * @param view_shape Shape of the view.
      *
@@ -137,7 +137,7 @@ public:
      * @throws std::runtime_error if:
      * - @p other has no data (default-constructed or moved-from)
      */
-    Tensor(const Tensor & other,
+    Tensor(const Tensor & owner,
             const std::vector<uint64_t> & start_indices,
             const std::vector<uint64_t> & view_shape);
 
@@ -151,7 +151,7 @@ public:
      * remains alive while either control block is retained.
      * Strides allow accessing elements in non-contiguous memory layouts.
      *
-     * @param other Tensor to view into.
+     * @param owner Tensor to view into.
      * @param start_indices Starting coordinate of the view (one per owner axis).
      * @param dims Dimensions of the view (size per axis).
      * Must have all entries > 0.
@@ -516,10 +516,113 @@ public:
      */
 	~Tensor() noexcept = default;
 
-    /* TODO
-    getters and setters
-    */
+    /**
+     * @brief Returns a raw pointer to the underlying tensor data.
+     *
+     * This pointer is read-only (`const`) and may point either to
+     * owned memory (for tensors that allocate their own storage)
+     * or to an alias of another tensor's memory (for views).
+     *
+     * @return const float_t* Pointer to the first element of tensor data.
+     */
+    const float_t * get_data() const noexcept;
 
+    /**
+     * @brief Returns the dimensions (shape) of the tensor.
+     *
+     * Dimensions are stored as a vector of extents for each axis.
+     *
+     * @return const std::vector<uint64_t>& Reference to dimensions vector.
+     */
+    const std::vector<uint64_t> & get_dimensions() const noexcept;
+
+    /**
+     * @brief Returns the strides of the tensor.
+     *
+     * Strides define the memory step size (in elements) for each axis.
+     *
+     * @return const std::vector<uint64_t>& Reference to strides vector.
+     */
+    const std::vector<uint64_t> & get_strides() const noexcept;
+
+    /**
+     * @brief Returns the shape of the tensor.
+     *
+     * Equivalent to @ref get_dimensions().
+     *
+     * @return const std::vector<uint64_t>& Reference to shape vector.
+     */
+    const std::vector<uint64_t> & get_shape() const noexcept;
+
+    /**
+     * @brief Returns the rank (number of dimensions) of the tensor.
+     *
+     * For example, a 2D matrix has rank 2, a vector has rank 1,
+     * and if empty it has rank 0.
+     *
+     * @return uint64_t Tensor rank.
+     */
+    uint64_t get_rank() const noexcept;
+
+    /**
+     * @brief Returns the total number of elements in the tensor.
+     *
+     * Computed as the product of all dimensions.
+     * If the tensor has no dimensions, returns 0.
+     *
+     * @return uint64_t Number of elements in the tensor.
+     */
+    uint64_t get_num_elements() const noexcept;
+
+    /**
+     * @brief Returns the memory location where the tensor data resides.
+     *
+     * Indicates whether the tensor memory is allocated on the
+     * host or on a device.
+     *
+     * @return MemoryLocation Location of tensor data.
+     */
+    MemoryLocation get_memory_location() const noexcept;
+
+    /**
+     * @brief Indicates whether the tensor owns its memory.
+     *
+     * - Returns `true` for owner tensors (allocated storage).
+     * - Returns `false` for views or alias tensors (non-owning).
+     *
+     * @return bool True if the tensor owns its memory, false otherwise.
+     */
+    bool get_owns_data() const noexcept;
+
+    /**
+     * @brief Checks if the tensor is a view (non-owning).
+     *
+     * A tensor is considered a view if it does not own its memory
+     * and instead references memory from another tensor.
+     * Complementary to get_owns_data().
+     *
+     * @return bool True if tensor is a view, false otherwise.
+     */
+    bool is_view() const noexcept;
+
+    /**
+     * @brief Returns the size in bytes of a single tensor element.
+     *
+     * Equivalent to `sizeof(float_t)`.
+     *
+     * @return uint64_t Element size in bytes.
+     */
+    uint64_t get_element_size_bytes() const noexcept;
+
+    /**
+     * @brief Returns the total size in bytes of the tensor data.
+     *
+     * Computed as @ref get_num_elements multiplied by
+     * @ref get_element_size_bytes.
+     *
+     * @return uint64_t Total size in bytes.
+     */
+    uint64_t get_total_bytes() const noexcept;
 };
 
 /// Explicit instantiation for "float" data

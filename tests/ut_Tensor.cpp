@@ -5440,4 +5440,260 @@ TEST(TENSOR, print_empty_tensor)
     EXPECT_EQ(ss.str(), "[]\n");
 }
 
+/**
+ * @test TENSOR.get_data
+ * @brief Verifies that get_data() provides correct raw pointer access.
+ *
+ * Initializes a tensor with values, checks that get_data() returns
+ * the expected sequence of floats, and ensures const access works.
+ * Also validates that get_data() returns const float* on const tensors.
+ */
+TEST(TENSOR, get_data)
+{
+    Tensor<float> t({2, 3}, MemoryLocation::HOST);
+    std::vector<float> vals = {0.f, 1.f, 2.f, 3.f, 4.f, 5.f};
+    t = vals;
+
+    for (uint64_t i = 0; i < t.get_num_elements(); ++i)
+    {
+        EXPECT_FLOAT_EQ(t.get_data()[i], static_cast<float>(i));
+    }
+
+    const Tensor<float> ct = t;
+    EXPECT_EQ(ct.get_dimensions(), t.get_dimensions());
+    EXPECT_EQ(ct.get_strides(), t.get_strides());
+    EXPECT_EQ(ct.get_num_elements(), t.get_num_elements());
+
+    for (uint64_t i = 0; i < ct.get_num_elements(); ++i)
+    {
+        EXPECT_FLOAT_EQ(ct.get_data()[i], t.get_data()[i]);
+    }
+
+    static_assert(std::is_same_v<
+        decltype(std::declval<const Tensor<float>&>().get_data()),
+        const float* >,
+        "get_data() should return const float* called on const Tensor<float>&");
+}
+
+/**
+ * @test TENSOR.get_dimensions
+ * @brief Validates that get_dimensions() returns the correct shape.
+ *
+ * Checks consistency between get_dimensions() and internal storage,
+ * verifies aliasing with get_shape(), and enforces const correctness.
+ */
+TEST(TENSOR, get_dimensions)
+{
+    Tensor<float> t({4, 5, 6}, MemoryLocation::HOST);
+
+    EXPECT_EQ(t.get_dimensions(), t.m_dimensions);
+
+    EXPECT_EQ(&t.get_shape(), &t.get_dimensions());
+
+    const Tensor<float> ct = t;
+    EXPECT_EQ(ct.get_dimensions(), t.get_dimensions());
+    EXPECT_EQ(&ct.get_shape(), &ct.get_dimensions());
+
+    static_assert(std::is_same_v<
+        decltype(std::declval<const Tensor<float>&>().get_dimensions()),
+        const std::vector<uint64_t>&
+    >, "get_dimensions() must return const std::vector<uint64_t>&");
+
+    static_assert(std::is_same_v<
+        decltype(std::declval<const Tensor<float>&>().get_shape()),
+        const std::vector<uint64_t>&
+    >, "get_shape() must return const std::vector<uint64_t>&");
+}
+
+/**
+ * @test TENSOR.get_strides
+ * @brief Confirms that get_strides() returns the correct stride vector.
+ *
+ * Ensures correct access for both mutable and const tensors, and checks
+ * compile-time type correctness.
+ */
+TEST(TENSOR, get_strides)
+{
+    Tensor<float> t({3, 2}, MemoryLocation::HOST);
+
+    EXPECT_EQ(t.get_strides(), t.m_strides);
+
+    const Tensor<float> ct = t;
+    EXPECT_EQ(ct.get_strides(), t.get_strides());
+
+    static_assert(std::is_same_v<
+        decltype(std::declval<const Tensor<float>&>().get_strides()),
+        const std::vector<uint64_t>&
+    >, "get_strides() must return const std::vector<uint64_t>&");
+}
+
+/**
+ * @test TENSOR.get_rank
+ * @brief Tests that get_rank() returns the correct number of dimensions.
+ *
+ * Verifies rank for a tensor with shape {7, 8, 9}, const-correctness,
+ * and enforces return type at compile time.
+ */
+TEST(TENSOR, get_rank)
+{
+    Tensor<float> t({7, 8, 9}, MemoryLocation::HOST);
+    EXPECT_EQ(t.get_rank(), static_cast<uint64_t>(3));
+
+    const Tensor<float> ct = t;
+    EXPECT_EQ(ct.get_rank(), t.get_rank());
+
+    static_assert(std::is_same_v<
+        decltype(std::declval<const Tensor<float>&>().get_rank()),
+        uint64_t
+    >, "get_rank() must return uint64_t");
+}
+
+/**
+ * @test TENSOR.get_num_elements
+ * @brief Ensures get_num_elements() returns the correct element count.
+ *
+ * Checks correctness for non-empty tensors and empty tensors, validates
+ * const-correctness, and enforces return type.
+ */
+TEST(TENSOR, get_num_elements)
+{
+    Tensor<float> t({2, 4, 3}, MemoryLocation::HOST);
+    EXPECT_EQ(t.get_num_elements(), static_cast<uint64_t>(2 * 4 * 3));
+
+    Tensor<float> empty;
+    EXPECT_EQ(empty.get_num_elements(), static_cast<uint64_t>(0));
+
+    const Tensor<float> ct = t;
+    EXPECT_EQ(ct.get_num_elements(), t.get_num_elements());
+
+    static_assert(std::is_same_v<
+        decltype(std::declval<const Tensor<float>&>().get_num_elements()),
+        uint64_t
+    >, "get_num_elements() must return uint64_t");
+}
+
+/**
+ * @test TENSOR.get_memory_location
+ * @brief Validates that get_memory_location() reports correct allocation target.
+ *
+ * Ensures host and device tensors report expected MemoryLocation values
+ * and verifies const-correctness and return type.
+ */
+TEST(TENSOR, get_memory_location)
+{
+    Tensor<float> host_t({2, 2}, MemoryLocation::HOST);
+    Tensor<float> device_t({2, 2}, MemoryLocation::DEVICE);
+
+    EXPECT_EQ(host_t.get_memory_location(), MemoryLocation::HOST);
+    EXPECT_EQ(device_t.get_memory_location(), MemoryLocation::DEVICE);
+
+    const Tensor<float> cht = host_t;
+    EXPECT_EQ(cht.get_memory_location(), MemoryLocation::HOST);
+
+    static_assert(std::is_same_v<
+        decltype(std::declval<const Tensor<float>&>().get_memory_location()),
+        MemoryLocation
+    >, "get_memory_location() must return MemoryLocation");
+}
+
+/**
+ * @test TENSOR.get_owns_data
+ * @brief Tests that get_owns_data() distinguishes owning vs. non-owning tensors.
+ *
+ * Verifies that owning tensors report true, view tensors report false,
+ * and checks const-correctness and return type.
+ */
+TEST(TENSOR, get_owns_data)
+{
+    Tensor<float> owner({3, 3}, MemoryLocation::HOST);
+    EXPECT_TRUE(owner.get_owns_data());
+
+    Tensor<float> base({4, 4}, MemoryLocation::HOST);
+    std::vector<uint64_t> start = {1, 1};
+    std::vector<uint64_t> shape = {2, 2};
+    Tensor<float> view(base, start, shape);
+    EXPECT_FALSE(view.get_owns_data());
+
+    const Tensor<float> const_owner = owner;
+    EXPECT_TRUE(const_owner.get_owns_data());
+
+    static_assert(std::is_same_v<
+        decltype(std::declval<const Tensor<float>&>().get_owns_data()),
+        bool
+    >, "get_owns_data() must return bool");
+}
+
+/**
+ * @test TENSOR.is_view
+ * @brief Verifies that is_view() correctly identifies tensor views.
+ *
+ * Checks that owning tensors return false, sub-tensors return true,
+ * validates const correctness, and enforces return type.
+ */
+TEST(TENSOR, is_view)
+{
+    Tensor<float> owner({2, 2}, MemoryLocation::HOST);
+    Tensor<float> base({4, 4}, MemoryLocation::HOST);
+    Tensor<float> view(base, {1,1}, {2,2});
+
+    EXPECT_FALSE(owner.is_view());
+    EXPECT_TRUE(view.is_view());
+
+    const Tensor<float> const_view = view;
+    EXPECT_TRUE(const_view.is_view());
+
+    static_assert(std::is_same_v<
+        decltype(std::declval<const Tensor<float>&>().is_view()),
+        bool
+    >, "is_view() must return bool");
+}
+
+/**
+ * @test TENSOR.get_element_size_bytes
+ * @brief Tests that get_element_size_bytes() returns sizeof(element type).
+ *
+ * Ensures correct behavior for float tensors, const-correctness, and
+ * compile-time type verification.
+ */
+TEST(TENSOR, get_element_size_bytes)
+{
+    Tensor<float> t({1}, MemoryLocation::HOST);
+    EXPECT_EQ(t.get_element_size_bytes(), static_cast<uint64_t>(sizeof(float)));
+
+    const Tensor<float> ct = t;
+    EXPECT_EQ(ct.get_element_size_bytes(), static_cast<uint64_t>(sizeof(float)));
+
+    static_assert(std::is_same_v<
+        decltype(std::declval<const Tensor<float>&>().get_element_size_bytes()),
+        uint64_t
+    >, "get_element_size_bytes() must return uint64_t");
+}
+
+/**
+ * @test TENSOR.get_total_bytes
+ * @brief Ensures get_total_bytes() returns correct total size in bytes.
+ *
+ * Validates correct computation for non-empty and empty tensors, enforces
+ * const correctness, and checks return type at compile time.
+ */
+TEST(TENSOR, get_total_bytes)
+{
+    Tensor<float> t({5, 6}, MemoryLocation::HOST);
+    uint64_t expected_elems = 5 * 6;
+    uint64_t expected_total =
+        expected_elems * static_cast<uint64_t>(sizeof(float));
+    EXPECT_EQ(t.get_total_bytes(), expected_total);
+
+    Tensor<float> empty;
+    EXPECT_EQ(empty.get_total_bytes(), static_cast<uint64_t>(0));
+
+    const Tensor<float> ct = t;
+    EXPECT_EQ(ct.get_total_bytes(), expected_total);
+
+    static_assert(std::is_same_v<
+        decltype(std::declval<const Tensor<float>&>().get_total_bytes()),
+        uint64_t
+    >, "get_total_bytes() must return uint64_t");
+}
+
 } // namespace Test
