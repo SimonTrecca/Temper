@@ -373,6 +373,18 @@ public:
     Tensor operator-() const;
 
     /**
+     * @brief Returns an owning, contiguous deep copy of this tensor.
+     *
+     * The clone has the same shape and memory location and contains an
+     * independent copy of all elements. Operation is synchronous.
+     *
+     * @return Owning Tensor<float_t> with contiguous storage.
+     * @throws std::invalid_argument if this tensor is empty.
+     * @throws std::bad_alloc on allocation failure.
+     */
+    Tensor<float_t> clone() const;
+
+    /**
      * @brief Moves tensor data between host (shared) and device memory.
      *
      * Transfers owned data to the specified memory location.

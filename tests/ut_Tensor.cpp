@@ -3652,6 +3652,166 @@ TEST(TENSOR, operator_unary_negation_alias_view_weird_strides)
 }
 
 /**
+ * @test TENSOR.clone_empty
+ * @brief Cloning an empty tensor should throw.
+ */
+TEST(TENSOR, clone_empty)
+{
+    Tensor<float> t;
+
+    EXPECT_TRUE(t.m_dimensions.empty());
+    EXPECT_EQ(t.get_num_elements(), 0u);
+    EXPECT_EQ(t.m_p_data, nullptr);
+
+    EXPECT_THROW(t.clone(), std::invalid_argument);
+}
+
+
+/**
+ * @test TENSOR.clone_1d
+ * @brief Cloning a 1D tensor should copy data and allocate new storage.
+ */
+TEST(TENSOR, clone_1d)
+{
+    Tensor<float> t({5}, MemoryLocation::HOST);
+    t = {1, 2, 3, 4, 5};
+
+    Tensor<float> c = t.clone();
+
+    EXPECT_EQ(c.m_dimensions, t.m_dimensions);
+    EXPECT_EQ(c.get_num_elements(), t.get_num_elements());
+
+    uint64_t n = t.get_num_elements();
+    for (uint64_t i = 0; i < n; ++i)
+    {
+        EXPECT_EQ(c[i], t[i]);
+    }
+
+    EXPECT_NE(c.m_p_data, t.m_p_data);
+}
+
+/**
+ * @test TENSOR.clone_2d
+ * @brief Cloning a 2D tensor should preserve both dimensions and values.
+ */
+TEST(TENSOR, clone_2d)
+{
+    Tensor<float> t({2, 3}, MemoryLocation::HOST);
+    t = {1, 2, 3, 4, 5, 6};
+
+    Tensor<float> c = t.clone();
+
+    EXPECT_EQ(c.get_dimensions(), (std::vector<uint64_t>{2, 3}));
+
+    for (uint64_t i = 0; i < 2; ++i)
+    {
+        for (uint64_t j = 0; j < 3; ++j)
+        {
+            EXPECT_EQ(c[i][j], t[i][j]);
+        }
+    }
+
+    EXPECT_NE(c.get_data(), t.get_data());
+}
+
+/**
+ * @test TENSOR.clone_view
+ * @brief Cloning a view tensor should yield an independent full copy.
+ */
+TEST(TENSOR, clone_view)
+{
+    Tensor<float> t({4, 4}, MemoryLocation::HOST);
+
+    for (uint64_t i = 0; i < 16; ++i)
+    {
+        uint64_t r = i / 4;
+        uint64_t cidx = i % 4;
+        t[r][cidx] = static_cast<float>(i);
+    }
+
+    Tensor<float> v(t, {1, 1}, {2, 2});
+    Tensor<float> c = v.clone();
+
+    EXPECT_EQ(c.get_dimensions(), v.get_dimensions());
+
+    for (uint64_t i = 0; i < v.get_dimensions()[0]; ++i)
+    {
+        for (uint64_t j = 0; j < v.get_dimensions()[1]; ++j)
+        {
+            EXPECT_EQ(c[i][j], v[i][j]);
+        }
+    }
+
+    EXPECT_NE(c.m_p_data, v.m_p_data);
+}
+
+/**
+ * @test TENSOR.clone_alias_view
+ * @brief Tests that cloning an alias view produces an independent owning tensor
+ * with the same contents but different memory.
+ */
+TEST(TENSOR, clone_alias_view)
+{
+    Tensor<float> t({4, 4}, MemoryLocation::HOST);
+    for (uint64_t i = 0; i < 16; ++i)
+    {
+        uint64_t r = i / 4;
+        uint64_t cidx = i % 4;
+        t[r][cidx] = static_cast<float>(i);
+    }
+
+    Tensor<float> view(
+        t,
+        {0, 0},
+        {2, 2},
+        {13, 2}
+    );
+
+    Tensor<float> clone = view.clone();
+
+    ASSERT_EQ(clone.get_dimensions(), std::vector<uint64_t>({2, 2}));
+
+    for (uint64_t i = 0; i < 2; ++i)
+    {
+        for (uint64_t j = 0; j < 2; ++j)
+        {
+            uint64_t owner_index = i * 13 + j * 2;
+            float expected = t.get_data()[owner_index];
+            EXPECT_EQ(static_cast<float>(clone[i][j]), expected);
+        }
+    }
+
+    EXPECT_NE(clone.m_p_data, view.m_p_data);
+
+    t[0][0] = 999.0f;
+    EXPECT_NE(static_cast<float>(clone[0][0]), 999.0f);
+}
+
+
+/**
+ * @test TENSOR.clone_const
+ * @brief Ensure clone() can be called on const Tensor.
+ */
+TEST(TENSOR, clone_const)
+{
+    Tensor<float> t({3}, MemoryLocation::HOST);
+    t = {10, 20, 30};
+
+    const Tensor<float>& ct = t;
+    Tensor<float> c = ct.clone();
+
+    EXPECT_EQ(c.m_dimensions, t.m_dimensions);
+
+    uint64_t n = t.get_num_elements();
+    for (uint64_t i = 0; i < n; ++i)
+    {
+        EXPECT_EQ(c[i], t[i]);
+    }
+
+    EXPECT_NE(c.m_p_data, t.m_p_data);
+}
+
+/**
  * @test TENSOR.to_host_to_device
  * @brief Moves a tensor from HOST to DEVICE
  * and verifies data integrity and metadata.

@@ -175,11 +175,7 @@ Tensor<float_t>::Tensor(const Tensor & other)
             return;
         }
 
-        uint64_t total_size = 1;
-        for (uint64_t d : m_dimensions)
-        {
-            total_size *= d;
-        }
+        uint64_t total_size = other.get_num_elements();
 
         const size_t alloc_bytes =
             static_cast<size_t>(total_size) * sizeof(float_t);
@@ -353,11 +349,7 @@ Tensor<float_t>::Tensor(const Tensor & owner,
         offset += owner.m_strides[i] * start_indices[i];
     }
 
-    uint64_t owner_total = 1;
-    for (uint64_t d : owner.m_dimensions)
-    {
-        owner_total *= d;
-    }
+    uint64_t owner_total = owner.get_num_elements();
 
     constexpr uint64_t U64_MAX = std::numeric_limits<uint64_t>::max();
 
@@ -413,11 +405,7 @@ Tensor<float_t> & Tensor<float_t>::operator=(const Tensor & other)
                 return *this;
             }
 
-            uint64_t total_size = 1;
-            for (uint64_t d : m_dimensions)
-            {
-                total_size *= d;
-            }
+            uint64_t total_size = get_num_elements();
 
             const size_t alloc_bytes =
                 static_cast<size_t>(total_size) * sizeof(float_t);
@@ -487,11 +475,7 @@ Tensor<float_t> & Tensor<float_t>::operator=(const std::vector<float_t> & values
         throw std::invalid_argument(R"(Tensor(values assignment):
             target tensor has no elements.)");
     }
-    uint64_t total_size = 1;
-    for (uint64_t d : m_dimensions)
-    {
-        total_size *= d;
-    }
+    uint64_t total_size = get_num_elements();
 
     uint64_t values_size = static_cast<uint64_t>(values.size());
     if (values_size != total_size)
@@ -542,11 +526,7 @@ Tensor<float_t> & Tensor<float_t>::operator=(float_t val)
         m_own_data = true;
     }
 
-    uint64_t total_size = 1;
-    for (uint64_t d : m_dimensions)
-    {
-        total_size *= d;
-    }
+    uint64_t total_size = get_num_elements();
 
     if (total_size != 1)
     {
@@ -629,12 +609,7 @@ Tensor<float_t>::operator float_t() const
             tensor has no elements.)");
     }
 
-    uint64_t total_size = 1;
-    for (uint64_t d : m_dimensions)
-    {
-        total_size *= d;
-    }
-
+    uint64_t total_size = get_num_elements();
     if (total_size != 1)
     {
         throw std::invalid_argument(R"(Tensor(implicit type conversion):
@@ -1537,6 +1512,98 @@ Tensor<float_t> Tensor<float_t>::operator-() const
     return result;
 }
 
+template <typename float_t>
+Tensor<float_t> Tensor<float_t>::clone() const
+{
+    if (m_dimensions.empty())
+    {
+        throw std::invalid_argument(R"(Tensor(clone):
+            tensor has no elements.)");
+    }
+    Tensor<float_t> result(m_dimensions, m_mem_loc);
+
+    uint64_t total_elements = get_num_elements();
+
+    uint64_t rank = get_rank();
+
+    std::vector<uint64_t> shape_strides(rank, 1);
+    if (rank >= 2)
+    {
+        for (uint64_t i = rank - 2; i < rank; --i)
+        {
+            shape_strides[i] = shape_strides[i + 1] * m_dimensions[i + 1];
+            if (i == 0)
+            {
+                break;
+            }
+        }
+    }
+
+    uint64_t* p_dims = sycl::malloc_device<uint64_t>(rank, g_sycl_queue);
+    uint64_t* p_src_strides = sycl::malloc_device<uint64_t>(rank, g_sycl_queue);
+    uint64_t* p_dest_strides = sycl::malloc_device<uint64_t>(rank, g_sycl_queue);
+    uint64_t* p_shape_str = sycl::malloc_device<uint64_t>(rank, g_sycl_queue);
+
+    if (!p_dims || !p_src_strides || !p_dest_strides || !p_shape_str)
+    {
+        if (p_dims)
+        {
+            sycl::free(p_dims, g_sycl_queue);
+        }
+        if (p_src_strides)
+        {
+            sycl::free(p_src_strides, g_sycl_queue);
+        }
+        if (p_dest_strides)
+        {
+            sycl::free(p_dest_strides, g_sycl_queue);
+        }
+        if (p_shape_str)
+        {
+            sycl::free(p_shape_str, g_sycl_queue);
+        }
+        throw std::bad_alloc();
+    }
+
+    g_sycl_queue.memcpy
+        (p_dims, m_dimensions.data(), rank * sizeof(uint64_t)).wait();
+    g_sycl_queue.memcpy
+        (p_src_strides, m_strides.data(), rank * sizeof(uint64_t)).wait();
+    g_sycl_queue.memcpy
+        (p_dest_strides, result.m_strides.data(), rank * sizeof(uint64_t)).wait();
+    g_sycl_queue.memcpy
+        (p_shape_str, shape_strides.data(), rank * sizeof(uint64_t)).wait();
+
+
+    const float_t* p_src_data = m_p_data.get();
+    float_t* p_dest_data = result.m_p_data.get();
+
+    g_sycl_queue.parallel_for(sycl::range<1>(total_elements),
+        [=](sycl::id<1> idx)
+        {
+            uint64_t linear = idx[0];
+            uint64_t src_offset  = 0;
+            uint64_t dest_offset = 0;
+
+            for (uint64_t i = 0; i < rank; ++i)
+            {
+                uint64_t coord = (linear / p_shape_str[i]) % p_dims[i];
+                src_offset  += coord * p_src_strides[i];
+                dest_offset += coord * p_dest_strides[i];
+            }
+
+            p_dest_data[dest_offset] = p_src_data[src_offset];
+        }
+    ).wait();
+
+    sycl::free(p_dims, g_sycl_queue);
+    sycl::free(p_src_strides, g_sycl_queue);
+    sycl::free(p_dest_strides, g_sycl_queue);
+    sycl::free(p_shape_str, g_sycl_queue);
+
+    return result;
+}
+
 template<typename float_t>
 void Tensor<float_t>::to(MemoryLocation target_loc)
 {
@@ -1556,11 +1623,7 @@ void Tensor<float_t>::to(MemoryLocation target_loc)
         return;
     }
 
-    uint64_t total_size = 1;
-    for (uint64_t d : m_dimensions)
-    {
-        total_size *= d;
-    }
+    uint64_t total_size = get_num_elements();
 
     float_t* raw_ptr = nullptr;
     if (target_loc == MemoryLocation::HOST)
@@ -1661,11 +1724,7 @@ void Tensor<float_t>::sort(int64_t axis)
         throw std::invalid_argument("Tensor(sort): axis out of bounds");
     }
 
-    uint64_t total_size = 1;
-    for (uint64_t d : m_dimensions)
-    {
-        total_size *= d;
-    }
+    uint64_t total_size = get_num_elements();
 
     // Compute effective axis size, slice count and axis stride.
     uint64_t effective_axis_size = 0;
@@ -2028,11 +2087,7 @@ Tensor<float_t> Tensor<float_t>::sum(int64_t axis) const
 
     const uint64_t rank = static_cast<uint64_t>(m_dimensions.size());
 
-    uint64_t total_size = 1;
-    for (uint64_t d : m_dimensions)
-    {
-        total_size *= d;
-    }
+    uint64_t total_size = get_num_elements();
 
     const MemoryLocation res_loc = m_mem_loc;
 
@@ -2224,7 +2279,7 @@ Tensor<float_t> Tensor<float_t>::sum(int64_t axis) const
       Shared error flag:
       0 = OK,
       1 = NaN in inputs,
-      3 = non-finite result
+      2 = non-finite result
     */
     int32_t* p_error_flag = static_cast<int32_t*>(
         sycl::malloc_shared(sizeof(int32_t), g_sycl_queue));
@@ -2464,11 +2519,7 @@ Tensor<float_t> Tensor<float_t>::cumsum(int64_t axis) const
 
     const uint64_t rank = static_cast<uint64_t>(m_dimensions.size());
 
-    uint64_t total_size = 1;
-    for (uint64_t d : m_dimensions)
-    {
-        total_size *= d;
-    }
+    uint64_t total_size = get_num_elements();
 
     if (axis != -1 && (axis < 0 || static_cast<uint64_t>(axis) >= rank))
     {
@@ -2596,6 +2647,12 @@ Tensor<float_t> Tensor<float_t>::cumsum(int64_t axis) const
         effective_output_size = out_sz;
     }
 
+    /*
+      Shared error flag:
+      0 = OK,
+      1 = NaN in inputs,
+      2 = non-finite result
+    */
     int32_t* p_error_flag = static_cast<int32_t*>(
         sycl::malloc_shared(sizeof(int32_t), g_sycl_queue));
     *p_error_flag = 0;
