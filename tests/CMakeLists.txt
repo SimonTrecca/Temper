@@ -32,8 +32,14 @@ include(GoogleTest)
 
 add_executable(temper_ut
   ut_Tensor.cpp
+  ut_Math.cpp
+  ut_ML.cpp
+  ut_NN.cpp
   ${CMAKE_SOURCE_DIR}/src/Tensor.cpp
   ${CMAKE_SOURCE_DIR}/src/SYCLQueue.cpp
+  ${CMAKE_SOURCE_DIR}/src/Math.cpp
+  ${CMAKE_SOURCE_DIR}/src/ML.cpp
+  ${CMAKE_SOURCE_DIR}/src/NN.cpp
 )
 
 target_compile_definitions(temper_ut PRIVATE UNIT_TEST)

@@ -12,8 +12,8 @@
 
 #include <sycl/sycl.hpp>
 
-namespace temper {
-
+namespace temper
+{
 /**
  * @brief Global SYCL queue used for all asynchronous operations.
  */

@@ -6,7 +6,8 @@
 #include "temper/Tensor.hpp"
 #include <iostream>
 
-namespace temper{
+namespace temper
+{
 
 template<typename float_t>
 void Tensor<float_t>::compute_strides()

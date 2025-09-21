@@ -14,12 +14,14 @@
 #include <limits>
 #include "SYCLQueue.hpp"
 
-namespace temper {
+namespace temper
+{
 
 /**
  * @brief Supported device types for Tensor storage.
  */
-enum class MemoryLocation {
+enum class MemoryLocation
+{
     HOST,   ///< Host memory
     DEVICE  ///< Device memory (via SYCL)
 };
@@ -282,7 +284,8 @@ public:
      *
      * @throws std::invalid_argument if either tensor is empty
      * or shapes are incompatible for broadcasting.
-     * @throws std::runtime_error "NaN detected in inputs." if a NaN was observed.
+     * @throws std::runtime_error "NaN detected in inputs."
+     * if a NaN was observed.
      * @throws std::runtime_error "Non-finite result (overflow or Inf)."
      * if a non-finite result was produced.
      * @throws std::runtime_error "Numeric error during element-wise addition."
@@ -303,7 +306,8 @@ public:
      *
      * @throws std::invalid_argument if either tensor is empty
      * or shapes are incompatible for broadcasting.
-     * @throws std::runtime_error "NaN detected in inputs." if a NaN was observed.
+     * @throws std::runtime_error "NaN detected in inputs."
+     * if a NaN was observed.
      * @throws std::runtime_error "Non-finite result (overflow or Inf)."
      * if a non-finite result was produced.
      * @throws std::runtime_error "Numeric error during element-wise addition."
@@ -324,7 +328,8 @@ public:
      *
      * @throws std::invalid_argument if either tensor is empty
      * or shapes are incompatible for broadcasting.
-     * @throws std::runtime_error "NaN detected in inputs." if a NaN was observed.
+     * @throws std::runtime_error "NaN detected in inputs."
+     * if a NaN was observed.
      * @throws std::runtime_error "Non-finite result (overflow or Inf)."
      * if a non-finite result was produced.
      * @throws std::runtime_error "Numeric error during element-wise addition."
@@ -347,7 +352,8 @@ public:
      *
      * @throws std::invalid_argument if either tensor is empty
      * or shapes are incompatible for broadcasting.
-     * @throws std::runtime_error "NaN detected in inputs." if a NaN was observed.
+     * @throws std::runtime_error "NaN detected in inputs."
+     * if a NaN was observed.
      * @throws std::runtime_error "Division by zero detected."
      * if any divisor element equals zero.
      * @throws std::runtime_error "Non-finite result detected."
