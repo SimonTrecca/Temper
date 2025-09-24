@@ -3,6 +3,7 @@ add_library (temper STATIC
             SYCLQueue.cpp
             Math.cpp
             ML.cpp
-            NN.cpp)
+            NN.cpp
+            Stats.cpp)
 
 target_link_libraries (temper PRIVATE Common)

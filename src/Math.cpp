@@ -3,6 +3,8 @@
  * @brief Mathematical tensor operation definitions.
  */
 
+#include "temper/Math.hpp"
+
 namespace temper::math
 {
 

@@ -7,8 +7,8 @@
  * between functions.
  */
 
-#ifndef SYCLQUEUE_HPP
-#define SYCLQUEUE_HPP
+#ifndef TEMPER_SYCLQUEUE_HPP
+#define TEMPER_SYCLQUEUE_HPP
 
 #include <sycl/sycl.hpp>
 
@@ -21,4 +21,4 @@ extern sycl::queue g_sycl_queue;
 
 } // namespace temper
 
-#endif // SYCLQUEUE_HPP
+#endif // TEMPER_SYCLQUEUE_HPP

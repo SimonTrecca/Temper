@@ -5,14 +5,30 @@
  * Provides general-purpose mathematical functionality used across the library.
  */
 
-#ifndef MATH_HPP
-#define MATH_HPP
+#ifndef TEMPER_MATH_HPP
+#define TEMPER_MATH_HPP
 
 #include "Tensor.hpp"
 
 namespace temper::math
 {
-
+/* todo
+    matmul
+    all tensor functions
+    pad
+    argmax
+    linspace
+    arange
+    zeros
+    integral
+    factorial
+    log?
+    mean
+    var
+    std
+    cov
+    eigen
+    */
 } // namespace temper::math
 
-#endif // MATH_HPP
+#endif // TEMPER_MATH_HPP

@@ -3,8 +3,8 @@
  * @brief Declaration of the Tensor data structure.
  */
 
-#ifndef TENSOR_HPP
-#define TENSOR_HPP
+#ifndef TEMPER_TENSOR_HPP
+#define TEMPER_TENSOR_HPP
 
 #include <vector>
 #include <cstdint>
@@ -648,4 +648,4 @@ extern template class Tensor<float>;
 
 } // namespace temper
 
-#endif // TENSOR_HPP
+#endif // TEMPER_TENSOR_HPP

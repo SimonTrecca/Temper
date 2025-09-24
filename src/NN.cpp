@@ -3,6 +3,8 @@
  * @brief Neural network utility definitions.
  */
 
+#include "temper/NN.hpp"
+
 namespace temper::nn
 {
 

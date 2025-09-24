@@ -3,6 +3,8 @@
  * @brief Machine learning utility definitions.
  */
 
+#include "temper/ML.hpp"
+
 namespace temper::ml
 {
 
