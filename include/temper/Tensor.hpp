@@ -546,6 +546,17 @@ public:
     const float_t * get_data() const noexcept;
 
     /**
+     * @brief Returns a raw pointer to the underlying tensor data.
+     *
+     * The returned pointer allows modification of the underlying elements.
+     * Modifying elements through this pointer mutates the tensor's storage
+     * (and will affect other views that alias the same storage).
+     *
+     * @return const float_t* Pointer to the first element of tensor data.
+     */
+    float_t * get_data() noexcept;
+
+    /**
      * @brief Returns the dimensions (shape) of the tensor.
      *
      * Dimensions are stored as a vector of extents for each axis.
@@ -643,7 +654,7 @@ public:
     uint64_t get_total_bytes() const noexcept;
 };
 
-/// Explicit instantiation for "float" data
+/// Explicit instantiation for float
 extern template class Tensor<float>;
 
 } // namespace temper

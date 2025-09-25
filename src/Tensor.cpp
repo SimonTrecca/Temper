@@ -3063,6 +3063,12 @@ const float_t * Tensor<float_t>::get_data() const noexcept
 }
 
 template<typename float_t>
+float_t * Tensor<float_t>::get_data() noexcept
+{
+    return m_p_data.get();
+}
+
+template<typename float_t>
 const std::vector<uint64_t> & Tensor<float_t>::get_dimensions() const noexcept
 {
     return m_dimensions;

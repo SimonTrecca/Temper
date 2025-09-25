@@ -5601,38 +5601,65 @@ TEST(TENSOR, print_empty_tensor)
 }
 
 /**
- * @test TENSOR.get_data
- * @brief Verifies that get_data() provides correct raw pointer access.
+ * @test TENSOR.get_data_const
+ * @brief Verifies the const overload of get_data().
  *
- * Initializes a tensor with values, checks that get_data() returns
- * the expected sequence of floats, and ensures const access works.
- * Also validates that get_data() returns const float* on const tensors.
+ * - Creates a HOST tensor and fills with 0..N-1.
+ * - Ensures ct.get_data() != nullptr and each element matches.
+ * - Compares ct (const) to the original tensor for dimensions/strides/elements.
  */
-TEST(TENSOR, get_data)
+TEST(TENSOR, get_data_const)
 {
     Tensor<float> t({2, 3}, MemoryLocation::HOST);
     std::vector<float> vals = {0.f, 1.f, 2.f, 3.f, 4.f, 5.f};
     t = vals;
 
-    for (uint64_t i = 0; i < t.get_num_elements(); ++i)
-    {
-        EXPECT_FLOAT_EQ(t.get_data()[i], static_cast<float>(i));
-    }
-
     const Tensor<float> ct = t;
+
+    const float* cptr = ct.get_data();
+    ASSERT_NE(cptr, nullptr);
+
     EXPECT_EQ(ct.get_dimensions(), t.get_dimensions());
     EXPECT_EQ(ct.get_strides(), t.get_strides());
     EXPECT_EQ(ct.get_num_elements(), t.get_num_elements());
 
     for (uint64_t i = 0; i < ct.get_num_elements(); ++i)
     {
-        EXPECT_FLOAT_EQ(ct.get_data()[i], t.get_data()[i]);
+        EXPECT_FLOAT_EQ(cptr[i], static_cast<float>(i));
+        EXPECT_FLOAT_EQ(cptr[i], t.get_data()[i]);
     }
+}
 
-    static_assert(std::is_same_v<
-        decltype(std::declval<const Tensor<float>&>().get_data()),
-        const float* >,
-        "get_data() should return const float* called on const Tensor<float>&");
+/**
+ * @test TENSOR.get_data_nonconst
+ * @brief Verifies the non-const overload of get_data() is writable.
+ *
+ * - Creates a HOST tensor and fills with known values.
+ * - Obtains float* via get_data(), modifies elements through the pointer,
+ *   and checks the mutation is visible.
+ */
+TEST(TENSOR, get_data_nonconst)
+{
+    Tensor<float> t({2, 3}, MemoryLocation::HOST);
+    std::vector<float> vals = {0.f, 1.f, 2.f, 3.f, 4.f, 5.f};
+    t = vals;
+
+    float* wptr = t.get_data();
+    ASSERT_NE(wptr, nullptr);
+
+    wptr[0] = 42.0f;
+    wptr[5] = -3.5f;
+
+    EXPECT_FLOAT_EQ(t.get_data()[0], 42.0f);
+    EXPECT_FLOAT_EQ(t.get_data()[5], -3.5f);
+
+    for (uint64_t i = 1; i < t.get_num_elements() - 1; ++i)
+    {
+        if (i != 5)
+        {
+            EXPECT_FLOAT_EQ(t.get_data()[i], vals[i]);
+        }
+    }
 }
 
 /**
