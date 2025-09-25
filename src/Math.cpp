@@ -502,4 +502,61 @@ Tensor<float_t> matmul(const Tensor<float_t> & first,
 template Tensor<float> matmul<float>
 	(const Tensor<float>&, const Tensor<float>&);
 
+template <typename float_t>
+Tensor<float_t> reshape(const Tensor<float_t> & tensor,
+                        const std::vector<uint64_t>& new_dimensions)
+{
+    Tensor<float_t> t = tensor.clone();
+    t.reshape(new_dimensions);
+    return t;
+}
+template Tensor<float> reshape<float>
+    (const Tensor<float>&, const std::vector<uint64_t>&);
+
+template <typename float_t>
+Tensor<float_t> sort(const Tensor<float_t> & tensor, int64_t axis)
+{
+    Tensor<float_t> t = tensor.clone();
+    t.sort(axis);
+    return t;
+}
+template Tensor<float> sort<float>
+    (const Tensor<float>&, int64_t);
+
+template <typename float_t>
+Tensor<float_t> sum(const Tensor<float_t> & tensor, int64_t axis)
+{
+    Tensor<float_t> t = tensor.sum(axis);
+    return t;
+}
+template Tensor<float> sum<float>
+    (const Tensor<float>&, int64_t axis);
+
+template <typename float_t>
+Tensor<float_t> cumsum(const Tensor<float_t> & tensor, int64_t axis)
+{
+    Tensor<float_t> t = tensor.cumsum(axis);
+    return t;
+}
+template Tensor<float> cumsum<float>
+    (const Tensor<float>&, int64_t);
+
+template<typename float_t>
+Tensor<float_t> transpose(const Tensor<float_t> & tensor)
+{
+    Tensor t = tensor.transpose();
+    return t;
+}
+template Tensor<float> transpose<float>(const Tensor<float>&);
+
+template<typename float_t>
+Tensor<float_t> transpose(const Tensor<float_t> & tensor,
+                        const std::vector<uint64_t> & axes)
+{
+    Tensor t = tensor.transpose(axes);
+    return t;
+}
+template Tensor<float> transpose<float>
+    (const Tensor<float>&, const std::vector<uint64_t>&);
+
 } // namespace temper::math
