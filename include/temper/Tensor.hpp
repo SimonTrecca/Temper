@@ -290,6 +290,7 @@ public:
      * if a non-finite result was produced.
      * @throws std::runtime_error "Numeric error during element-wise addition."
      * for other numeric errors.
+     * @throws std::bad_alloc if memory allocation fails.
      */
     Tensor operator+(const Tensor & other) const;
 
@@ -312,6 +313,7 @@ public:
      * if a non-finite result was produced.
      * @throws std::runtime_error "Numeric error during element-wise addition."
      * for other numeric errors.
+     * @throws std::bad_alloc if memory allocation fails.
      */
     Tensor operator-(const Tensor & other) const;
 
@@ -334,6 +336,7 @@ public:
      * if a non-finite result was produced.
      * @throws std::runtime_error "Numeric error during element-wise addition."
      * for other numeric errors.
+     * @throws std::bad_alloc if memory allocation fails.
      */
     Tensor operator*(const Tensor & other) const;
 
@@ -360,6 +363,7 @@ public:
      * if a non-finite quotient was produced.
      * @throws std::runtime_error "Numeric error during element-wise division."
      * for other numeric errors.
+     * @throws std::bad_alloc if memory allocation fails.
      */
     Tensor operator/(const Tensor & other) const;
 
@@ -375,6 +379,7 @@ public:
      *
      * @throws std::invalid_argument if this tensor empty.
      * @throws std::runtime_error "NaN detected in input." if a NaN was observed.
+     * @throws std::bad_alloc if memory allocation fails.
      */
     Tensor operator-() const;
 
@@ -453,7 +458,7 @@ public:
      * @throws std::runtime_error If NaN or non-finite values are encountered
      * in the inputs or the results.
      */
-    Tensor<float_t> sum(int64_t axis) const;
+    Tensor<float_t> sum(int64_t axis = -1) const;
 
     /**
      * @brief Compute the cumulative sum of tensor elements (device scan).
@@ -474,7 +479,7 @@ public:
      * @throws std::runtime_error If NaN or non-finite values are encountered
      * in the inputs or the results.
      */
-    Tensor<float_t> cumsum(int64_t axis) const;
+    Tensor<float_t> cumsum(int64_t axis = -1) const;
 
     /**
      * @brief Returns a new tensor with axes reversed (full transpose).

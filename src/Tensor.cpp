@@ -4,6 +4,8 @@
  */
 
 #include "temper/Tensor.hpp"
+#include "temper/SYCLUtils.hpp"
+#include "temper/Utils.hpp"
 #include <iostream>
 
 namespace temper
@@ -632,59 +634,21 @@ Tensor<float_t> Tensor<float_t>::operator+(const Tensor & other) const
             either tensor has no elements.)");
     }
 
-    // Align the shapes for broadcasting.
-    const uint64_t rank_a = static_cast<uint64_t>(m_dimensions.size());
-    const uint64_t rank_b = static_cast<uint64_t>(other.m_dimensions.size());
+    const uint64_t rank_a = get_rank();
+    const uint64_t rank_b = other.get_rank();
     const uint64_t max_rank = std::max(rank_a, rank_b);
 
-    std::vector<uint64_t> a_shape_aligned(max_rank, 1);
-    std::vector<uint64_t> b_shape_aligned(max_rank, 1);
+    utils::TensorDesc a_desc{m_dimensions, m_strides, {}};
+    utils::TensorDesc b_desc{other.m_dimensions, other.m_strides, {}};
 
-    std::vector<uint64_t> a_strides_aligned(max_rank, 0);
-    std::vector<uint64_t> b_strides_aligned(max_rank, 0);
+    utils::TensorDesc a_aligned = utils::align_tensor(a_desc, max_rank);
+    utils::TensorDesc b_aligned = utils::align_tensor(b_desc, max_rank);
 
-    for (uint64_t i = 0; i < rank_a; ++i)
-    {
-        a_shape_aligned[max_rank - rank_a + i] = m_dimensions[i];
-        a_strides_aligned[max_rank - rank_a + i] = m_strides[i];
-    }
-    for (uint64_t i = 0; i < rank_b; ++i)
-    {
-        b_shape_aligned[max_rank - rank_b + i] = other.m_dimensions[i];
-        b_strides_aligned[max_rank - rank_b + i] = other.m_strides[i];
-    }
-
-    std::vector<uint64_t> out_shape(max_rank);
-    std::vector<uint64_t> a_strides_broadcasted(max_rank, 0);
-    std::vector<uint64_t> b_strides_broadcasted(max_rank, 0);
-
-    // Compute output shape and effective strides (for broadcasting).
-    for (uint64_t d = 0; d < max_rank; ++d)
-    {
-        if (a_shape_aligned[d] == b_shape_aligned[d])
-        {
-            out_shape[d] = a_shape_aligned[d];
-            a_strides_broadcasted[d] = a_strides_aligned[d];
-            b_strides_broadcasted[d] = b_strides_aligned[d];
-        }
-        else if (a_shape_aligned[d] == 1)
-        {
-            out_shape[d] = b_shape_aligned[d];
-            a_strides_broadcasted[d] = 0;
-            b_strides_broadcasted[d] = b_strides_aligned[d];
-        }
-        else if (b_shape_aligned[d] == 1)
-        {
-            out_shape[d] = a_shape_aligned[d];
-            a_strides_broadcasted[d] = a_strides_aligned[d];
-            b_strides_broadcasted[d] = 0;
-        }
-        else
-        {
-            throw std::invalid_argument(R"(Tensor(operator+):
-                incompatible shapes for broadcasting.)");
-        }
-    }
+    utils::BroadcastResult br = utils::compute_broadcast(a_aligned, b_aligned);
+    std::vector<uint64_t> out_shape = br.out.shape;
+    std::vector<uint64_t> a_strides_broadcasted = std::move(br.a_strides);
+    std::vector<uint64_t> b_strides_broadcasted = std::move(br.b_strides);
+    std::vector<uint64_t> res_divs = std::move(br.out.divisors);
 
     uint64_t total_size = 1;
     for (uint64_t dim : out_shape)
@@ -693,7 +657,6 @@ Tensor<float_t> Tensor<float_t>::operator+(const Tensor & other) const
     }
 
     MemoryLocation res_loc;
-
     if (m_mem_loc == MemoryLocation::DEVICE ||
         other.m_mem_loc == MemoryLocation::DEVICE)
     {
@@ -706,84 +669,61 @@ Tensor<float_t> Tensor<float_t>::operator+(const Tensor & other) const
 
     Tensor result(out_shape, res_loc);
 
-    uint64_t* p_result_strides = static_cast<uint64_t*>(
+    uint64_t* p_res_divs = static_cast<uint64_t*>(
         sycl::malloc_device(sizeof(uint64_t) * max_rank, g_sycl_queue));
     uint64_t* p_a_strides = static_cast<uint64_t*>(
         sycl::malloc_device(sizeof(uint64_t) * max_rank, g_sycl_queue));
     uint64_t* p_b_strides = static_cast<uint64_t*>(
         sycl::malloc_device(sizeof(uint64_t) * max_rank, g_sycl_queue));
+    // Shared error flag
+    // (0 = OK, 1 = NaN in inputs/result, 2 = non-finite result).
+    int32_t* p_error_flag = static_cast<int32_t*>(
+        sycl::malloc_shared(sizeof(int32_t), g_sycl_queue));
 
-    g_sycl_queue.memcpy(p_result_strides,
-        result.m_strides.data(), sizeof(uint64_t) * max_rank).wait();
+    if (!p_res_divs || !p_a_strides || !p_b_strides || !p_error_flag)
+    {
+        if (p_res_divs) sycl::free(p_res_divs, g_sycl_queue);
+        if (p_a_strides) sycl::free(p_a_strides, g_sycl_queue);
+        if (p_b_strides) sycl::free(p_b_strides, g_sycl_queue);
+        if (p_error_flag) sycl::free(p_error_flag, g_sycl_queue);
+        throw std::bad_alloc();
+    }
 
+    *p_error_flag = 0;
+    g_sycl_queue.memcpy(p_res_divs,
+        res_divs.data(), sizeof(uint64_t) * max_rank).wait();
     g_sycl_queue.memcpy(p_a_strides,
         a_strides_broadcasted.data(), sizeof(uint64_t) * max_rank).wait();
-
     g_sycl_queue.memcpy(p_b_strides,
         b_strides_broadcasted.data(), sizeof(uint64_t) * max_rank).wait();
 
-    // Shared error flag (0 = OK, 1 = NaN in inputs, 2 = non-finite result).
-    int32_t* p_error_flag = static_cast<int32_t*>(
-        sycl::malloc_shared(sizeof(int32_t), g_sycl_queue));
-    *p_error_flag = 0;
-
-    float_t* p_a_data = m_p_data.get();
-    float_t* p_b_data = other.m_p_data.get();
-    float_t* p_r_data = result.m_p_data.get();
+    const float_t* p_a_data = get_data();
+    const float_t* p_b_data = other.get_data();
+    float_t* p_r_data = result.get_data();
 
     g_sycl_queue.submit([&](sycl::handler& cgh)
     {
         cgh.parallel_for(sycl::range<1>(static_cast<size_t>(total_size)),
             [=](sycl::id<1> idx)
         {
-            auto atomic_err = sycl::atomic_ref<int32_t,
-               sycl::memory_order::relaxed,
-               sycl::memory_scope::device,
-               sycl::access::address_space::global_space>(*(p_error_flag));
-
             uint64_t flat_idx = static_cast<uint64_t>(idx[0]);
-            uint64_t remainder = flat_idx;
-            uint64_t offset_a = 0;
-            uint64_t offset_b = 0;
 
-            for (uint64_t dim = 0; dim < max_rank; ++dim)
-            {
-                uint64_t stride = p_result_strides[dim];
-                uint64_t coord = remainder / stride;
-                remainder = remainder % stride;
+            uint64_t offset_a = sycl_utils::idx_of
+                (flat_idx, p_res_divs, p_a_strides, max_rank);
 
-                offset_a += coord * p_a_strides[dim];
-                offset_b += coord * p_b_strides[dim];
-            }
+            uint64_t offset_b = sycl_utils::idx_of
+                (flat_idx, p_res_divs, p_b_strides, max_rank);
 
             float_t a_val = p_a_data[offset_a];
             float_t b_val = p_b_data[offset_b];
 
             float_t res = a_val + b_val;
 
-            if (std::isnan(a_val) || std::isnan(b_val) || std::isnan(res))
-            {
-                int32_t expected = 0;
-                atomic_err.compare_exchange_strong(expected, 1);
+            sycl_utils::device_check_nan_and_set(a_val, p_error_flag);
+            sycl_utils::device_check_nan_and_set(b_val, p_error_flag);
+            sycl_utils::device_check_nan_and_set(res, p_error_flag);
 
-                if (std::numeric_limits<float_t>::has_quiet_NaN)
-                {
-                    p_r_data[flat_idx] =
-                        std::numeric_limits<float_t>::quiet_NaN();
-                }
-                else
-                {
-                    p_r_data[flat_idx] = res;
-                }
-                return;
-            }
-            if (!std::isfinite(res))
-            {
-                int32_t expected = 0;
-                atomic_err.compare_exchange_strong(expected, 2);
-                p_r_data[flat_idx] = res;
-                return;
-            }
+            sycl_utils::device_check_finite_and_set(res, p_error_flag);
 
             p_r_data[flat_idx] = res;
         });
@@ -792,7 +732,7 @@ Tensor<float_t> Tensor<float_t>::operator+(const Tensor & other) const
     int32_t err = *p_error_flag;
     sycl::free(p_error_flag, g_sycl_queue);
 
-    sycl::free(p_result_strides, g_sycl_queue);
+    sycl::free(p_res_divs, g_sycl_queue);
     sycl::free(p_a_strides, g_sycl_queue);
     sycl::free(p_b_strides, g_sycl_queue);
 
@@ -824,59 +764,21 @@ Tensor<float_t> Tensor<float_t>::operator-(const Tensor & other) const
             either tensor has no elements.)");
     }
 
-    const uint64_t rank_a = static_cast<uint64_t>(m_dimensions.size());
-    const uint64_t rank_b = static_cast<uint64_t>(other.m_dimensions.size());
+    const uint64_t rank_a = get_rank();
+    const uint64_t rank_b = other.get_rank();
     const uint64_t max_rank = std::max(rank_a, rank_b);
 
-    std::vector<uint64_t> a_shape_aligned(max_rank, 1);
-    std::vector<uint64_t> b_shape_aligned(max_rank, 1);
+    utils::TensorDesc a_desc{m_dimensions, m_strides, {}};
+    utils::TensorDesc b_desc{other.m_dimensions, other.m_strides, {}};
 
-    std::vector<uint64_t> a_strides_aligned(max_rank, 0);
-    std::vector<uint64_t> b_strides_aligned(max_rank, 0);
+    utils::TensorDesc a_aligned = utils::align_tensor(a_desc, max_rank);
+    utils::TensorDesc b_aligned = utils::align_tensor(b_desc, max_rank);
 
-    for (uint64_t i = 0; i < rank_a; ++i)
-    {
-        a_shape_aligned[max_rank - rank_a + i] = m_dimensions[i];
-        a_strides_aligned[max_rank - rank_a + i] = m_strides[i];
-    }
-
-    for (uint64_t i = 0; i < rank_b; ++i)
-    {
-        b_shape_aligned[max_rank - rank_b + i] = other.m_dimensions[i];
-        b_strides_aligned[max_rank - rank_b + i] = other.m_strides[i];
-    }
-
-    std::vector<uint64_t> out_shape(max_rank);
-    std::vector<uint64_t> a_strides_broadcasted(max_rank, 0);
-    std::vector<uint64_t> b_strides_broadcasted(max_rank, 0);
-
-    // Compute output shape and effective strides (for broadcasting).
-    for (uint64_t d = 0; d < max_rank; ++d)
-    {
-        if (a_shape_aligned[d] == b_shape_aligned[d])
-        {
-            out_shape[d] = a_shape_aligned[d];
-            a_strides_broadcasted[d] = a_strides_aligned[d];
-            b_strides_broadcasted[d] = b_strides_aligned[d];
-        }
-        else if (a_shape_aligned[d] == 1)
-        {
-            out_shape[d] = b_shape_aligned[d];
-            a_strides_broadcasted[d] = 0;
-            b_strides_broadcasted[d] = b_strides_aligned[d];
-        }
-        else if (b_shape_aligned[d] == 1)
-        {
-            out_shape[d] = a_shape_aligned[d];
-            a_strides_broadcasted[d] = a_strides_aligned[d];
-            b_strides_broadcasted[d] = 0;
-        }
-        else
-        {
-            throw std::invalid_argument(R"(Tensor(operator-):
-                incompatible shapes for broadcasting.)");
-        }
-    }
+    utils::BroadcastResult br = utils::compute_broadcast(a_aligned, b_aligned);
+    std::vector<uint64_t> out_shape = br.out.shape;
+    std::vector<uint64_t> a_strides_broadcasted = std::move(br.a_strides);
+    std::vector<uint64_t> b_strides_broadcasted = std::move(br.b_strides);
+    std::vector<uint64_t> res_divs = std::move(br.out.divisors);
 
     uint64_t total_size = 1;
     for (uint64_t dim : out_shape)
@@ -885,7 +787,6 @@ Tensor<float_t> Tensor<float_t>::operator-(const Tensor & other) const
     }
 
     MemoryLocation res_loc;
-
     if (m_mem_loc == MemoryLocation::DEVICE ||
         other.m_mem_loc == MemoryLocation::DEVICE)
     {
@@ -898,85 +799,61 @@ Tensor<float_t> Tensor<float_t>::operator-(const Tensor & other) const
 
     Tensor result(out_shape, res_loc);
 
-    uint64_t* p_result_strides = static_cast<uint64_t*>(
+    uint64_t* p_res_divs = static_cast<uint64_t*>(
         sycl::malloc_device(sizeof(uint64_t) * max_rank, g_sycl_queue));
     uint64_t* p_a_strides = static_cast<uint64_t*>(
         sycl::malloc_device(sizeof(uint64_t) * max_rank, g_sycl_queue));
     uint64_t* p_b_strides = static_cast<uint64_t*>(
         sycl::malloc_device(sizeof(uint64_t) * max_rank, g_sycl_queue));
+    // Shared error flag
+    // (0 = OK, 1 = NaN in inputs/result, 2 = non-finite result).
+    int32_t* p_error_flag = static_cast<int32_t*>(
+        sycl::malloc_shared(sizeof(int32_t), g_sycl_queue));
 
-    g_sycl_queue.memcpy(p_result_strides,
-        result.m_strides.data(), sizeof(uint64_t) * max_rank).wait();
+    if (!p_res_divs || !p_a_strides || !p_b_strides || !p_error_flag)
+    {
+        if (p_res_divs) sycl::free(p_res_divs, g_sycl_queue);
+        if (p_a_strides) sycl::free(p_a_strides, g_sycl_queue);
+        if (p_b_strides) sycl::free(p_b_strides, g_sycl_queue);
+        if (p_error_flag) sycl::free(p_error_flag, g_sycl_queue);
+        throw std::bad_alloc();
+    }
 
+    *p_error_flag = 0;
+    g_sycl_queue.memcpy(p_res_divs,
+        res_divs.data(), sizeof(uint64_t) * max_rank).wait();
     g_sycl_queue.memcpy(p_a_strides,
         a_strides_broadcasted.data(), sizeof(uint64_t) * max_rank).wait();
-
     g_sycl_queue.memcpy(p_b_strides,
         b_strides_broadcasted.data(), sizeof(uint64_t) * max_rank).wait();
 
-    // Shared error flag (0 = OK, 1 = NaN in inputs, 2 = non-finite result).
-    int32_t* p_error_flag = static_cast<int32_t*>(
-        sycl::malloc_shared(sizeof(int32_t), g_sycl_queue));
-    *p_error_flag = 0;
-
-    float_t* p_a_data = m_p_data.get();
-    float_t* p_b_data = other.m_p_data.get();
-    float_t* p_r_data = result.m_p_data.get();
+    const float_t* p_a_data = get_data();
+    const float_t* p_b_data = other.get_data();
+    float_t* p_r_data = result.get_data();
 
     g_sycl_queue.submit([&](sycl::handler& cgh)
     {
         cgh.parallel_for(sycl::range<1>(static_cast<size_t>(total_size)),
             [=](sycl::id<1> idx)
         {
-            auto atomic_err = sycl::atomic_ref<int32_t,
-               sycl::memory_order::relaxed,
-               sycl::memory_scope::device,
-               sycl::access::address_space::global_space>(*(p_error_flag));
-
             uint64_t flat_idx = static_cast<uint64_t>(idx[0]);
-            uint64_t remainder = flat_idx;
-            uint64_t offset_a = 0;
-            uint64_t offset_b = 0;
 
-            // Generic loop to find the index given the coordinates.
-            for (uint64_t dim = 0; dim < max_rank; ++dim)
-            {
-                uint64_t stride = p_result_strides[dim];
-                uint64_t coord = remainder / stride;
-                remainder = remainder % stride;
+            uint64_t offset_a = sycl_utils::idx_of
+                (flat_idx, p_res_divs, p_a_strides, max_rank);
 
-                offset_a += coord * p_a_strides[dim];
-                offset_b += coord * p_b_strides[dim];
-            }
+            uint64_t offset_b = sycl_utils::idx_of
+                (flat_idx, p_res_divs, p_b_strides, max_rank);
 
             float_t a_val = p_a_data[offset_a];
             float_t b_val = p_b_data[offset_b];
 
             float_t res = a_val - b_val;
 
-            if (std::isnan(a_val) || std::isnan(b_val) || std::isnan(res))
-            {
-                int32_t expected = 0;
-                atomic_err.compare_exchange_strong(expected, 1);
+            sycl_utils::device_check_nan_and_set(a_val, p_error_flag);
+            sycl_utils::device_check_nan_and_set(b_val, p_error_flag);
+            sycl_utils::device_check_nan_and_set(res, p_error_flag);
 
-                if (std::numeric_limits<float_t>::has_quiet_NaN)
-                {
-                    p_r_data[flat_idx] =
-                        std::numeric_limits<float_t>::quiet_NaN();
-                }
-                else
-                {
-                    p_r_data[flat_idx] = res;
-                }
-                return;
-            }
-            if (!std::isfinite(res))
-            {
-                int32_t expected = 0;
-                atomic_err.compare_exchange_strong(expected, 2);
-                p_r_data[flat_idx] = res;
-                return;
-            }
+            sycl_utils::device_check_finite_and_set(res, p_error_flag);
 
             p_r_data[flat_idx] = res;
         });
@@ -985,7 +862,7 @@ Tensor<float_t> Tensor<float_t>::operator-(const Tensor & other) const
     int32_t err = *p_error_flag;
     sycl::free(p_error_flag, g_sycl_queue);
 
-    sycl::free(p_result_strides, g_sycl_queue);
+    sycl::free(p_res_divs, g_sycl_queue);
     sycl::free(p_a_strides, g_sycl_queue);
     sycl::free(p_b_strides, g_sycl_queue);
 
@@ -1017,59 +894,21 @@ Tensor<float_t> Tensor<float_t>::operator*(const Tensor & other) const
             either tensor has no elements.)");
     }
 
-    const uint64_t rank_a = static_cast<uint64_t>(m_dimensions.size());
-    const uint64_t rank_b = static_cast<uint64_t>(other.m_dimensions.size());
+    const uint64_t rank_a = get_rank();
+    const uint64_t rank_b = other.get_rank();
     const uint64_t max_rank = std::max(rank_a, rank_b);
 
-    std::vector<uint64_t> a_shape_aligned(max_rank, 1);
-    std::vector<uint64_t> b_shape_aligned(max_rank, 1);
+    utils::TensorDesc a_desc{m_dimensions, m_strides, {}};
+    utils::TensorDesc b_desc{other.m_dimensions, other.m_strides, {}};
 
-    std::vector<uint64_t> a_strides_aligned(max_rank, 0);
-    std::vector<uint64_t> b_strides_aligned(max_rank, 0);
+    utils::TensorDesc a_aligned = utils::align_tensor(a_desc, max_rank);
+    utils::TensorDesc b_aligned = utils::align_tensor(b_desc, max_rank);
 
-    for (uint64_t i = 0; i < rank_a; ++i)
-    {
-        a_shape_aligned[max_rank - rank_a + i] = m_dimensions[i];
-        a_strides_aligned[max_rank - rank_a + i] = m_strides[i];
-    }
-
-    for (uint64_t i = 0; i < rank_b; ++i)
-    {
-        b_shape_aligned[max_rank - rank_b + i] = other.m_dimensions[i];
-        b_strides_aligned[max_rank - rank_b + i] = other.m_strides[i];
-    }
-
-    std::vector<uint64_t> out_shape(max_rank);
-    std::vector<uint64_t> a_strides_broadcasted(max_rank, 0);
-    std::vector<uint64_t> b_strides_broadcasted(max_rank, 0);
-
-    // Compute output shape and effective strides (for broadcasting).
-    for (uint64_t d = 0; d < max_rank; ++d)
-    {
-        if (a_shape_aligned[d] == b_shape_aligned[d])
-        {
-            out_shape[d] = a_shape_aligned[d];
-            a_strides_broadcasted[d] = a_strides_aligned[d];
-            b_strides_broadcasted[d] = b_strides_aligned[d];
-        }
-        else if (a_shape_aligned[d] == 1)
-        {
-            out_shape[d] = b_shape_aligned[d];
-            a_strides_broadcasted[d] = 0;
-            b_strides_broadcasted[d] = b_strides_aligned[d];
-        }
-        else if (b_shape_aligned[d] == 1)
-        {
-            out_shape[d] = a_shape_aligned[d];
-            a_strides_broadcasted[d] = a_strides_aligned[d];
-            b_strides_broadcasted[d] = 0;
-        }
-        else
-        {
-            throw std::invalid_argument(R"(Tensor(operator*):
-                incompatible shapes for broadcasting.)");
-        }
-    }
+    utils::BroadcastResult br = utils::compute_broadcast(a_aligned, b_aligned);
+    std::vector<uint64_t> out_shape = br.out.shape;
+    std::vector<uint64_t> a_strides_broadcasted = std::move(br.a_strides);
+    std::vector<uint64_t> b_strides_broadcasted = std::move(br.b_strides);
+    std::vector<uint64_t> res_divs = std::move(br.out.divisors);
 
     uint64_t total_size = 1;
     for (uint64_t dim : out_shape)
@@ -1078,7 +917,6 @@ Tensor<float_t> Tensor<float_t>::operator*(const Tensor & other) const
     }
 
     MemoryLocation res_loc;
-
     if (m_mem_loc == MemoryLocation::DEVICE ||
         other.m_mem_loc == MemoryLocation::DEVICE)
     {
@@ -1091,85 +929,61 @@ Tensor<float_t> Tensor<float_t>::operator*(const Tensor & other) const
 
     Tensor result(out_shape, res_loc);
 
-    uint64_t* p_result_strides = static_cast<uint64_t*>(
+    uint64_t* p_res_divs = static_cast<uint64_t*>(
         sycl::malloc_device(sizeof(uint64_t) * max_rank, g_sycl_queue));
     uint64_t* p_a_strides = static_cast<uint64_t*>(
         sycl::malloc_device(sizeof(uint64_t) * max_rank, g_sycl_queue));
     uint64_t* p_b_strides = static_cast<uint64_t*>(
         sycl::malloc_device(sizeof(uint64_t) * max_rank, g_sycl_queue));
+    // Shared error flag
+    // (0 = OK, 1 = NaN in inputs/result, 2 = non-finite result).
+    int32_t* p_error_flag = static_cast<int32_t*>(
+        sycl::malloc_shared(sizeof(int32_t), g_sycl_queue));
 
-    g_sycl_queue.memcpy(p_result_strides,
-        result.m_strides.data(), sizeof(uint64_t) * max_rank).wait();
+    if (!p_res_divs || !p_a_strides || !p_b_strides || !p_error_flag)
+    {
+        if (p_res_divs) sycl::free(p_res_divs, g_sycl_queue);
+        if (p_a_strides) sycl::free(p_a_strides, g_sycl_queue);
+        if (p_b_strides) sycl::free(p_b_strides, g_sycl_queue);
+        if (p_error_flag) sycl::free(p_error_flag, g_sycl_queue);
+        throw std::bad_alloc();
+    }
 
+    *p_error_flag = 0;
+    g_sycl_queue.memcpy(p_res_divs,
+        res_divs.data(), sizeof(uint64_t) * max_rank).wait();
     g_sycl_queue.memcpy(p_a_strides,
         a_strides_broadcasted.data(), sizeof(uint64_t) * max_rank).wait();
-
     g_sycl_queue.memcpy(p_b_strides,
         b_strides_broadcasted.data(), sizeof(uint64_t) * max_rank).wait();
 
-    // Shared error flag (0 = OK, 1 = NaN in inputs, 2 = non-finite result).
-    int32_t* p_error_flag = static_cast<int32_t*>(
-        sycl::malloc_shared(sizeof(int32_t), g_sycl_queue));
-    *p_error_flag = 0;
-
-    float_t* p_a_data = m_p_data.get();
-    float_t* p_b_data = other.m_p_data.get();
-    float_t* p_r_data = result.m_p_data.get();
+    const float_t* p_a_data = get_data();
+    const float_t* p_b_data = other.get_data();
+    float_t* p_r_data = result.get_data();
 
     g_sycl_queue.submit([&](sycl::handler& cgh)
     {
         cgh.parallel_for(sycl::range<1>(static_cast<size_t>(total_size)),
             [=](sycl::id<1> idx)
         {
-            auto atomic_err = sycl::atomic_ref<int32_t,
-               sycl::memory_order::relaxed,
-               sycl::memory_scope::device,
-               sycl::access::address_space::global_space>(*(p_error_flag));
-
             uint64_t flat_idx = static_cast<uint64_t>(idx[0]);
-            uint64_t remainder = flat_idx;
-            uint64_t offset_a = 0;
-            uint64_t offset_b = 0;
 
-            // Generic loop to find the index given the coordinates.
-            for (uint64_t dim = 0; dim < max_rank; ++dim)
-            {
-                uint64_t stride = p_result_strides[dim];
-                uint64_t coord = remainder / stride;
-                remainder = remainder % stride;
+            uint64_t offset_a = sycl_utils::idx_of
+                (flat_idx, p_res_divs, p_a_strides, max_rank);
 
-                offset_a += coord * p_a_strides[dim];
-                offset_b += coord * p_b_strides[dim];
-            }
+            uint64_t offset_b = sycl_utils::idx_of
+                (flat_idx, p_res_divs, p_b_strides, max_rank);
 
             float_t a_val = p_a_data[offset_a];
             float_t b_val = p_b_data[offset_b];
 
             float_t res = a_val * b_val;
 
-            if (std::isnan(a_val) || std::isnan(b_val) || std::isnan(res))
-            {
-                int32_t expected = 0;
-                atomic_err.compare_exchange_strong(expected, 1);
+            sycl_utils::device_check_nan_and_set(a_val, p_error_flag);
+            sycl_utils::device_check_nan_and_set(b_val, p_error_flag);
+            sycl_utils::device_check_nan_and_set(res, p_error_flag);
 
-                if (std::numeric_limits<float_t>::has_quiet_NaN)
-                {
-                    p_r_data[flat_idx] =
-                        std::numeric_limits<float_t>::quiet_NaN();
-                }
-                else
-                {
-                    p_r_data[flat_idx] = res;
-                }
-                return;
-            }
-            if (!std::isfinite(res))
-            {
-                int32_t expected = 0;
-                atomic_err.compare_exchange_strong(expected, 2);
-                p_r_data[flat_idx] = res;
-                return;
-            }
+            sycl_utils::device_check_finite_and_set(res, p_error_flag);
 
             p_r_data[flat_idx] = res;
         });
@@ -1178,7 +992,7 @@ Tensor<float_t> Tensor<float_t>::operator*(const Tensor & other) const
     int32_t err = *p_error_flag;
     sycl::free(p_error_flag, g_sycl_queue);
 
-    sycl::free(p_result_strides, g_sycl_queue);
+    sycl::free(p_res_divs, g_sycl_queue);
     sycl::free(p_a_strides, g_sycl_queue);
     sycl::free(p_b_strides, g_sycl_queue);
 
@@ -1210,67 +1024,30 @@ Tensor<float_t> Tensor<float_t>::operator/(const Tensor & other) const
             either tensor has no elements.)");
     }
 
-    const uint64_t rank_a = static_cast<uint64_t>(m_dimensions.size());
-    const uint64_t rank_b = static_cast<uint64_t>(other.m_dimensions.size());
+    const uint64_t rank_a = get_rank();
+    const uint64_t rank_b = other.get_rank();
     const uint64_t max_rank = std::max(rank_a, rank_b);
 
-    std::vector<uint64_t> a_shape_aligned(max_rank, 1);
-    std::vector<uint64_t> b_shape_aligned(max_rank, 1);
+    utils::TensorDesc a_desc{m_dimensions, m_strides, {}};
+    utils::TensorDesc b_desc{other.m_dimensions, other.m_strides, {}};
 
-    std::vector<uint64_t> a_strides_aligned(max_rank, 0);
-    std::vector<uint64_t> b_strides_aligned(max_rank, 0);
+    utils::TensorDesc a_aligned = temper::utils::align_tensor(a_desc, max_rank);
+    utils::TensorDesc b_aligned = temper::utils::align_tensor(b_desc, max_rank);
 
-    for (uint64_t i = 0; i < rank_a; ++i)
-    {
-        a_shape_aligned[max_rank - rank_a + i] = m_dimensions[i];
-        a_strides_aligned[max_rank - rank_a + i] = m_strides[i];
-    }
+    utils::BroadcastResult br = utils::compute_broadcast(a_aligned, b_aligned);
 
-    for (uint64_t i = 0; i < rank_b; ++i)
-    {
-        b_shape_aligned[max_rank - rank_b + i] = other.m_dimensions[i];
-        b_strides_aligned[max_rank - rank_b + i] = other.m_strides[i];
-    }
-
-    std::vector<uint64_t> out_shape(max_rank);
-    std::vector<uint64_t> a_strides_broadcasted(max_rank, 0);
-    std::vector<uint64_t> b_strides_broadcasted(max_rank, 0);
-
-    for (uint64_t d = 0; d < max_rank; ++d)
-    {
-        if (a_shape_aligned[d] == b_shape_aligned[d])
-        {
-            out_shape[d] = a_shape_aligned[d];
-            a_strides_broadcasted[d] = a_strides_aligned[d];
-            b_strides_broadcasted[d] = b_strides_aligned[d];
-        }
-        else if (a_shape_aligned[d] == 1)
-        {
-            out_shape[d] = b_shape_aligned[d];
-            a_strides_broadcasted[d] = 0;
-            b_strides_broadcasted[d] = b_strides_aligned[d];
-        }
-        else if (b_shape_aligned[d] == 1)
-        {
-            out_shape[d] = a_shape_aligned[d];
-            a_strides_broadcasted[d] = a_strides_aligned[d];
-            b_strides_broadcasted[d] = 0;
-        }
-        else
-        {
-            throw std::invalid_argument(R"(Tensor(operator/):
-                incompatible shapes for broadcasting.)");
-        }
-    }
+    std::vector<uint64_t> out_shape = br.out.shape;
+    std::vector<uint64_t> a_strides_broadcasted = std::move(br.a_strides);
+    std::vector<uint64_t> b_strides_broadcasted = std::move(br.b_strides);
+    std::vector<uint64_t> res_divs = std::move(br.out.divisors);
 
     uint64_t total_size = 1;
-    for (uint64_t dim : out_shape)
+    for (uint64_t d : out_shape)
     {
-        total_size *= dim;
+        total_size *= d;
     }
 
     MemoryLocation res_loc;
-
     if (m_mem_loc == MemoryLocation::DEVICE ||
         other.m_mem_loc == MemoryLocation::DEVICE)
     {
@@ -1283,107 +1060,60 @@ Tensor<float_t> Tensor<float_t>::operator/(const Tensor & other) const
 
     Tensor result(out_shape, res_loc);
 
-    uint64_t* p_result_strides = static_cast<uint64_t*>(
+    uint64_t* p_res_divs = static_cast<uint64_t*>(
         sycl::malloc_device(sizeof(uint64_t) * max_rank, g_sycl_queue));
     uint64_t* p_a_strides = static_cast<uint64_t*>(
         sycl::malloc_device(sizeof(uint64_t) * max_rank, g_sycl_queue));
     uint64_t* p_b_strides = static_cast<uint64_t*>(
         sycl::malloc_device(sizeof(uint64_t) * max_rank, g_sycl_queue));
+    // Shared error flag
+    // (0 = OK, 1 = NaN in inputs/result, 2 = non-finite result).
+    int32_t* p_error_flag = static_cast<int32_t*>(
+        sycl::malloc_shared(sizeof(int32_t), g_sycl_queue));
 
-    g_sycl_queue.memcpy(p_result_strides,
-        result.m_strides.data(), sizeof(uint64_t) * max_rank).wait();
+    if (!p_res_divs || !p_a_strides || !p_b_strides || !p_error_flag)
+    {
+        if (p_res_divs) sycl::free(p_res_divs, g_sycl_queue);
+        if (p_a_strides) sycl::free(p_a_strides, g_sycl_queue);
+        if (p_b_strides) sycl::free(p_b_strides, g_sycl_queue);
+        if (p_error_flag) sycl::free(p_error_flag, g_sycl_queue);
+        throw std::bad_alloc();
+    }
+
+    *p_error_flag = 0;
+    g_sycl_queue.memcpy(p_res_divs,
+        res_divs.data(), sizeof(uint64_t) * max_rank).wait();
     g_sycl_queue.memcpy(p_a_strides,
         a_strides_broadcasted.data(), sizeof(uint64_t) * max_rank).wait();
     g_sycl_queue.memcpy(p_b_strides,
         b_strides_broadcasted.data(), sizeof(uint64_t) * max_rank).wait();
 
-    /*
-      Shared error flag:
-      0 = OK,
-      1 = NaN in inputs,
-      2 = division by zero,
-      3 = non-finite result
-     */
-    int32_t* p_error_flag = static_cast<int32_t*>
-        (sycl::malloc_shared(sizeof(int32_t), g_sycl_queue));
-    *p_error_flag = 0;
-
-    float_t* p_a_data = m_p_data.get();
-    float_t* p_b_data = other.m_p_data.get();
-    float_t* p_r_data = result.m_p_data.get();
+    const float_t* p_a_data = get_data();
+    const float_t* p_b_data = other.get_data();
+    float_t* p_r_data = result.get_data();
 
     g_sycl_queue.submit([&](sycl::handler& cgh)
     {
         cgh.parallel_for(sycl::range<1>(static_cast<size_t>(total_size)),
             [=](sycl::id<1> idx)
         {
-            auto atomic_err = sycl::atomic_ref<int32_t,
-               sycl::memory_order::relaxed,
-               sycl::memory_scope::device,
-               sycl::access::address_space::global_space>(*(p_error_flag));
-
             uint64_t flat_idx = static_cast<uint64_t>(idx[0]);
-            uint64_t remainder = flat_idx;
-            uint64_t offset_a = 0;
-            uint64_t offset_b = 0;
 
-            // Generic loop to find the index given the coordinates.
-            for (uint64_t dim = 0; dim < max_rank; ++dim)
-            {
-                uint64_t stride = p_result_strides[dim];
-                uint64_t coord = remainder / stride;
-                remainder = remainder % stride;
-
-                offset_a += coord * p_a_strides[dim];
-                offset_b += coord * p_b_strides[dim];
-            }
+            uint64_t offset_a = sycl_utils::idx_of
+                (flat_idx, p_res_divs, p_a_strides, max_rank);
+            uint64_t offset_b = sycl_utils::idx_of
+                (flat_idx, p_res_divs, p_b_strides, max_rank);
 
             float_t a_val = p_a_data[offset_a];
             float_t b_val = p_b_data[offset_b];
 
-            if (std::isnan(a_val) || std::isnan(b_val))
-            {
-                int32_t expected = 0;
-                atomic_err.compare_exchange_strong(expected, 1);
+            sycl_utils::device_check_nan_and_set(a_val, p_error_flag);
+            sycl_utils::device_check_nan_and_set(b_val, p_error_flag);
 
-                if (std::numeric_limits<float_t>::has_quiet_NaN)
-                {
-                    p_r_data[flat_idx] =
-                        std::numeric_limits<float_t>::quiet_NaN();
-                }
-                else
-                {
-                    p_r_data[flat_idx] = a_val / b_val;
-                }
-                return;
-            }
-            if (b_val == 0.0f)
-            {
-                int32_t expected = 0;
-                atomic_err.compare_exchange_strong(expected, 2);
-
-                if (a_val >= 0.0f)
-                {
-                    p_r_data[flat_idx] =
-                        std::numeric_limits<float_t>::infinity();
-                }
-                else
-                {
-                    p_r_data[flat_idx] =
-                        -std::numeric_limits<float_t>::infinity();
-                }
-
-                return;
-            }
+            sycl_utils::device_check_divzero_and_set(b_val, p_error_flag);
 
             float_t res = a_val / b_val;
-            if (!std::isfinite(res))
-            {
-                int32_t expected = 0;
-                atomic_err.compare_exchange_strong(expected, 3);
-                p_r_data[flat_idx] = res;
-                return;
-            }
+            sycl_utils::device_check_finite_and_set(res, p_error_flag);
 
             p_r_data[flat_idx] = res;
         });
@@ -1392,7 +1122,7 @@ Tensor<float_t> Tensor<float_t>::operator/(const Tensor & other) const
     int32_t err = *p_error_flag;
     sycl::free(p_error_flag, g_sycl_queue);
 
-    sycl::free(p_result_strides, g_sycl_queue);
+    sycl::free(p_res_divs, g_sycl_queue);
     sycl::free(p_a_strides, g_sycl_queue);
     sycl::free(p_b_strides, g_sycl_queue);
 
@@ -1406,12 +1136,12 @@ Tensor<float_t> Tensor<float_t>::operator/(const Tensor & other) const
         if (err == 2)
         {
             throw std::runtime_error(R"(Tensor(operator/):
-                division by zero detected.)");
+                non-finite result detected.)");
         }
         if (err == 3)
         {
             throw std::runtime_error(R"(Tensor(operator/):
-                non-finite result detected.)");
+                division by zero detected.)");
         }
         throw std::runtime_error(R"(Tensor(operator/):
             numeric error during element-wise division.)");
@@ -1429,70 +1159,50 @@ Tensor<float_t> Tensor<float_t>::operator-() const
             tensor has no elements.)");
     }
 
-    const uint64_t rank = static_cast<uint64_t>(m_dimensions.size());
-
-    uint64_t total_size = 1;
-    for (uint64_t dim : m_dimensions)
-    {
-        total_size *= dim;
-    }
+    const uint64_t rank = get_rank();
+    uint64_t total_size = get_num_elements();
 
     MemoryLocation res_loc = m_mem_loc;
     Tensor result(m_dimensions, res_loc);
 
-    uint64_t* p_shape =static_cast<uint64_t*>
-        (sycl::malloc_device(sizeof(uint64_t) * rank, g_sycl_queue));
-    uint64_t* p_strides = static_cast<uint64_t*>
-        (sycl::malloc_device(sizeof(uint64_t) * rank, g_sycl_queue));
+    std::vector<uint64_t> divisors = utils::compute_divisors(m_dimensions);
 
-    g_sycl_queue.memcpy
-        (p_shape, m_dimensions.data(), sizeof(uint64_t) * rank).wait();
-    g_sycl_queue.memcpy
-        (p_strides, m_strides.data(), sizeof(uint64_t) * rank).wait();
+    uint64_t* p_divs = static_cast<uint64_t*>(
+        sycl::malloc_device(sizeof(uint64_t) * rank, g_sycl_queue));
+    uint64_t* p_strides = static_cast<uint64_t*>(
+        sycl::malloc_device(sizeof(uint64_t) * rank, g_sycl_queue));
+    int32_t* p_error_flag = static_cast<int32_t*>(
+        sycl::malloc_shared(sizeof(int32_t), g_sycl_queue));
 
-    int32_t* p_error_flag = static_cast<int32_t*>
-        (sycl::malloc_shared(sizeof(int32_t), g_sycl_queue));
+    if (!p_divs || !p_strides || !p_error_flag)
+    {
+        if (p_divs) sycl::free(p_divs, g_sycl_queue);
+        if (p_strides) sycl::free(p_strides, g_sycl_queue);
+        if (p_error_flag) sycl::free(p_error_flag, g_sycl_queue);
+        throw std::bad_alloc();
+    }
+
     *p_error_flag = 0;
 
-    float_t* p_src = m_p_data.get();
-    float_t* p_dst = result.m_p_data.get();
+    g_sycl_queue.memcpy(
+        p_divs, divisors.data(), sizeof(uint64_t) * rank).wait();
+    g_sycl_queue.memcpy(
+    p_strides, m_strides.data(), sizeof(uint64_t) * rank).wait();
+
+    const float_t* p_src = get_data();
+    float_t* p_dst = result.get_data();
 
     g_sycl_queue.submit([&](sycl::handler& cgh)
     {
         cgh.parallel_for(sycl::range<1>(static_cast<size_t>(total_size)),
             [=](sycl::id<1> idx)
         {
-            auto atomic_err = sycl::atomic_ref<int32_t,
-               sycl::memory_order::relaxed,
-               sycl::memory_scope::device,
-               sycl::access::address_space::global_space>(*(p_error_flag));
+            uint64_t flat_idx = static_cast<uint64_t>(idx[0]);
 
-            uint64_t flat_idx = idx[0];
-            uint64_t remainder = flat_idx;
-            uint64_t offset = 0;
+            uint64_t off = sycl_utils::idx_of(flat_idx, p_divs, p_strides, rank);
+            float_t val = p_src[off];
 
-            // Generic loop to find the index given the coordinates.
-            for (uint64_t dim = 0; dim < rank; ++dim)
-            {
-                uint64_t divisor = 1;
-                for (uint64_t k = dim + 1; k < rank; ++k)
-                {
-                    divisor *= p_shape[k];
-                }
-
-                uint64_t coord = remainder / divisor;
-                remainder = remainder % divisor;
-                offset += coord * p_strides[dim];
-            }
-
-            float_t val = p_src[offset];
-            if (std::isnan(val))
-            {
-                int32_t expected = 0;
-                atomic_err.compare_exchange_strong(expected, 1);
-                p_dst[flat_idx] = std::numeric_limits<float_t>::quiet_NaN();
-                return;
-            }
+            sycl_utils::device_check_nan_and_set(val, p_error_flag);
 
             p_dst[flat_idx] = -val;
         });
@@ -1501,7 +1211,7 @@ Tensor<float_t> Tensor<float_t>::operator-() const
     int32_t err = *p_error_flag;
 
     sycl::free(p_error_flag, g_sycl_queue);
-    sycl::free(p_shape, g_sycl_queue);
+    sycl::free(p_divs, g_sycl_queue);
     sycl::free(p_strides, g_sycl_queue);
 
     if (err != 0)
@@ -1521,86 +1231,56 @@ Tensor<float_t> Tensor<float_t>::clone() const
         throw std::invalid_argument(R"(Tensor(clone):
             tensor has no elements.)");
     }
+
     Tensor<float_t> result(m_dimensions, m_mem_loc);
 
     uint64_t total_elements = get_num_elements();
-
     uint64_t rank = get_rank();
 
-    std::vector<uint64_t> shape_strides(rank, 1);
-    if (rank >= 2)
-    {
-        for (uint64_t i = rank - 2; i < rank; --i)
-        {
-            shape_strides[i] = shape_strides[i + 1] * m_dimensions[i + 1];
-            if (i == 0)
-            {
-                break;
-            }
-        }
-    }
+    std::vector<uint64_t> shape_divs = utils::compute_divisors(m_dimensions);
 
     uint64_t* p_dims = sycl::malloc_device<uint64_t>(rank, g_sycl_queue);
     uint64_t* p_src_strides = sycl::malloc_device<uint64_t>(rank, g_sycl_queue);
     uint64_t* p_dest_strides = sycl::malloc_device<uint64_t>(rank, g_sycl_queue);
-    uint64_t* p_shape_str = sycl::malloc_device<uint64_t>(rank, g_sycl_queue);
+    uint64_t* p_shape_divs = sycl::malloc_device<uint64_t>(rank, g_sycl_queue);
 
-    if (!p_dims || !p_src_strides || !p_dest_strides || !p_shape_str)
+    if (!p_dims || !p_src_strides || !p_dest_strides || !p_shape_divs)
     {
-        if (p_dims)
-        {
-            sycl::free(p_dims, g_sycl_queue);
-        }
-        if (p_src_strides)
-        {
-            sycl::free(p_src_strides, g_sycl_queue);
-        }
-        if (p_dest_strides)
-        {
-            sycl::free(p_dest_strides, g_sycl_queue);
-        }
-        if (p_shape_str)
-        {
-            sycl::free(p_shape_str, g_sycl_queue);
-        }
+        if (p_dims) sycl::free(p_dims, g_sycl_queue);
+        if (p_src_strides) sycl::free(p_src_strides, g_sycl_queue);
+        if (p_dest_strides) sycl::free(p_dest_strides, g_sycl_queue);
+        if (p_shape_divs) sycl::free(p_shape_divs, g_sycl_queue);
         throw std::bad_alloc();
     }
 
     g_sycl_queue.memcpy
         (p_dims, m_dimensions.data(), rank * sizeof(uint64_t)).wait();
     g_sycl_queue.memcpy
-        (p_src_strides, m_strides.data(), rank * sizeof(uint64_t)).wait();
+        (p_src_strides,m_strides.data(), rank * sizeof(uint64_t)).wait();
+    g_sycl_queue.memcpy(p_dest_strides,
+        result.m_strides.data(), rank * sizeof(uint64_t)).wait();
     g_sycl_queue.memcpy
-        (p_dest_strides, result.m_strides.data(), rank * sizeof(uint64_t)).wait();
-    g_sycl_queue.memcpy
-        (p_shape_str, shape_strides.data(), rank * sizeof(uint64_t)).wait();
+        (p_shape_divs,shape_divs.data(), rank * sizeof(uint64_t)).wait();
 
+    const float_t* p_src_data = get_data();
+    float_t* p_dest_data = result.get_data();
 
-    const float_t* p_src_data = m_p_data.get();
-    float_t* p_dest_data = result.m_p_data.get();
-
-    g_sycl_queue.parallel_for(sycl::range<1>(total_elements),
+    g_sycl_queue.parallel_for(
+        sycl::range<1>(static_cast<size_t>(total_elements)),
         [=](sycl::id<1> idx)
-        {
-            uint64_t linear = idx[0];
-            uint64_t src_offset  = 0;
-            uint64_t dest_offset = 0;
-
-            for (uint64_t i = 0; i < rank; ++i)
-            {
-                uint64_t coord = (linear / p_shape_str[i]) % p_dims[i];
-                src_offset  += coord * p_src_strides[i];
-                dest_offset += coord * p_dest_strides[i];
-            }
-
-            p_dest_data[dest_offset] = p_src_data[src_offset];
-        }
-    ).wait();
+    {
+        uint64_t linear = static_cast<uint64_t>(idx[0]);
+        uint64_t src_offset = sycl_utils::idx_of(
+            linear, p_shape_divs, p_src_strides, rank);
+        uint64_t dest_offset = sycl_utils::idx_of(
+            linear, p_shape_divs, p_dest_strides, rank);
+        p_dest_data[dest_offset] = p_src_data[src_offset];
+    }).wait();
 
     sycl::free(p_dims, g_sycl_queue);
     sycl::free(p_src_strides, g_sycl_queue);
     sycl::free(p_dest_strides, g_sycl_queue);
-    sycl::free(p_shape_str, g_sycl_queue);
+    sycl::free(p_shape_divs, g_sycl_queue);
 
     return result;
 }
@@ -1713,21 +1393,17 @@ void Tensor<float_t>::sort(int64_t axis)
 {
     if (m_dimensions.empty())
     {
-        // Return immediately if tensor has no dimensions.
         return;
     }
 
-    // Compute rank and validate axis.
     const uint64_t rank = static_cast<uint64_t>(m_dimensions.size());
-    if (axis != -1 && (axis < 0 ||
-        static_cast<uint64_t>(axis) >= rank))
+    if (axis != -1 && (axis < 0 || static_cast<uint64_t>(axis) >= rank))
     {
         throw std::invalid_argument("Tensor(sort): axis out of bounds");
     }
 
     uint64_t total_size = get_num_elements();
 
-    // Compute effective axis size, slice count and axis stride.
     uint64_t effective_axis_size = 0;
     uint64_t slice_count = 1;
     uint64_t axis_stride = 1;
@@ -1755,30 +1431,8 @@ void Tensor<float_t>::sort(int64_t axis)
         }
     }
 
-    // Compute row-major divisors for mapping linear->coords.
-    std::vector<uint64_t> divisors(static_cast<size_t>(rank), 1);
-    if (rank >= 2)
-    {
-        for (int64_t i = static_cast<int64_t>(rank) - 2; i >= 0; --i)
-        {
-            divisors[static_cast<size_t>(i)] =
-                divisors[static_cast<size_t>(i + 1)] *
-                m_dimensions[static_cast<size_t>(i + 1)];
-        }
-    }
+    std::vector<uint64_t> divisors = utils::compute_divisors(m_dimensions);
 
-    // Query device and derive a safe workgroup size cap.
-    auto dev = g_sycl_queue.get_device();
-    size_t device_max_wg =
-        dev.get_info<sycl::info::device::max_work_group_size>();
-    size_t preferred_cap = 256;
-    size_t wg_cap = std::min(device_max_wg, preferred_cap);
-    if (wg_cap == 0)
-    {
-        wg_cap = 1;
-    }
-
-    // Build per-slice base offsets on host for axis != -1.
     std::vector<uint64_t> host_slice_base(static_cast<size_t>(slice_count), 0);
     if (axis != -1)
     {
@@ -1791,61 +1445,33 @@ void Tensor<float_t>::sort(int64_t axis)
             dims.push_back(m_dimensions[i]);
             strides_for_dims.push_back(m_strides[i]);
         }
+        std::vector<uint64_t> index_factors = utils::compute_divisors(dims);
         const uint64_t D = static_cast<uint64_t>(dims.size());
-
-        std::vector<uint64_t> index_factors(static_cast<size_t>(D), 1);
-        if (D >= 2)
-        {
-            for (int64_t j = static_cast<int64_t>(D) - 2; j >= 0; --j)
-            {
-                index_factors[static_cast<size_t>(j)] =
-                    index_factors[static_cast<size_t>(j + 1)] *
-                    dims[static_cast<size_t>(j + 1)];
-            }
-        }
 
         for (uint64_t s = 0; s < slice_count; ++s)
         {
-            uint64_t base = 0;
-            uint64_t rem = s;
-            for (uint64_t j = 0; j < D; ++j)
-            {
-                uint64_t coord = rem / index_factors[j];
-                rem = rem % index_factors[j];
-                base += coord * strides_for_dims[j];
-            }
-            host_slice_base[s] = base;
+            host_slice_base[s] = sycl_utils::
+                idx_of(s, index_factors.data(), strides_for_dims.data(), D);
         }
     }
 
     uint64_t* p_slice_base = static_cast<uint64_t*>(
-        sycl::malloc_device(static_cast<size_t>(slice_count) *
-                            sizeof(uint64_t), g_sycl_queue));
-    if (!p_slice_base)
-    {
-        throw std::bad_alloc();
-    }
-    g_sycl_queue.memcpy(p_slice_base, host_slice_base.data(),
-                        static_cast<size_t>(slice_count) *
-                        sizeof(uint64_t)).wait();
-
+        sycl::malloc_device(static_cast<size_t>(slice_count) * sizeof(uint64_t),
+                            g_sycl_queue));
     uint64_t* p_divisors = static_cast<uint64_t*>(
         sycl::malloc_device(sizeof(uint64_t) * rank, g_sycl_queue));
     uint64_t* p_strides = static_cast<uint64_t*>(
         sycl::malloc_device(sizeof(uint64_t) * rank, g_sycl_queue));
-    if (!p_divisors || !p_strides)
+
+    if (!p_divisors || !p_strides || !p_slice_base)
     {
-        if (p_divisors)
-        {
-            sycl::free(p_divisors, g_sycl_queue);
-        }
-        if (p_strides)
-        {
-            sycl::free(p_strides, g_sycl_queue);
-        }
-        sycl::free(p_slice_base, g_sycl_queue);
+        if (p_divisors) sycl::free(p_divisors, g_sycl_queue);
+        if (p_strides) sycl::free(p_strides, g_sycl_queue);
+        if (p_slice_base) sycl::free(p_slice_base, g_sycl_queue);
         throw std::bad_alloc();
     }
+    g_sycl_queue.memcpy(p_slice_base, host_slice_base.data(),
+        static_cast<size_t>(slice_count) * sizeof(uint64_t)).wait();
     g_sycl_queue.memcpy(p_divisors, divisors.data(),
                         sizeof(uint64_t) * rank).wait();
     g_sycl_queue.memcpy(p_strides, m_strides.data(),
@@ -1855,15 +1481,13 @@ void Tensor<float_t>::sort(int64_t axis)
     float_t* merge_buffer = nullptr;
     if (m_mem_loc == MemoryLocation::DEVICE)
     {
-        merge_buffer = static_cast<float_t*>(
-            sycl::malloc_device(static_cast<size_t>(total_size) *
-                                sizeof(float_t), g_sycl_queue));
+        merge_buffer = static_cast<float_t*>(sycl::malloc_device
+            (static_cast<size_t>(total_size) * sizeof(float_t), g_sycl_queue));
     }
     else
     {
-        merge_buffer = static_cast<float_t*>(
-            sycl::malloc_shared(static_cast<size_t>(total_size) *
-                                sizeof(float_t), g_sycl_queue));
+        merge_buffer = static_cast<float_t*>(sycl::malloc_shared
+            (static_cast<size_t>(total_size) * sizeof(float_t), g_sycl_queue));
     }
     if (!merge_buffer)
     {
@@ -1876,35 +1500,17 @@ void Tensor<float_t>::sort(int64_t axis)
     float_t* merge_input = tensor_data;
     float_t* merge_output = merge_buffer;
 
-    // Determine a power-of-two workgroup size within cap.
-    size_t axis_size_for_wg = 0;
-    if (effective_axis_size == 0)
-    {
-        axis_size_for_wg = 1;
-    }
-    else
-    {
-        axis_size_for_wg = static_cast<size_t>(effective_axis_size);
-    }
+    size_t workgroup_size = temper::utils::compute_pow2_workgroup_size(
+        g_sycl_queue, static_cast<size_t>(effective_axis_size));
 
-    size_t max_allowed = std::min(wg_cap, axis_size_for_wg);
-    size_t workgroup_size = 1;
-    while (workgroup_size * 2 <= max_allowed)
-    {
-        workgroup_size *= 2;
-    }
-
-    // Iterative bottom-up merge passes.
+    // Bottom-up merge passes.
     for (uint64_t width = 1; width < effective_axis_size; width *= 2)
     {
         const uint64_t chunks_per_slice =
             (effective_axis_size + 2 * width - 1) / (2 * width);
         const uint64_t total_merges =
             static_cast<uint64_t>(slice_count) * chunks_per_slice;
-        if (total_merges == 0)
-        {
-            break;
-        }
+        if (total_merges == 0) break;
 
         size_t local_size = workgroup_size;
         size_t global_items = static_cast<size_t>(total_merges) * local_size;
@@ -1947,23 +1553,17 @@ void Tensor<float_t>::sort(int64_t axis)
                     (total_len * local_id) / local_range;
                 const uint64_t merge_end =
                     (total_len * (local_id + 1)) / local_range;
-                if (merge_start >= merge_end) return;
+                if (merge_start >= merge_end)
+                {
+                    return;
+                }
 
-                // Lambda: map logical index to physical offset.
-                auto idx_of = [&](uint64_t logical_idx) -> uint64_t
+                auto idx_of_local = [&](uint64_t logical_idx) -> uint64_t
                 {
                     if (axis == -1)
                     {
-                        uint64_t rem = logical_idx;
-                        uint64_t off = 0;
-                        for (uint64_t d = 0; d < rank; ++d)
-                        {
-                            const uint64_t div = p_divisors[d];
-                            const uint64_t coord = rem / div;
-                            rem = rem % div;
-                            off += coord * p_strides[d];
-                        }
-                        return off;
+                        return sycl_utils::idx_of
+                            (logical_idx, p_divisors, p_strides, rank);
                     }
                     else
                     {
@@ -1971,50 +1571,72 @@ void Tensor<float_t>::sort(int64_t axis)
                     }
                 };
 
-                // Lambda: find partition for merge-path binary search.
-                auto find_partition = [&](uint64_t k) -> uint64_t
+                auto find_partition_local = [&](uint64_t k) -> uint64_t
                 {
-                    uint64_t i_min;
-                    if (k > len_right) i_min = k - len_right;
-                    else i_min = 0;
-                    uint64_t i_max;
-                    if (k < len_left) i_max = k;
-                    else i_max = len_left;
-                    while (i_min < i_max)
+                    if (axis == -1)
                     {
-                        uint64_t i_mid = (i_min + i_max) / 2;
-                        uint64_t j_mid = k - i_mid;
-                        uint64_t a = idx_of(left + i_mid);
-                        uint64_t b = idx_of(mid + j_mid - 1);
-                        bool cmp;
-                        if (!sycl::isnan(merge_input[a]) &&
-                            sycl::isnan(merge_input[b]))
-                        {
-                            cmp = true;
-                        }
-                        else if (merge_input[a] < merge_input[b])
-                        {
-                            cmp = true;
-                        }
-                        else
-                        {
-                            cmp = false;
-                        }
-                        if (cmp)
-                        {
-                            i_min = i_mid + 1;
-                        }
-                        else
-                        {
-                            i_max = i_mid;
-                        }
+                        return sycl_utils::merge_path_partition<float_t>(
+                            k, left, mid, right, p_divisors, p_strides, rank,
+                            merge_input);
                     }
-                    return i_min;
+                    else
+                    {
+                        uint64_t i_min;
+                        if (k > len_right)
+                        {
+                            i_min = k - len_right;
+                        }
+                        else
+                        {
+                            i_min = 0;
+                        }
+                        uint64_t i_max;
+                        if (k < len_left)
+                        {
+                            i_max = k;
+                        }
+                        else
+                        {
+                            i_max = len_left;
+                        }
+                        while (i_min < i_max)
+                        {
+                            uint64_t i_mid = (i_min + i_max) / 2;
+                            uint64_t j_mid = k - i_mid;
+                            uint64_t a_off = idx_of_local(left + i_mid);
+                            uint64_t b_off = idx_of_local(mid + j_mid - 1);
+                            float_t va = merge_input[a_off];
+                            float_t vb = merge_input[b_off];
+                            bool cmp;
+                            if (!sycl::isnan(va) && sycl::isnan(vb))
+                            {
+                                cmp = true;
+                            }
+                            else if (va < vb)
+                            {
+                                cmp = true;
+                            }
+                            else
+                            {
+                                cmp = false;
+                            }
+
+                            if (cmp)
+                            {
+                                i_min = i_mid + 1;
+                            }
+                            else
+                            {
+                                i_max = i_mid;
+                            }
+                        }
+                        return i_min;
+                    }
                 };
 
-                const uint64_t i_start = find_partition(merge_start);
+                const uint64_t i_start = find_partition_local(merge_start);
                 const uint64_t j_start = merge_start - i_start;
-                const uint64_t i_end = find_partition(merge_end);
+                const uint64_t i_end = find_partition_local(merge_end);
                 const uint64_t j_end = merge_end - i_end;
 
                 uint64_t i = i_start;
@@ -2022,54 +1644,49 @@ void Tensor<float_t>::sort(int64_t axis)
                 uint64_t out_k = merge_start;
                 while (i < i_end && j < j_end)
                 {
-                    uint64_t a = idx_of(left + i);
-                    uint64_t b = idx_of(mid + j);
-                    float_t va = merge_input[a];
-                    float_t vb = merge_input[b];
-                    uint64_t out = idx_of(left + out_k);
+                    uint64_t a_idx = idx_of_local(left + i);
+                    uint64_t b_idx = idx_of_local(mid + j);
+                    float_t va = merge_input[a_idx];
+                    float_t vb = merge_input[b_idx];
+                    uint64_t out_idx = idx_of_local(left + out_k);
                     if ((!sycl::isnan(va) && sycl::isnan(vb)) || va < vb)
                     {
-                        merge_output[out] = va;
+                        merge_output[out_idx] = va;
                         ++i;
                     }
                     else
                     {
-                        merge_output[out] = vb;
+                        merge_output[out_idx] = vb;
                         ++j;
                     }
                     ++out_k;
                 }
                 while (i < i_end)
                 {
-                    merge_output[idx_of(left + out_k)] =
-                        merge_input[idx_of(left + i)];
-                    ++i;
-                    ++out_k;
+                    merge_output[idx_of_local(left + out_k)] =
+                        merge_input[idx_of_local(left + i)];
+                    ++i; ++out_k;
                 }
                 while (j < j_end)
                 {
-                    merge_output[idx_of(left + out_k)] =
-                        merge_input[idx_of(mid + j)];
-                    ++j;
-                    ++out_k;
+                    merge_output[idx_of_local(left + out_k)] =
+                        merge_input[idx_of_local(mid + j)];
+                    ++j; ++out_k;
                 }
             });
         }).wait();
 
-        // Swap buffers for next merge pass.
         float_t* tmp = merge_input;
         merge_input = merge_output;
         merge_output = tmp;
     }
 
-    // Copy back if final result is in temporary buffer.
     if (merge_input != tensor_data)
     {
         g_sycl_queue.memcpy(tensor_data, merge_input,
             static_cast<size_t>(total_size) * sizeof(float_t)).wait();
     }
 
-    // Free device temporaries.
     sycl::free(p_slice_base, g_sycl_queue);
     sycl::free(merge_buffer, g_sycl_queue);
     sycl::free(p_divisors, g_sycl_queue);
@@ -2081,37 +1698,17 @@ Tensor<float_t> Tensor<float_t>::sum(int64_t axis) const
 {
     if (m_dimensions.empty())
     {
-        // Return scalar tensor if there are no dimensions.
         const MemoryLocation res_loc = m_mem_loc;
         return Tensor<float_t>({1}, res_loc);
     }
 
-    const uint64_t rank = static_cast<uint64_t>(m_dimensions.size());
-
+    const uint64_t rank = get_rank();
     uint64_t total_size = get_num_elements();
-
     const MemoryLocation res_loc = m_mem_loc;
 
-    // Compute linear-index divisors for row-major coordinate recovery.
-    std::vector<uint64_t> divisors(static_cast<size_t>(rank), 1);
-    if (rank >= 2)
-    {
-        for (int64_t i = static_cast<int64_t>(rank) - 2; i >= 0; --i)
-        {
-            divisors[static_cast<size_t>(i)] =
-                divisors[static_cast<size_t>(i + 1)] *
-                m_dimensions[static_cast<size_t>(i + 1)];
-        }
-    }
+    std::vector<uint64_t> divisors = utils::compute_divisors(m_dimensions);
 
-    // Query device and derive a safe workgroup size cap.
-    auto dev = g_sycl_queue.get_device();
-    size_t device_max_wg =
-        dev.get_info<sycl::info::device::max_work_group_size>();
-    size_t preferred_cap = 256;
-    size_t wg_cap = std::min(device_max_wg, preferred_cap);
-    if (wg_cap == 0) wg_cap = 1;
-
+    // Validate axis
     if (axis != -1 && (axis < 0 || static_cast<uint64_t>(axis) >= rank))
     {
         throw std::invalid_argument("Tensor(sum): axis is out of bounds.");
@@ -2129,7 +1726,6 @@ Tensor<float_t> Tensor<float_t>::sum(int64_t axis) const
         axis_size = m_dimensions[ax];
     }
 
-    // Build output dimensions with the reduced axis set to 1.
     std::vector<uint64_t> new_dimensions(m_dimensions);
     if (axis != -1)
     {
@@ -2137,168 +1733,136 @@ Tensor<float_t> Tensor<float_t>::sum(int64_t axis) const
     }
 
     uint64_t output_size = 1;
-    for (uint64_t d : new_dimensions)
-    {
-        output_size *= d;
-    }
+    for (uint64_t d : new_dimensions) output_size *= d;
 
-    // Effective sizes to unify axis == -1 and axis != -1 cases.
     uint64_t effective_axis_size = 0;
-    if (axis == -1)
-    {
-        effective_axis_size = total_size;
-    }
-    else
-    {
-        effective_axis_size = axis_size;
-    }
-
     uint64_t effective_output_size = 0;
     if (axis == -1)
     {
+        effective_axis_size = total_size;
         effective_output_size = 1;
     }
     else
     {
+        effective_axis_size = axis_size;
         effective_output_size = output_size;
     }
 
     Tensor<float_t> result;
     if (axis == -1)
     {
-        std::vector<uint64_t> one_dim;
-        one_dim.push_back(1);
-        result = Tensor<float_t>(one_dim, res_loc);
+        result = Tensor<float_t>({1}, res_loc);
     }
     else
     {
         result = Tensor<float_t>(new_dimensions, res_loc);
     }
 
-    float_t* p_out = result.m_p_data.get();
-    const float_t* p_src = m_p_data.get();
+    float_t* p_out = result.get_data();
+    const float_t* p_src = get_data();
 
     uint64_t* p_strides_dev = static_cast<uint64_t*>(
         sycl::malloc_device(sizeof(uint64_t) * rank, g_sycl_queue));
-    g_sycl_queue.memcpy(p_strides_dev, m_strides.data(),
-                        sizeof(uint64_t) * rank).wait();
-
     uint64_t* p_divisors_dev = static_cast<uint64_t*>(
         sycl::malloc_device(sizeof(uint64_t) * rank, g_sycl_queue));
-    g_sycl_queue.memcpy(p_divisors_dev, divisors.data(),
-                        sizeof(uint64_t) * rank).wait();
 
     std::vector<uint64_t> fixed_dims;
-    if (axis != -1)
-    {
-        fixed_dims.reserve(rank - 1);
-    }
+    if (rank > 0) fixed_dims.reserve(rank - 1);
     for (uint64_t i = 0; i < rank; ++i)
     {
-        if (axis != -1 && i == ax)
-        {
-            continue;
-        }
+        if (axis != -1 && i == ax) continue;
         fixed_dims.push_back(m_dimensions[i]);
     }
     const uint64_t fixed_count = fixed_dims.size();
 
-    // Compute divisors for mapping slice index to fixed coordinates.
-    std::vector<uint64_t> fixed_divisors(static_cast<size_t>(fixed_count), 1);
-    if (fixed_count >= 2)
+    std::vector<uint64_t> fixed_divisors;
+    if (fixed_count > 0)
     {
-        for (int64_t j = static_cast<int64_t>(fixed_count) - 2; j >= 0; --j)
-        {
-            fixed_divisors[static_cast<size_t>(j)] =
-                fixed_divisors[static_cast<size_t>(j + 1)] *
-                fixed_dims[static_cast<size_t>(j + 1)];
-        }
+        fixed_divisors = temper::utils::compute_divisors(fixed_dims);
     }
 
     uint64_t* p_fixed_divs_dev = nullptr;
+
+    auto [workgroup_size, num_groups_per_slice] =
+        utils::compute_wg_and_groups(g_sycl_queue,
+            static_cast<size_t>(effective_axis_size));
+
+    size_t total_groups = static_cast<size_t>(effective_output_size) * num_groups_per_slice;
+    size_t total_group_items = total_groups * workgroup_size;
+    if (total_group_items == 0) total_group_items = workgroup_size;
+
+    size_t partial_count = static_cast<size_t>(effective_output_size) * num_groups_per_slice;
+    size_t alloc_partial_count = 0;
+    if (partial_count == 0)
+    {
+        alloc_partial_count = 1;
+    }
+    else
+    {
+        alloc_partial_count = partial_count;
+    }
+
+    float_t* p_partials = nullptr;
+    int32_t* p_error_flag = nullptr;
+
     if (fixed_count > 0)
     {
         p_fixed_divs_dev = static_cast<uint64_t*>(
             sycl::malloc_device(sizeof(uint64_t) * fixed_count, g_sycl_queue));
+    }
+
+    p_partials = static_cast<float_t*>(
+        sycl::malloc_device(sizeof(float_t) * alloc_partial_count, g_sycl_queue));
+
+    p_error_flag = static_cast<int32_t*>(
+        sycl::malloc_shared(sizeof(int32_t), g_sycl_queue));
+
+    bool alloc_failed = false;
+    if (!p_strides_dev) alloc_failed = true;
+    if (!p_divisors_dev) alloc_failed = true;
+    if (fixed_count > 0 && !p_fixed_divs_dev) alloc_failed = true;
+    if (!p_partials) alloc_failed = true;
+    if (!p_error_flag) alloc_failed = true;
+
+    if (alloc_failed)
+    {
+        if (p_strides_dev) sycl::free(p_strides_dev, g_sycl_queue);
+        if (p_divisors_dev) sycl::free(p_divisors_dev, g_sycl_queue);
+        if (p_fixed_divs_dev) sycl::free(p_fixed_divs_dev, g_sycl_queue);
+        if (p_partials) sycl::free(p_partials, g_sycl_queue);
+        if (p_error_flag) sycl::free(p_error_flag, g_sycl_queue);
+
+        throw std::bad_alloc();
+    }
+
+    g_sycl_queue.memcpy(p_strides_dev, m_strides.data(),
+                        sizeof(uint64_t) * rank).wait();
+
+    g_sycl_queue.memcpy(p_divisors_dev, divisors.data(),
+                        sizeof(uint64_t) * rank).wait();
+
+    if (fixed_count > 0)
+    {
         g_sycl_queue.memcpy(p_fixed_divs_dev, fixed_divisors.data(),
                             sizeof(uint64_t) * fixed_count).wait();
     }
 
-    size_t axis_size_for_wg = 0;
-    if (effective_axis_size == 0)
-    {
-        axis_size_for_wg = 1;
-    }
-    else
-    {
-        axis_size_for_wg = static_cast<size_t>(effective_axis_size);
-    }
+    g_sycl_queue.memset
+        (p_partials, 0, sizeof(float_t) * alloc_partial_count).wait();
 
-    size_t max_allowed = std::min(wg_cap, axis_size_for_wg);
-    size_t workgroup_size = 1;
-    while (workgroup_size * 2 <= max_allowed)
-    {
-        workgroup_size *= 2;
-    }
-
-    // Number of groups per output slice (ceil division).
-    size_t num_groups_per_slice = 0;
-    {
-        size_t eff_axis = static_cast<size_t>(effective_axis_size);
-        if (eff_axis == 0)
-        {
-            eff_axis = 1;
-        }
-        num_groups_per_slice = (eff_axis + workgroup_size - 1) / workgroup_size;
-    }
-    if (num_groups_per_slice == 0)
-    {
-        num_groups_per_slice = 1;
-    }
-
-    size_t total_groups = static_cast<size_t>(effective_output_size) *
-                          num_groups_per_slice;
-    size_t total_group_items = total_groups * workgroup_size;
-    if (total_group_items == 0) total_group_items = workgroup_size;
-
-    // Allocate and clear partials on device as contiguous per-slice blocks.
-    size_t partial_count = static_cast<size_t>(effective_output_size) *
-                           num_groups_per_slice;
-    size_t alloc_partial_count = partial_count;
-    if (alloc_partial_count == 0)
-    {
-        alloc_partial_count = 1;
-    }
-
-    float_t* p_partials = static_cast<float_t*>(
-        sycl::malloc_device(sizeof(float_t) * alloc_partial_count,
-                            g_sycl_queue));
-    g_sycl_queue.memset(p_partials, 0,
-                        sizeof(float_t) * alloc_partial_count).wait();
-
-    /*
-      Shared error flag:
-      0 = OK,
-      1 = NaN in inputs,
-      2 = non-finite result
-    */
-    int32_t* p_error_flag = static_cast<int32_t*>(
-        sycl::malloc_shared(sizeof(int32_t), g_sycl_queue));
     *p_error_flag = 0;
 
-    // First kernel: compute partials for every slice.
+    // First kernel: compute partial sums.
     g_sycl_queue.submit([&](sycl::handler& cgh)
     {
         cgh.parallel_for(
-            sycl::nd_range<1>(
-                sycl::range<1>(total_group_items),
-                sycl::range<1>(workgroup_size)),
+            sycl::nd_range<1>(sycl::range<1>(total_group_items),
+                              sycl::range<1>(workgroup_size)),
             [=](sycl::nd_item<1> it)
         {
             const size_t global_group_id = it.get_group(0);
             const size_t slice = global_group_id / num_groups_per_slice;
-            const size_t group_in_slice =
-                global_group_id % num_groups_per_slice;
+            const size_t group_in_slice = global_group_id % num_groups_per_slice;
             const size_t local_id = it.get_local_id(0);
 
             float_t local_sum = float_t{};
@@ -2310,36 +1874,17 @@ Tensor<float_t> Tensor<float_t>::sum(int64_t axis) const
                 const size_t N = static_cast<size_t>(effective_axis_size);
                 for (size_t linear = start; linear < N; linear += stride)
                 {
-                    uint64_t remainder = static_cast<uint64_t>(linear);
-                    uint64_t offset = 0;
-                    for (uint64_t d = 0; d < rank; ++d)
-                    {
-                        uint64_t div = p_divisors_dev[d];
-                        uint64_t coord = remainder / div;
-                        remainder = remainder % div;
-                        offset += coord * p_strides_dev[d];
-                    }
+                    uint64_t offset = sycl_utils::idx_of(
+                        static_cast<uint64_t>(linear),
+                        p_divisors_dev, p_strides_dev, rank);
+
                     float_t v = p_src[offset];
-                    if (std::isnan(v))
-                    {
-                        auto atomic_err = sycl::atomic_ref<int32_t,
-                            sycl::memory_order::relaxed,
-                            sycl::memory_scope::device,
-                            sycl::access::address_space::global_space>
-                                (*(p_error_flag));
-                        int32_t expected = 0;
-                        atomic_err.compare_exchange_strong(expected, 1);
-                        if (std::numeric_limits<float_t>::has_quiet_NaN)
-                        {
-                            v = std::numeric_limits<float_t>::quiet_NaN();
-                        }
-                    }
+                    sycl_utils::device_check_nan_and_set(v, p_error_flag);
                     local_sum += v;
                 }
             }
             else
             {
-                // Axis-specific mapping from slice index to base offset.
                 uint64_t remaining = slice;
                 uint64_t base_offset = 0;
                 uint64_t counter = 0;
@@ -2363,43 +1908,22 @@ Tensor<float_t> Tensor<float_t>::sum(int64_t axis) const
                 size_t start = group_in_slice * workgroup_size + local_id;
                 size_t stride = workgroup_size * num_groups_per_slice;
                 for (size_t j = start;
-                     j < static_cast<size_t>(effective_axis_size); j += stride)
+                    j < static_cast<size_t>(effective_axis_size);
+                    j += stride)
                 {
-                    uint64_t offs = base_offset +
-                        static_cast<uint64_t>(j) * p_strides_dev[ax];
+                    uint64_t offs = base_offset + static_cast<uint64_t>(j) *
+                        p_strides_dev[ax];
                     float_t v = p_src[offs];
-                    if (std::isnan(v))
-                    {
-                        auto atomic_err = sycl::atomic_ref<int32_t,
-                            sycl::memory_order::relaxed,
-                            sycl::memory_scope::device,
-                            sycl::access::address_space::global_space>
-                                (*(p_error_flag));
-                        int32_t expected = 0;
-                        atomic_err.compare_exchange_strong(expected, 1);
-                        if (std::numeric_limits<float_t>::has_quiet_NaN)
-                        {
-                            v = std::numeric_limits<float_t>::quiet_NaN();
-                        }
-                    }
+                    sycl_utils::device_check_nan_and_set(v, p_error_flag);
                     local_sum += v;
                 }
             }
 
-            // Intra-group reduction to produce the partial sum.
             auto group = it.get_group();
-            float_t group_sum =
-                sycl::reduce_over_group(group, local_sum, sycl::plus<float_t>());
+            float_t group_sum = sycl::reduce_over_group
+                (group, local_sum, sycl::plus<float_t>());
 
-            if (!std::isfinite(group_sum))
-            {
-                auto atomic_err = sycl::atomic_ref<int32_t,
-                    sycl::memory_order::relaxed,
-                    sycl::memory_scope::device,
-                    sycl::access::address_space::global_space>(*(p_error_flag));
-                int32_t expected = 0;
-                atomic_err.compare_exchange_strong(expected, 2);
-            }
+            sycl_utils::device_check_finite_and_set(group_sum, p_error_flag);
 
             if (local_id == 0)
             {
@@ -2411,66 +1935,44 @@ Tensor<float_t> Tensor<float_t>::sum(int64_t axis) const
 
     // Second kernel: reduce partials per slice to final outputs.
     size_t wg2 = 1;
-    while (wg2 * 2 <= std::min(workgroup_size,
-                                std::max<size_t>(1, num_groups_per_slice)))
     {
-        wg2 = wg2 * 2;
+        size_t candidate_limit = workgroup_size;
+        size_t candidate_min = 1;
+        if (num_groups_per_slice > candidate_min) candidate_min = num_groups_per_slice;
+        size_t chosen = 1;
+        while (chosen * 2 <= std::min(candidate_limit, candidate_min))
+        {
+            chosen *= 2;
+        }
+        wg2 = chosen;
     }
 
     size_t second_ndrange = static_cast<size_t>(effective_output_size) * wg2;
-    if (second_ndrange == 0)
-    {
-        second_ndrange = wg2;
-    }
+    if (second_ndrange == 0) second_ndrange = wg2;
 
     g_sycl_queue.submit([&](sycl::handler& cgh)
     {
         cgh.parallel_for(
-            sycl::nd_range<1>(
-                sycl::range<1>(second_ndrange),
-                sycl::range<1>(wg2)),
+            sycl::nd_range<1>(sycl::range<1>(second_ndrange),
+                              sycl::range<1>(wg2)),
             [=](sycl::nd_item<1> it)
         {
             const size_t slice = it.get_group(0);
             const size_t lid = it.get_local_id(0);
             const size_t local_range = it.get_local_range(0);
 
-            // Each thread sums a strided subset of the partials.
             float_t v = float_t{};
             for (size_t idx = lid; idx < num_groups_per_slice; idx += local_range)
             {
                 float_t pv = p_partials[slice * num_groups_per_slice + idx];
-                if (std::isnan(pv))
-                {
-                    auto atomic_err = sycl::atomic_ref<int32_t,
-                        sycl::memory_order::relaxed,
-                        sycl::memory_scope::device,
-                        sycl::access::address_space::global_space>
-                            (*(p_error_flag));
-                    int32_t expected = 0;
-                    atomic_err.compare_exchange_strong(expected, 1);
-                    if (std::numeric_limits<float_t>::has_quiet_NaN)
-                    {
-                        pv = std::numeric_limits<float_t>::quiet_NaN();
-                    }
-                }
+                sycl_utils::device_check_nan_and_set(pv, p_error_flag);
                 v += pv;
             }
 
             auto group = it.get_group();
             float_t total =
                 sycl::reduce_over_group(group, v, sycl::plus<float_t>());
-
-            // detect non-finite total
-            if (!std::isfinite(total))
-            {
-                auto atomic_err = sycl::atomic_ref<int32_t,
-                    sycl::memory_order::relaxed,
-                    sycl::memory_scope::device,
-                    sycl::access::address_space::global_space>(*(p_error_flag));
-                int32_t expected = 0;
-                atomic_err.compare_exchange_strong(expected, 2);
-            }
+            sycl_utils::device_check_finite_and_set(total, p_error_flag);
 
             if (lid == 0)
             {
@@ -2482,10 +1984,7 @@ Tensor<float_t> Tensor<float_t>::sum(int64_t axis) const
     sycl::free(p_partials, g_sycl_queue);
     sycl::free(p_divisors_dev, g_sycl_queue);
     sycl::free(p_strides_dev, g_sycl_queue);
-    if (p_fixed_divs_dev)
-    {
-        sycl::free(p_fixed_divs_dev, g_sycl_queue);
-    }
+    if (p_fixed_divs_dev) sycl::free(p_fixed_divs_dev, g_sycl_queue);
 
     int32_t err = *p_error_flag;
     sycl::free(p_error_flag, g_sycl_queue);
@@ -2518,8 +2017,7 @@ Tensor<float_t> Tensor<float_t>::cumsum(int64_t axis) const
         return Tensor<float_t>({1}, res_loc);
     }
 
-    const uint64_t rank = static_cast<uint64_t>(m_dimensions.size());
-
+    const uint64_t rank = get_rank();
     uint64_t total_size = get_num_elements();
 
     if (axis != -1 && (axis < 0 || static_cast<uint64_t>(axis) >= rank))
@@ -2541,7 +2039,6 @@ Tensor<float_t> Tensor<float_t>::cumsum(int64_t axis) const
     }
 
     std::vector<uint64_t> out_dims;
-
     if (axis == -1)
     {
         out_dims = std::vector<uint64_t>{ total_size };
@@ -2553,72 +2050,36 @@ Tensor<float_t> Tensor<float_t>::cumsum(int64_t axis) const
 
     Tensor<float_t> result(out_dims, m_mem_loc);
 
-    const float_t* p_src = m_p_data.get();
-    float_t* p_out = result.m_p_data.get();
+    const float_t* p_src = get_data();
+    float_t* p_out = result.get_data();
+    std::vector<uint64_t> divisors = utils::compute_divisors(m_dimensions);
 
-    std::vector<uint64_t> divisors(rank, 1);
-    if (rank >= 2)
-    {
-        for (int64_t i = static_cast<int64_t>(rank) - 2; i >= 0; --i)
-        {
-            divisors[static_cast<size_t>(i)] =
-                divisors[static_cast<size_t>(i + 1)] *
-                m_dimensions[static_cast<size_t>(i + 1)];
-        }
-    }
+    std::vector<uint64_t> fixed_divisors;
+    std::vector<uint64_t> fixed_strides;
+    std::vector<uint64_t> fixed_out_strides;
+    uint64_t fixed_count = 0;
 
-    uint64_t* p_divs_dev = static_cast<uint64_t*>(
-        sycl::malloc_device(sizeof(uint64_t) * rank, g_sycl_queue));
-    g_sycl_queue.memcpy
-        (p_divs_dev, divisors.data(), sizeof(uint64_t) * rank).wait();
-
-    uint64_t* p_strides_dev = static_cast<uint64_t*>(
-        sycl::malloc_device(sizeof(uint64_t) * rank, g_sycl_queue));
-    g_sycl_queue.memcpy
-        (p_strides_dev, m_strides.data(), sizeof(uint64_t) * rank).wait();
-
-    uint64_t* p_out_strides_dev = nullptr;
     if (axis != -1)
     {
-        p_out_strides_dev = static_cast<uint64_t*>(
-            sycl::malloc_device(sizeof(uint64_t) * rank, g_sycl_queue));
-        g_sycl_queue.memcpy(p_out_strides_dev, result.m_strides.data(),
-                            sizeof(uint64_t) * rank).wait();
-    }
-
-    std::vector<uint64_t> fixed_dims;
-    fixed_dims.reserve(rank - 1);
-
-    for (uint64_t i = 0; i < rank; ++i) {
-        if (axis != -1 && i == ax)
+        std::vector<uint64_t> fixed_dims;
+        fixed_dims.reserve(rank - 1);
+        for (uint64_t i = 0; i < rank; ++i)
         {
-            continue;
+            if (i == ax) continue;
+            fixed_dims.push_back(m_dimensions[i]);
         }
-        fixed_dims.push_back(m_dimensions[i]);
-    }
-    const uint64_t fixed_count = fixed_dims.size();
+        fixed_count = static_cast<uint64_t>(fixed_dims.size());
+        fixed_divisors = temper::utils::compute_divisors(fixed_dims);
 
-    std::vector<uint64_t> fixed_divisors(static_cast<size_t>(fixed_count), 1);
-    if (fixed_count >= 2)
-    {
-        for (int64_t j = static_cast<int64_t>(fixed_count) - 2; j >= 0; --j)
+        fixed_strides.reserve(fixed_count);
+        fixed_out_strides.reserve(fixed_count);
+        for (uint64_t d = 0; d < rank; ++d)
         {
-            fixed_divisors[static_cast<size_t>(j)] =
-                fixed_divisors[static_cast<size_t>(j + 1)] *
-                fixed_dims[static_cast<size_t>(j + 1)];
+            if (d == ax) continue;
+            fixed_strides.push_back(m_strides[d]);
+            fixed_out_strides.push_back(result.m_strides[d]);
         }
     }
-
-    uint64_t* p_fixed_divs_dev = nullptr;
-    if (fixed_count > 0)
-    {
-        p_fixed_divs_dev = static_cast<uint64_t*>(
-            sycl::malloc_device(sizeof(uint64_t) * fixed_count, g_sycl_queue));
-        g_sycl_queue.memcpy(p_fixed_divs_dev, fixed_divisors.data(),
-                            sizeof(uint64_t) * fixed_count).wait();
-    }
-
-    // Effective sizes unify axis == -1 and axis != -1 cases.
     uint64_t effective_axis_size;
     if (axis == -1)
     {
@@ -2639,63 +2100,108 @@ Tensor<float_t> Tensor<float_t>::cumsum(int64_t axis) const
         uint64_t out_sz = 1;
         for (uint64_t i = 0; i < rank; ++i)
         {
-            if (i == ax)
-            {
-                continue;
-            }
+            if (i == ax) continue;
             out_sz *= m_dimensions[i];
         }
         effective_output_size = out_sz;
     }
 
-    /*
-      Shared error flag:
-      0 = OK,
-      1 = NaN in inputs,
-      2 = non-finite result
-    */
-    int32_t* p_error_flag = static_cast<int32_t*>(
-        sycl::malloc_shared(sizeof(int32_t), g_sycl_queue));
-    *p_error_flag = 0;
+    auto wg_and_groups = utils::compute_wg_and_groups(
+        g_sycl_queue, static_cast<size_t>(effective_axis_size));
+    size_t workgroup_size = wg_and_groups.first;
+    size_t num_groups_per_slice = wg_and_groups.second;
+    if (workgroup_size == 0) workgroup_size = 1;
+    if (num_groups_per_slice == 0) num_groups_per_slice = 1;
 
-    auto dev = g_sycl_queue.get_device();
-    size_t device_max_wg =
-        dev.get_info<sycl::info::device::max_work_group_size>();
-    size_t preferred_cap = 256;
-    size_t wg_cap = std::min(device_max_wg, preferred_cap);
-    if (wg_cap == 0)
-    {
-        wg_cap = 1;
-    }
-
-    size_t workgroup_size = 1;
-    while (workgroup_size * 2 <= wg_cap &&
-           workgroup_size * 2 <= static_cast<size_t>(effective_axis_size))
-    {
-        workgroup_size *= 2;
-    }
-
-    size_t num_groups_per_slice =
-        static_cast<size_t>((static_cast<size_t>(effective_axis_size)
-            + workgroup_size - 1) / workgroup_size);
-    if (num_groups_per_slice == 0)
-    {
-        num_groups_per_slice = 1;
-    }
-
-    size_t total_groups = static_cast<size_t>(effective_output_size) *
-                            num_groups_per_slice;
+    size_t total_groups =
+        static_cast<size_t>(effective_output_size) * num_groups_per_slice;
     size_t total_group_items = total_groups * workgroup_size;
     if (total_group_items == 0)
     {
         total_group_items = workgroup_size;
     }
 
-    // Block partials (one per (slice, group_in_slice))
-    float_t* p_block_partials = static_cast<float_t*>(
-        sycl::malloc_device(sizeof(float_t) * total_groups, g_sycl_queue));
-    g_sycl_queue.memset
-        (p_block_partials, 0, sizeof(float_t) * total_groups).wait();
+    uint64_t *p_divs_dev = nullptr;
+    uint64_t *p_strides_dev = nullptr;
+    uint64_t *p_out_strides_dev = nullptr;
+    uint64_t *p_fixed_divs_dev = nullptr;
+    uint64_t *p_fixed_strides_dev = nullptr;
+    uint64_t *p_fixed_out_strides_dev = nullptr;
+    int32_t  *p_error_flag = nullptr;
+    float_t  *p_block_partials = nullptr;
+
+    p_divs_dev = static_cast<uint64_t*>
+        (sycl::malloc_device(sizeof(uint64_t) * rank, g_sycl_queue));
+    p_strides_dev = static_cast<uint64_t*>
+        (sycl::malloc_device(sizeof(uint64_t) * rank, g_sycl_queue));
+
+    if (axis != -1)
+    {
+        p_out_strides_dev = static_cast<uint64_t*>(
+            sycl::malloc_device(sizeof(uint64_t) * rank, g_sycl_queue));
+    }
+
+    if (fixed_count > 0)
+    {
+        p_fixed_divs_dev = static_cast<uint64_t*>(
+            sycl::malloc_device(sizeof(uint64_t) * fixed_count, g_sycl_queue));
+        p_fixed_strides_dev = static_cast<uint64_t*>(
+            sycl::malloc_device(sizeof(uint64_t) * fixed_count, g_sycl_queue));
+        p_fixed_out_strides_dev = static_cast<uint64_t*>(
+            sycl::malloc_device(sizeof(uint64_t) * fixed_count, g_sycl_queue));
+    }
+
+    p_error_flag = static_cast<int32_t*>
+        (sycl::malloc_shared(sizeof(int32_t), g_sycl_queue));
+    p_block_partials = static_cast<float_t*>
+        (sycl::malloc_device(sizeof(float_t) * total_groups, g_sycl_queue));
+
+    bool alloc_ok = true;
+    if (!p_divs_dev || !p_strides_dev || !p_error_flag || !p_block_partials)
+        alloc_ok = false;
+    if (axis != -1 && !p_out_strides_dev) alloc_ok = false;
+    if (fixed_count > 0 &&
+        (!p_fixed_divs_dev || !p_fixed_strides_dev || !p_fixed_out_strides_dev))
+        alloc_ok = false;
+
+    if (!alloc_ok)
+    {
+        if (p_block_partials) sycl::free(p_block_partials, g_sycl_queue);
+        if (p_fixed_out_strides_dev) sycl::free(p_fixed_out_strides_dev, g_sycl_queue);
+        if (p_fixed_strides_dev) sycl::free(p_fixed_strides_dev, g_sycl_queue);
+        if (p_fixed_divs_dev) sycl::free(p_fixed_divs_dev, g_sycl_queue);
+        if (p_out_strides_dev) sycl::free(p_out_strides_dev, g_sycl_queue);
+        if (p_strides_dev) sycl::free(p_strides_dev, g_sycl_queue);
+        if (p_divs_dev) sycl::free(p_divs_dev, g_sycl_queue);
+        if (p_error_flag) sycl::free(p_error_flag, g_sycl_queue);
+        throw std::bad_alloc();
+    }
+
+    g_sycl_queue.memcpy
+        (p_divs_dev, divisors.data(), sizeof(uint64_t) * rank).wait();
+    g_sycl_queue.memcpy
+        (p_strides_dev, m_strides.data(), sizeof(uint64_t) * rank).wait();
+
+    if (axis != -1)
+    {
+        g_sycl_queue.memcpy(p_out_strides_dev, result.m_strides.data(),
+                            sizeof(uint64_t) * rank).wait();
+    }
+
+    if (fixed_count > 0)
+    {
+        g_sycl_queue.memcpy(p_fixed_divs_dev, fixed_divisors.data(),
+                            sizeof(uint64_t) * fixed_count).wait();
+        g_sycl_queue.memcpy(p_fixed_strides_dev, fixed_strides.data(),
+                            sizeof(uint64_t) * fixed_count).wait();
+        g_sycl_queue.memcpy(p_fixed_out_strides_dev, fixed_out_strides.data(),
+                            sizeof(uint64_t) * fixed_count).wait();
+    }
+
+    *p_error_flag = 0;
+    if (total_groups > 0)
+        g_sycl_queue.memset
+            (p_block_partials, 0, sizeof(float_t) * total_groups).wait();
 
     // First kernel: per-group inclusive scan + write block partial.
     g_sycl_queue.submit([&](sycl::handler& cgh)
@@ -2711,9 +2217,7 @@ Tensor<float_t> Tensor<float_t>::cumsum(int64_t axis) const
             const size_t local_id = it.get_local_id(0);
             const size_t local_range = it.get_local_range(0);
 
-            const size_t index_in_slice =
-                group_in_slice * local_range + local_id;
-
+            const size_t index_in_slice = group_in_slice * local_range + local_id;
             const size_t base_index = group_in_slice * local_range;
             size_t remaining = 0;
             if (effective_axis_size > base_index)
@@ -2722,54 +2226,38 @@ Tensor<float_t> Tensor<float_t>::cumsum(int64_t axis) const
             }
             const size_t valid_count = std::min(remaining, local_range);
 
-            bool active = false;
-            if (index_in_slice < static_cast<size_t>(effective_axis_size))
-            {
-                active = true;
-            }
+            bool active = (index_in_slice < static_cast<size_t>(effective_axis_size));
 
-            uint64_t base_src = 0, base_dst = 0;
+            uint64_t base_src = 0;
+            uint64_t base_dst = 0;
+
             if (effective_output_size > 1)
             {
-                uint64_t rem = slice;
-                uint64_t counter = 0;
-                for (uint64_t d = 0; d < rank; ++d) {
-                    if (d == ax) continue;
-                    uint64_t div = 1;
-                    if (p_fixed_divs_dev)
-                    {
-                        div = p_fixed_divs_dev[counter];
-                    }
-                    uint64_t idx = rem / div;
-                    rem = rem % div;
-                    base_src += idx * p_strides_dev[d];
-                    if (axis != -1)
-                    {
-                        base_dst += idx * p_out_strides_dev[d];
-                    }
-                    ++counter;
+                base_src = sycl_utils::idx_of(slice,
+                    p_fixed_divs_dev,
+                    p_fixed_strides_dev,
+                    static_cast<uint64_t>(fixed_count));
+                if (axis != -1)
+                {
+                    base_dst = sycl_utils::idx_of(slice,
+                        p_fixed_divs_dev,
+                        p_fixed_out_strides_dev,
+                        static_cast<uint64_t>(fixed_count));
                 }
             }
 
-            // Element offsets (source and destination).
             uint64_t src_off = 0, dst_off = 0;
             if (axis == -1)
             {
                 uint64_t linear = static_cast<uint64_t>(index_in_slice);
-                uint64_t remainder = linear;
-                for (uint64_t d = 0; d < rank; ++d)
-                {
-                    uint64_t div = p_divs_dev[d];
-                    uint64_t coord = remainder / div;
-                    remainder = remainder % div;
-                    src_off += coord * p_strides_dev[d];
-                }
+                src_off = sycl_utils::idx_of
+                    (linear, p_divs_dev, p_strides_dev, rank);
                 dst_off = static_cast<uint64_t>(index_in_slice);
             }
             else
             {
                 src_off = base_src +
-                    static_cast<uint64_t>(index_in_slice) * p_strides_dev[ax];
+                static_cast<uint64_t>(index_in_slice) * p_strides_dev[ax];
                 dst_off = base_dst +
                     static_cast<uint64_t>(index_in_slice) * p_out_strides_dev[ax];
             }
@@ -2778,20 +2266,7 @@ Tensor<float_t> Tensor<float_t>::cumsum(int64_t axis) const
             if (active)
             {
                 x = p_src[src_off];
-                if (std::isnan(x))
-                {
-                    auto atomic_err = sycl::atomic_ref<int32_t,
-                        sycl::memory_order::relaxed,
-                        sycl::memory_scope::device,
-                        sycl::access::address_space::global_space>
-                            (*p_error_flag);
-                    int32_t expected = 0;
-                    atomic_err.compare_exchange_strong(expected, 1);
-                    if (std::numeric_limits<float_t>::has_quiet_NaN)
-                    {
-                        x = std::numeric_limits<float_t>::quiet_NaN();
-                    }
-                }
+                sycl_utils::device_check_nan_and_set(x, p_error_flag);
             }
 
             float_t prefix = sycl::inclusive_scan_over_group
@@ -2799,24 +2274,12 @@ Tensor<float_t> Tensor<float_t>::cumsum(int64_t axis) const
 
             if (active)
             {
-                if (!std::isfinite(prefix))
-                {
-                    auto atomic_err = sycl::atomic_ref<int32_t,
-                        sycl::memory_order::relaxed,
-                        sycl::memory_scope::device,
-                        sycl::access::address_space::global_space>
-                            (*p_error_flag);
-                    int32_t expected = 0;
-                    atomic_err.compare_exchange_strong(expected, 2);
-                }
+                sycl_utils::device_check_finite_and_set(prefix, p_error_flag);
                 p_out[dst_off] = prefix;
             }
 
             size_t last_valid_lane = 0;
-            if (valid_count > 0)
-            {
-                last_valid_lane = valid_count - 1;
-            }
+            if (valid_count > 0) last_valid_lane = valid_count - 1;
             if (valid_count > 0 && local_id == last_valid_lane)
             {
                 size_t write_idx = slice * num_groups_per_slice + group_in_slice;
@@ -2828,8 +2291,7 @@ Tensor<float_t> Tensor<float_t>::cumsum(int64_t axis) const
     // Second kernel: inclusive scan of block partials per slice.
     g_sycl_queue.submit([&](sycl::handler& cgh)
     {
-        cgh.parallel_for(sycl::range<1>(static_cast<size_t>
-            (effective_output_size)),
+        cgh.parallel_for(sycl::range<1>(static_cast<size_t>(effective_output_size)),
             [=](sycl::id<1> slice_id)
         {
             const size_t slice = slice_id[0];
@@ -2844,7 +2306,7 @@ Tensor<float_t> Tensor<float_t>::cumsum(int64_t axis) const
         });
     }).wait();
 
-    // Third kernel: add previous-block prefix to each element (groups > 0).
+     // Third kernel: add previous-block prefix to each element (groups > 0).
     g_sycl_queue.submit([&](sycl::handler& cgh)
     {
         cgh.parallel_for(
@@ -2858,43 +2320,18 @@ Tensor<float_t> Tensor<float_t>::cumsum(int64_t axis) const
             const size_t local_id = it.get_local_id(0);
             const size_t local_range = it.get_local_range(0);
 
-            if (group_in_slice == 0)
-            {
-                return;
-            }
+            if (group_in_slice == 0) return;
 
-            const size_t index_in_slice =
-                group_in_slice * local_range + local_id;
-
-            if (index_in_slice >= static_cast<size_t>(effective_axis_size))
-            {
-                return;
-            }
+            const size_t index_in_slice = group_in_slice * local_range + local_id;
+            if (index_in_slice >= static_cast<size_t>(effective_axis_size)) return;
 
             uint64_t base_dst = 0;
             if (effective_output_size > 1)
             {
-                uint64_t rem = slice;
-                uint64_t counter = 0;
-                for (uint64_t d = 0; d < rank; ++d)
-                {
-                    if (d == ax)
-                    {
-                        continue;
-                    }
-                    uint64_t div = 1;
-                    if (p_fixed_divs_dev)
-                    {
-                        div = p_fixed_divs_dev[counter];
-                    }
-                    uint64_t idx = rem / div;
-                    rem = rem % div;
-                    if (axis != -1)
-                    {
-                        base_dst += idx * p_out_strides_dev[d];
-                    }
-                    ++counter;
-                }
+                base_dst = temper::sycl_utils::idx_of(slice,
+                    p_fixed_divs_dev,
+                    p_fixed_out_strides_dev,
+                    static_cast<uint64_t>(fixed_count));
             }
 
             uint64_t dst_off = 0;
@@ -2905,13 +2342,11 @@ Tensor<float_t> Tensor<float_t>::cumsum(int64_t axis) const
             else
             {
                 dst_off = base_dst +
-                        static_cast<uint64_t>(index_in_slice) *
-                        p_out_strides_dev[ax];
+                    static_cast<uint64_t>(index_in_slice) * p_out_strides_dev[ax];
             }
 
             float_t add = p_block_partials
                 [slice * num_groups_per_slice + (group_in_slice - 1)];
-
             p_out[dst_off] += add;
         });
     }).wait();
@@ -2919,16 +2354,12 @@ Tensor<float_t> Tensor<float_t>::cumsum(int64_t axis) const
     int32_t err = *p_error_flag;
 
     sycl::free(p_block_partials, g_sycl_queue);
-    sycl::free(p_divs_dev, g_sycl_queue);
+    sycl::free(p_fixed_out_strides_dev, g_sycl_queue);
+    sycl::free(p_fixed_strides_dev, g_sycl_queue);
+    sycl::free(p_fixed_divs_dev, g_sycl_queue);
+    sycl::free(p_out_strides_dev, g_sycl_queue);
     sycl::free(p_strides_dev, g_sycl_queue);
-    if (p_out_strides_dev)
-    {
-        sycl::free(p_out_strides_dev, g_sycl_queue);
-    }
-    if (p_fixed_divs_dev)
-    {
-        sycl::free(p_fixed_divs_dev, g_sycl_queue);
-    }
+    sycl::free(p_divs_dev, g_sycl_queue);
     sycl::free(p_error_flag, g_sycl_queue);
 
     if (err != 0)

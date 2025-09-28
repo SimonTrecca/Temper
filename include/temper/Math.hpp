@@ -42,6 +42,8 @@ namespace temper::math
  * - The resulting tensor would exceed the maximum size representable by uint64_t.
  * @throws std::runtime_error if:
  * - A numeric error occurs during computation (e.g., non-finite values produced).
+ * @throws std::bad_alloc if required device memory cannot be allocated.
+
  */
 template <typename float_t>
 Tensor<float_t> matmul(const Tensor<float_t> & first,
@@ -179,7 +181,6 @@ extern template Tensor<float> transpose<float>
     (const Tensor<float>&, const std::vector<uint64_t>&);
 
 /* todo
-    all tensor functions
     pad
     argmax
     linspace
