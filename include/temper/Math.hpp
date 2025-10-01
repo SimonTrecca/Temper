@@ -180,8 +180,54 @@ Tensor<float_t> transpose(const Tensor<float_t> & tensor,
 extern template Tensor<float> transpose<float>
     (const Tensor<float>&, const std::vector<uint64_t>&);
 
+/**
+ * @brief Pad the last two dimensions (height, width) with a constant.
+ *
+ * @param tensor Input tensor (must have rank >= 2).
+ * @param pad_top Rows to add before the top.
+ * @param pad_bottom Rows to add after the bottom.
+ * @param pad_left Columns to add before the left.
+ * @param pad_right Columns to add after the right.
+ * @param pad_value Value used to fill padded elements.
+ * @return Tensor<float_t> New tensor with requested padding.
+ *
+ * @throws std::invalid_argument If tensor is empty or rank < 2.
+ * @throws std::overflow_error If shape/padding computations overflow.
+ * @throws std::bad_alloc If device helper memory cannot be allocated.
+ */
+template<typename float_t>
+Tensor<float_t> pad(const Tensor<float_t> & tensor,
+                    uint64_t pad_top,
+                    uint64_t pad_bottom,
+                    uint64_t pad_left,
+                    uint64_t pad_right,
+                    float_t pad_value);
+/// Explicit instantiation of pad for float
+extern template Tensor<float> pad<float>
+    (const Tensor<float>&, uint64_t, uint64_t, uint64_t, uint64_t, float);
+
+/**
+ * @brief Symmetric pad helper: pad height/width on both sides.
+ *
+ * Convenience overload that pads both top/bottom by @p pad_height and
+ * both left/right by @p pad_width.
+ *
+ * @param tensor Input tensor (rank >= 2).
+ * @param pad_height Rows added to top and bottom.
+ * @param pad_width  Columns added to left and right.
+ * @param pad_value  Value to fill padded elements.
+ * @return Tensor<float_t> New padded tensor.
+ */
+template<typename float_t>
+Tensor<float_t> pad(const Tensor<float_t> & tensor,
+                    uint64_t pad_height,
+                    uint64_t pad_width,
+                    float_t pad_value);
+/// Explicit instantiation of pad (height, width) for float
+extern template Tensor<float> pad<float>
+    (const Tensor<float>&, uint64_t, uint64_t, float);
+
 /* todo
-    pad
     argmax
     linspace
     arange

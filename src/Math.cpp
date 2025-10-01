@@ -450,4 +450,155 @@ Tensor<float_t> transpose(const Tensor<float_t> & tensor,
 template Tensor<float> transpose<float>
     (const Tensor<float>&, const std::vector<uint64_t>&);
 
+template<typename float_t>
+Tensor<float_t> pad(const Tensor<float_t> & tensor,
+                    uint64_t pad_top,
+                    uint64_t pad_bottom,
+                    uint64_t pad_left,
+                    uint64_t pad_right,
+                    float_t pad_value)
+{
+
+    const std::vector<uint64_t> & input_shape = tensor.get_dimensions();
+    const uint64_t rank = tensor.get_rank();
+
+    if (input_shape.empty())
+    {
+        throw std::invalid_argument(R"(pad:
+            input tensor has no elements.)");
+    }
+
+    if (rank < 2)
+    {
+        throw std::invalid_argument(R"(pad:
+            input tensor has less than 2 dimensions.)");
+    }
+
+    constexpr uint64_t U64_MAX = std::numeric_limits<uint64_t>::max();
+
+    std::vector<uint64_t> res_shape = input_shape;
+    if (pad_left > U64_MAX - pad_right)
+    {
+        throw std::overflow_error(R"(pad:
+            pad_left + pad_right overflows uint64_t)");
+    }
+    uint64_t add_width = pad_left + pad_right;
+    if (res_shape[rank - 1] > U64_MAX - add_width)
+    {
+        throw std::overflow_error("pad: result width overflows uint64_t");
+    }
+    res_shape[rank - 1] += add_width;
+    if (pad_top > U64_MAX - pad_bottom)
+    {
+        throw std::overflow_error(R"(pad:
+            pad_top + pad_bottom overflows uint64_t)");
+    }
+    uint64_t add_height = pad_top + pad_bottom;
+    if (res_shape[rank - 2] > U64_MAX - add_height)
+    {
+        throw std::overflow_error(R"(pad:
+            result height overflows uint64_t)");
+    }
+    res_shape[rank - 2] += add_height;
+
+    MemoryLocation res_loc = tensor.get_memory_location();
+
+    Tensor<float_t> result (res_shape, res_loc);
+    (void) pad_value;
+
+    uint64_t* p_divs = static_cast<uint64_t*>(
+        sycl::malloc_device(sizeof(uint64_t) * rank, g_sycl_queue));
+    uint64_t* p_in_strides = static_cast<uint64_t*>(
+        sycl::malloc_device(sizeof(uint64_t) * rank, g_sycl_queue));
+    uint64_t* p_res_shape = static_cast<uint64_t*>(
+        sycl::malloc_device(sizeof(uint64_t) * rank, g_sycl_queue));
+
+    bool alloc_ok = (p_divs && p_in_strides && p_res_shape);
+    if (!alloc_ok)
+    {
+        sycl::free(p_divs, g_sycl_queue);
+        sycl::free(p_in_strides, g_sycl_queue);
+        sycl::free(p_res_shape, g_sycl_queue);
+        throw std::bad_alloc();
+    }
+
+    std::vector<uint64_t> res_divs =
+        temper::utils::compute_divisors(res_shape);
+    std::vector<uint64_t> in_batch_strides = tensor.get_strides();
+
+    // Removed the last two strides in order to get the base of the channel.
+    // Saved them for final offset calculation.
+    const uint64_t in_row_stride = in_batch_strides[rank - 2];
+    const uint64_t in_col_stride = in_batch_strides[rank - 1];
+    in_batch_strides[rank - 1] = 0;
+    in_batch_strides[rank -2] = 0;
+
+    g_sycl_queue.memcpy(p_in_strides,
+        in_batch_strides.data(), sizeof(uint64_t) * rank).wait();
+    g_sycl_queue.memcpy(p_res_shape,
+        res_shape.data(), sizeof(uint64_t) * rank).wait();
+
+    // Only the result divisors are needed, because they only differ from the
+    // input one by the last two and input does not use them.
+    g_sycl_queue.memcpy(p_divs,
+        res_divs.data(), sizeof(uint64_t) * rank).wait();
+
+    const float_t* p_in_data = tensor.get_data();
+    float_t* p_res_data = result.get_data();
+
+    const uint64_t pad_t = pad_top;
+    const uint64_t pad_l = pad_left;
+    const uint64_t in_h = input_shape[rank - 2];
+    const uint64_t in_w = input_shape[rank - 1];
+    const uint64_t total_output_elems = result.get_num_elements();
+
+    g_sycl_queue.submit([&](sycl::handler& cgh)
+    {
+        cgh.parallel_for(sycl::range<1>(static_cast<size_t>(total_output_elems)),
+            [=](sycl::id<1> id)
+        {
+            const uint64_t flat = static_cast<uint64_t>(id[0]);
+            float_t val = pad_value;
+
+            uint64_t res_col = (flat / p_divs[rank - 1]) % p_res_shape[rank - 1];
+            uint64_t res_row = (flat / p_divs[rank - 2]) % p_res_shape[rank - 2];
+
+            // Check whether this output location maps into
+            // the input image region.
+            bool inside_col = (res_col >= pad_l) && (res_col < pad_l + in_w);
+            bool inside_row = (res_row >= pad_t) && (res_row < pad_t + in_h);
+
+            if (inside_row && inside_col)
+            {
+                uint64_t in_row = res_row - pad_t;
+                uint64_t in_col = res_col - pad_l;
+
+                uint64_t in_base = temper::sycl_utils::idx_of
+                    (flat, p_divs, p_in_strides, rank);
+                uint64_t in_idx = in_base +
+                                in_row * in_row_stride +
+                                in_col * in_col_stride;
+                val = p_in_data[in_idx];
+            }
+
+            p_res_data[flat] = val;
+        });
+    }).wait();
+
+    return result;
+}
+template Tensor<float> pad<float>
+    (const Tensor<float>&, uint64_t, uint64_t, uint64_t, uint64_t, float);
+
+template<typename float_t>
+Tensor<float_t> pad(const Tensor<float_t> & tensor,
+                    uint64_t pad_height,
+                    uint64_t pad_width,
+                    float_t pad_value)
+{
+    return pad(tensor, pad_height, pad_height, pad_width, pad_width, pad_value);
+}
+template Tensor<float> pad<float>
+    (const Tensor<float>&, uint64_t, uint64_t, float);
+
 } // namespace temper::math

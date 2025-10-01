@@ -1241,4 +1241,427 @@ TEST(TRANSPOSE, transpose_empty)
     EXPECT_THROW(math::transpose(t), std::runtime_error);
 }
 
+/**
+ * @test PAD.pad_correct_result_shape
+ * @brief Verify output dimensions equal input dims plus specified paddings.
+ */
+TEST(PAD, pad_correct_result_shape)
+{
+    Tensor<float> t({10, 10});
+
+    Tensor<float> result = math::pad(t, 1, 2, 3, 4, 0.0f);
+    const std::vector<uint64_t> res_shape = result.get_dimensions();
+    EXPECT_EQ(res_shape[0], 13);
+    EXPECT_EQ(res_shape[1], 17);
+}
+
+/**
+ * @test PAD.pad_values_are_correct
+ * @brief Pad a 2x2 tensor with zeros on all sides and check element positions.
+ */
+TEST(PAD, pad_values_are_correct)
+{
+    Tensor<float> t({2,2});
+    std::vector<float> host_vals = { 1.0f, 2.0f,
+                           3.0f, 4.0f };
+    t = host_vals;
+
+    Tensor<float> out = math::pad(t, 1, 1, 1, 1, 0.0f);
+    EXPECT_EQ(out.get_dimensions()[0], 4u);
+    EXPECT_EQ(out.get_dimensions()[1], 4u);
+
+    std::vector<float> expected = {
+        0, 0, 0, 0,
+        0, 1, 2, 0,
+        0, 3, 4, 0,
+        0, 0, 0, 0
+    };
+    for (uint64_t r = 0; r < 4; ++r)
+    {
+        for (uint64_t c = 0; c < 4; ++c)
+        {
+            EXPECT_EQ(out[r][c], expected[r*4 + c]);
+        }
+    }
+}
+
+/**
+ * @test PAD.pad_asymmetric_positions
+ * @brief Verify asymmetric top/bottom/left/right paddings place original
+ * elements correctly and fill others with the given value.
+ */
+TEST(PAD, pad_asymmetric_positions)
+{
+    Tensor<float> t({2, 2});
+    t = std::vector<float>{ 1.0f, 2.0f,
+                            3.0f, 4.0f };
+
+    const uint64_t top    = 3;
+    const uint64_t bottom = 4;
+    const uint64_t left   = 1;
+    const uint64_t right  = 2;
+    const float fill      = 0.0f;
+
+    Tensor<float> out = math::pad(t, top, bottom, left, right, fill);
+
+    const uint64_t out_rows = top + 2 + bottom;
+    const uint64_t out_cols = left + 2 + right;
+
+    const std::vector<uint64_t> dims = out.get_dimensions();
+    EXPECT_EQ(dims[0], out_rows);
+    EXPECT_EQ(dims[1], out_cols);
+
+    for (uint64_t r = 0; r < out_rows; ++r)
+    {
+        for (uint64_t c = 0; c < out_cols; ++c)
+        {
+            const bool in_orig_r = (r >= top) && (r < top + 2);
+            const bool in_orig_c = (c >= left) && (c < left + 2);
+
+            if (in_orig_r && in_orig_c)
+            {
+                const uint64_t or_r = r - top;
+                const uint64_t or_c = c - left;
+                const float expected = t[or_r][or_c];
+                EXPECT_FLOAT_EQ(out[r][c], expected)
+                    << "orig mismatch at [" << r << "][" << c << "]";
+            }
+            else
+            {
+                EXPECT_FLOAT_EQ(out[r][c], fill)
+                    << "pad mismatch at [" << r << "][" << c << "]";
+            }
+        }
+    }
+}
+
+/**
+ * @test PAD.pad_nonzero_fill_value
+ * @brief Ensure non-zero fill value is used and the original element
+ * appears at the expected coordinates.
+ */
+TEST(PAD, pad_nonzero_fill_value)
+{
+    Tensor<float> t({1, 1});
+    t = std::vector<float>{ 9.0f };
+
+    const uint64_t top    = 1;
+    const uint64_t bottom = 0;
+    const uint64_t left   = 2;
+    const uint64_t right  = 1;
+    const float fill      = -7.5f;
+
+    Tensor<float> out = math::pad(t, top, bottom, left, right, fill);
+
+    EXPECT_EQ(out.get_dimensions()[0], top + 1 + bottom);
+    EXPECT_EQ(out.get_dimensions()[1], left + 1 + right);
+
+    EXPECT_FLOAT_EQ(out[top][left], 9.0f);
+
+    for (uint64_t r = 0; r < out.get_dimensions()[0]; ++r)
+    {
+        for (uint64_t c = 0; c < out.get_dimensions()[1]; ++c)
+        {
+            if (r == top && c == left) continue;
+            EXPECT_FLOAT_EQ(out[r][c], fill);
+        }
+    }
+}
+
+/**
+ * @test PAD.pad_on_view_keeps_positions_and_owner
+ * @brief Padding a view copies the correct elements from the owner and
+ * leaves the owner tensor unchanged.
+ */
+TEST(PAD, pad_on_view_keeps_positions_and_owner)
+{
+    Tensor<float> owner({4, 4});
+    std::vector<float> vals;
+    vals.reserve(16);
+    for (int i = 0; i < 16; ++i)
+    {
+        vals.push_back(static_cast<float>(i + 1));
+    }
+    owner = vals;
+
+    std::vector<uint64_t> start = {1, 1};
+    std::vector<uint64_t> shape = {2, 2};
+    Tensor<float> view(owner, start, shape);
+
+    const uint64_t top = 1, bottom = 0, left = 2, right = 1;
+    const float fill = -1.0f;
+
+    Tensor<float> out = math::pad(view, top, bottom, left, right, fill);
+
+    EXPECT_EQ(out.get_dimensions()[0], top + shape[0] + bottom);
+    EXPECT_EQ(out.get_dimensions()[1], left + shape[1] + right);
+
+    const uint64_t R = out.get_dimensions()[0];
+    const uint64_t C = out.get_dimensions()[1];
+
+    for (uint64_t r = 0; r < R; ++r)
+    {
+        for (uint64_t c = 0; c < C; ++c)
+        {
+            const bool in_orig_r = (r >= top) && (r < top + shape[0]);
+            const bool in_orig_c = (c >= left) && (c < left + shape[1]);
+            if (in_orig_r && in_orig_c)
+            {
+                const uint64_t or_r = r - top;
+                const uint64_t or_c = c - left;
+                const uint64_t owner_r = start[0] + or_r;
+                const uint64_t owner_c = start[1] + or_c;
+                const float expected = owner[owner_r][owner_c];
+                EXPECT_FLOAT_EQ(out[r][c], expected);
+            }
+            else
+            {
+                EXPECT_FLOAT_EQ(out[r][c], fill);
+            }
+        }
+    }
+
+    EXPECT_FLOAT_EQ(owner[1][1], 6.0f);
+    EXPECT_FLOAT_EQ(owner[1][2], 7.0f);
+    EXPECT_FLOAT_EQ(owner[2][1], 10.0f);
+    EXPECT_FLOAT_EQ(owner[2][2], 11.0f);
+}
+
+/**
+ * @test PAD.pad_on_alias_view_respects_strides
+ * @brief Padding an alias view with custom strides should respect those
+ * strides when mapping values into the output.
+ */
+TEST(PAD, pad_on_alias_view_respects_strides)
+{
+    Tensor<float> owner({3, 4});
+    std::vector<float> vals;
+    vals.reserve(12);
+    for (int i = 0; i < 12; ++i)
+    {
+        vals.push_back(static_cast<float>(i + 1));
+    }
+    owner = vals;
+
+    std::vector<uint64_t> start = {0, 0};
+    std::vector<uint64_t> dims = {2, 2};
+    std::vector<uint64_t> strides = {4, 2};
+
+    Tensor<float> aview(owner, start, dims, strides);
+
+    const uint64_t top = 0, bottom = 1, left = 1, right = 0;
+    const float fill = 0.0f;
+
+    Tensor<float> out = math::pad(aview, top, bottom, left, right, fill);
+
+    EXPECT_EQ(out.get_dimensions()[0], top + dims[0] + bottom);
+    EXPECT_EQ(out.get_dimensions()[1], left + dims[1] + right);
+    const uint64_t R = out.get_dimensions()[0];
+    const uint64_t C = out.get_dimensions()[1];
+
+    for (uint64_t r = 0; r < R; ++r)
+    {
+        for (uint64_t c = 0; c < C; ++c)
+        {
+            const bool in_orig_r = (r >= top) && (r < top + dims[0]);
+            const bool in_orig_c = (c >= left) && (c < left + dims[1]);
+            if (in_orig_r && in_orig_c)
+            {
+                const uint64_t or_r = r - top;
+                const uint64_t or_c = c - left;
+                const float expected = aview[or_r][or_c];
+                EXPECT_FLOAT_EQ(out[r][c], expected);
+            }
+            else
+            {
+                EXPECT_FLOAT_EQ(out[r][c], fill);
+            }
+        }
+    }
+
+    EXPECT_FLOAT_EQ(aview[0][0], 1.0f);
+    EXPECT_FLOAT_EQ(aview[0][1], 3.0f);
+    EXPECT_FLOAT_EQ(aview[1][0], 5.0f);
+    EXPECT_FLOAT_EQ(aview[1][1], 7.0f);
+
+    EXPECT_FLOAT_EQ(owner[0][0], 1.0f);
+    EXPECT_FLOAT_EQ(owner[0][2], 3.0f);
+    EXPECT_FLOAT_EQ(owner[1][0], 5.0f);
+    EXPECT_FLOAT_EQ(owner[1][2], 7.0f);
+}
+
+/**
+ * @test PAD.pad_4d_tensor_preserves_batches
+ * @brief Pad a 4D tensor (batch0, batch1, height, width).
+ *
+ * Verifies that padding only affects the last two spatial dimensions,
+ * that batch dimensions are preserved without reordering, and that
+ * original values are copied in-place while padded regions are filled
+ * with the specified value.
+ */
+TEST(PAD, pad_4d_tensor_preserves_batches)
+{
+    const uint64_t B0 = 2, B1 = 3, H = 2, W = 2;
+    Tensor<float> t({B0, B1, H, W});
+
+    std::vector<float> vals;
+    vals.reserve(B0 * B1 * H * W);
+    for (uint64_t i = 0; i < B0 * B1 * H * W; ++i)
+    {
+        vals.push_back(static_cast<float>(i + 1));
+    }
+    t = vals;
+
+    const uint64_t top = 1, bottom = 1, left = 2, right = 1;
+    const float fill = 0.5f;
+
+    Tensor<float> out = math::pad(t, top, bottom, left, right, fill);
+
+    const uint64_t out_H = top + H + bottom;
+    const uint64_t out_W = left + W + right;
+
+    const uint64_t out_elems = B0 * B1 * out_H * out_W;
+    std::vector<float> expected(out_elems, fill);
+
+    for (uint64_t b0 = 0; b0 < B0; ++b0)
+    {
+        for (uint64_t b1 = 0; b1 < B1; ++b1)
+        {
+            for (uint64_t r = 0; r < out_H; ++r)
+            {
+                for (uint64_t c = 0; c < out_W; ++c)
+                {
+                    const bool in_r = (r >= top) && (r < top + H);
+                    const bool in_c = (c >= left) && (c < left + W);
+                    uint64_t out_idx =
+                        (((b0 * B1 + b1) * out_H + r) * out_W + c);
+                    if (in_r && in_c)
+                    {
+                        const uint64_t in_r = r - top;
+                        const uint64_t in_c = c - left;
+                        uint64_t in_idx =
+                            (((b0 * B1 + b1) * H + in_r) * W + in_c);
+                        expected[out_idx] = vals[in_idx];
+                    }
+                    else
+                    {
+                        expected[out_idx] = fill;
+                    }
+                }
+            }
+        }
+    }
+
+    std::vector<float> host(out_elems);
+    g_sycl_queue.memcpy(host.data(), out.m_p_data.get(),
+                        host.size() * sizeof(float)).wait();
+
+    for (uint64_t i = 0; i < out_elems; ++i)
+    {
+        EXPECT_FLOAT_EQ(host[i], expected[i]);
+    }
+
+    const std::vector<uint64_t> dims = out.get_dimensions();
+    EXPECT_EQ(dims.size(), 4u);
+    EXPECT_EQ(dims[0], B0);
+    EXPECT_EQ(dims[1], B1);
+    EXPECT_EQ(dims[2], out_H);
+    EXPECT_EQ(dims[3], out_W);
+}
+
+/**
+ * @test PAD.pad_empty
+ * @brief Calling pad on an empty tensor must throw std::invalid_argument.
+ */
+TEST(PAD, pad_empty)
+{
+    Tensor<float> t;
+    EXPECT_THROW(math::pad(t, 1, 2, 3, 4, 0.0f), std::invalid_argument);
+}
+
+/**
+ * @test PAD.pad_rank1
+ * @brief Calling pad on a rank-1 tensor must throw std::invalid_argument.
+ */
+TEST(PAD, pad_rank1)
+{
+    Tensor<float> t ({10});
+    EXPECT_THROW(math::pad(t, 1, 2, 3, 4, 0.0f), std::invalid_argument);
+}
+
+/**
+ * @test PAD.pad_padwidth_overflow
+ * @brief Passing pad widths that cause uint64_t overflow must throw
+ * std::overflow_error.
+ */
+TEST(PAD, pad_padwidth_overflow)
+{
+    Tensor<float> t({10, 10});
+    const uint64_t big = std::numeric_limits<uint64_t>::max();
+
+    EXPECT_THROW(math::pad(t, 1, 2, big, 1, 0.0f), std::overflow_error);
+}
+
+/**
+ * @test PAD.pad_padheight_overflow
+ * @brief Passing pad heights that cause uint64_t overflow must throw
+ * std::overflow_error.
+ */
+TEST(PAD, pad_padheight_overflow)
+{
+    Tensor<float> t({10, 10});
+    const uint64_t big = std::numeric_limits<uint64_t>::max();
+
+    EXPECT_THROW(math::pad(t, big, 1, 3, 4, 0.0f), std::overflow_error);
+}
+
+/**
+ * @test PAD.pad_symmetric
+ * @brief Symmetric padding helper pads both sides and preserves original
+ * element ordering; verifies pad values and owner unchanged.
+ */
+TEST(PAD, pad_symmetric)
+{
+    Tensor<float> owner({2, 2});
+    std::vector<float> vals = {1, 2, 3, 4};
+    owner = vals;
+
+    const uint64_t pad_h = 1;
+    const uint64_t pad_w = 2;
+    const float pad_val = 7.5f;
+
+    Tensor<float> out = math::pad(owner, pad_h, pad_w, pad_val);
+
+    EXPECT_EQ(out.get_dimensions()[0], pad_h + 2 + pad_h);
+    EXPECT_EQ(out.get_dimensions()[1], pad_w + 2 + pad_w);
+
+    const uint64_t R = out.get_dimensions()[0];
+    const uint64_t C = out.get_dimensions()[1];
+
+    for (uint64_t r = 0; r < R; ++r)
+    {
+        for (uint64_t c = 0; c < C; ++c)
+        {
+            const bool in_orig_r = (r >= pad_h) && (r < pad_h + 2);
+            const bool in_orig_c = (c >= pad_w) && (c < pad_w + 2);
+            if (in_orig_r && in_orig_c)
+            {
+                const uint64_t or_r = r - pad_h;
+                const uint64_t or_c = c - pad_w;
+                const float expected = owner[or_r][or_c];
+                EXPECT_FLOAT_EQ(out[r][c], expected);
+            }
+            else
+            {
+                EXPECT_FLOAT_EQ(out[r][c], pad_val);
+            }
+        }
+    }
+
+    EXPECT_FLOAT_EQ(owner[0][0], 1.0f);
+    EXPECT_FLOAT_EQ(owner[0][1], 2.0f);
+    EXPECT_FLOAT_EQ(owner[1][0], 3.0f);
+    EXPECT_FLOAT_EQ(owner[1][1], 4.0f);
+}
+
 } // namespace Test
