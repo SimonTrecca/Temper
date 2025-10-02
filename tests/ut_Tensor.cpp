@@ -5883,4 +5883,174 @@ TEST(TENSOR, get_total_bytes)
     >, "get_total_bytes() must return uint64_t");
 }
 
+/**
+ * @test TENSOR.index_to_coords_basic
+ * @brief Verify index_to_coords maps flat indices to per-axis
+ * coordinates for a 3D tensor and throws when flat is out of range.
+ */
+TEST(TENSOR, index_to_coords_basic)
+{
+  Tensor<float> t({2, 3, 4}, MemoryLocation::HOST);
+
+  std::vector<uint64_t> c0 = t.index_to_coords(0);
+  ASSERT_EQ(c0.size(), 3u);
+  EXPECT_EQ(c0[0], 0u);
+  EXPECT_EQ(c0[1], 0u);
+  EXPECT_EQ(c0[2], 0u);
+
+  std::vector<uint64_t> c5 = t.index_to_coords(5);
+  ASSERT_EQ(c5.size(), 3u);
+  EXPECT_EQ(c5[0], 0u);
+  EXPECT_EQ(c5[1], 1u);
+  EXPECT_EQ(c5[2], 1u);
+
+  std::vector<uint64_t> c23 = t.index_to_coords(23);
+  ASSERT_EQ(c23.size(), 3u);
+  EXPECT_EQ(c23[0], 1u);
+  EXPECT_EQ(c23[1], 2u);
+  EXPECT_EQ(c23[2], 3u);
+
+  EXPECT_THROW(t.index_to_coords(24), std::out_of_range);
+}
+
+/**
+ * @test TENSOR.coords_to_index_basic
+ * @brief Verify coords_to_index maps per-axis coordinates to flat
+ * index, and that size-mismatch and out-of-range coords throw.
+ */
+TEST(TENSOR, coords_to_index_basic)
+{
+  Tensor<float> t({3, 4, 5}, MemoryLocation::HOST);
+
+  std::vector<uint64_t> coords = {2u, 3u, 4u};
+  uint64_t flat = t.coords_to_index(coords);
+  EXPECT_EQ(flat, 59u);
+
+  std::vector<uint64_t> bad_size = {1u, 2u};
+  EXPECT_THROW(t.coords_to_index(bad_size), std::invalid_argument);
+
+  std::vector<uint64_t> out_of_range = {3u, 0u, 0u};
+  EXPECT_THROW(t.coords_to_index(out_of_range), std::out_of_range);
+}
+
+/**
+ * @test TENSOR.at_basic
+ * @brief Test reading and writing elements using at() with flat indices.
+ */
+TEST(TENSOR, at_basic)
+{
+    Tensor<float> t({2,3}, MemoryLocation::HOST);
+    std::vector<float> vals = {1,2,3,4,5,6};
+    t = vals;
+
+    EXPECT_FLOAT_EQ(t.at(0), 1.0f);
+    EXPECT_FLOAT_EQ(t.at(5), 6.0f);
+
+    t.at(2) = 42.0f;
+    EXPECT_FLOAT_EQ(t.at(2), 42.0f);
+
+    t.at(5) = -3.5f;
+    EXPECT_FLOAT_EQ(t.at(5), -3.5f);
+
+    std::vector<float> expected = {1,2,42,4,5,-3.5f};
+    for (uint64_t i = 0; i < 6; ++i)
+    {
+        EXPECT_FLOAT_EQ(t.at(i), expected[i]);
+    }
+}
+
+/**
+ * @test TENSOR.at_out_of_range
+ * @brief Verify that at() throws std::out_of_range for invalid flat indices.
+ */
+TEST(TENSOR, at_out_of_range)
+{
+    Tensor<float> t({2,3}, MemoryLocation::HOST);
+
+    EXPECT_NO_THROW(t.at(0));
+    EXPECT_NO_THROW(t.at(5));
+
+    EXPECT_THROW(t.at(6), std::out_of_range);
+    EXPECT_THROW(t.at(100), std::out_of_range);
+}
+
+/**
+ * @test TENSOR.at_const
+ * @brief Verify that const tensors can read using at() but cannot write.
+ */
+TEST(TENSOR, at_const)
+{
+    Tensor<float> t({2,3}, MemoryLocation::HOST);
+    t = std::vector<float>{1,2,3,4,5,6};
+
+    const Tensor<float>& ct = t;
+
+    EXPECT_FLOAT_EQ(ct.at(0), 1.0f);
+    EXPECT_FLOAT_EQ(ct.at(5), 6.0f);
+}
+
+/**
+ * @test TENSOR.at_view
+ * @brief Test at() on a sub-tensor view (non-owning) with contiguous strides.
+ */
+TEST(TENSOR, at_view)
+{
+    Tensor<float> t({3,3}, MemoryLocation::HOST);
+    t = std::vector<float>{1,2,3, 4,5,6, 7,8,9};
+
+    Tensor<float> v(t, {1,1}, {2,2}, {3,1});
+
+    EXPECT_FLOAT_EQ(v.at(0), 5.0f);
+    EXPECT_FLOAT_EQ(v.at(1), 6.0f);
+    EXPECT_FLOAT_EQ(v.at(2), 8.0f);
+    EXPECT_FLOAT_EQ(v.at(3), 9.0f);
+
+    v.at(0) = -5.0f;
+    v.at(3) = -9.0f;
+
+    EXPECT_FLOAT_EQ(t.at(4), -5.0f);
+    EXPECT_FLOAT_EQ(t.at(8), -9.0f);
+}
+
+/**
+ * @test TENSOR.at_alias_view_noncontiguous
+ * @brief Test at() on a non-contiguous alias view (stride > 1).
+ */
+TEST(TENSOR, at_alias_view_noncontiguous)
+{
+    Tensor<float> t({1,8}, MemoryLocation::HOST);
+    t = std::vector<float>{10,0,20,0,30,0,40,0};
+
+    Tensor<float> v(t, {0,0}, {1,4}, {1,2});
+
+    EXPECT_FLOAT_EQ(v.at(0), 10.0f);
+    EXPECT_FLOAT_EQ(v.at(1), 20.0f);
+    EXPECT_FLOAT_EQ(v.at(2), 30.0f);
+    EXPECT_FLOAT_EQ(v.at(3), 40.0f);
+
+    v.at(1) = 99.0f;
+    v.at(3) = 77.0f;
+
+    EXPECT_FLOAT_EQ(t.at(2), 99.0f);
+    EXPECT_FLOAT_EQ(t.at(6), 77.0f);
+}
+
+/**
+ * @test TENSOR.at_view_out_of_range
+ * @brief Verify that at() throws out_of_range for invalid indices on views.
+ */
+TEST(TENSOR, at_view_out_of_range)
+{
+    Tensor<float> t({2,2}, MemoryLocation::HOST);
+    t = std::vector<float>{1,2,3,4};
+
+    Tensor<float> v(t, {0,0}, {2,2}, {2,1});
+
+    EXPECT_NO_THROW(v.at(0));
+    EXPECT_NO_THROW(v.at(3));
+    EXPECT_THROW(v.at(4), std::out_of_range);
+    EXPECT_THROW(v.at(100), std::out_of_range);
+}
+
+
 } // namespace Test

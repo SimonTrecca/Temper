@@ -222,7 +222,7 @@ TEST(MATMUL, batched_equal_batches)
 
 /**
  * @test MATMUL.batched_broadcast_batches
- * @brief Batched matmul with broadcasting: A:(2,1,2,3) @B:(1,3,3,2)
+ * @brief Batched matmul with broadcasting: A:(2,1,2,3) * B:(1,3,3,2)
  * ->out:(2,3,2,2)
  */
 TEST(MATMUL, batched_broadcast_batches)
@@ -1662,6 +1662,165 @@ TEST(PAD, pad_symmetric)
     EXPECT_FLOAT_EQ(owner[0][1], 2.0f);
     EXPECT_FLOAT_EQ(owner[1][0], 3.0f);
     EXPECT_FLOAT_EQ(owner[1][1], 4.0f);
+}
+
+/**
+ * @test ARGMAX.argmax_flattened
+ * @brief argmax with axis = -1 (flattened) returns index of global max,
+ * validated via at().
+ */
+TEST(ARGMAX, argmax_flattened)
+{
+    Tensor<float> t({5}, MemoryLocation::DEVICE);
+    std::vector<float> vals = {1.0f, 5.0f, 3.0f, 5.0f, 2.0f};
+    t = vals;
+
+    std::vector<uint64_t> res = math::argmax(t, -1);
+
+    ASSERT_EQ(res.size(), 1u);
+    EXPECT_EQ(t.at(res[0]), 5.0f);
+}
+
+/**
+ * @test ARGMAX.argmax_axis0_2d
+ * @brief argmax along axis 0 of a 2x3 matrix (per-column argmax),
+ * verified via at().
+ */
+TEST(ARGMAX, argmax_axis0_2d)
+{
+    Tensor<float> t({2,3}, MemoryLocation::DEVICE);
+    t = {1.0f,4.0f,3.0f,
+         2.0f,0.0f,5.0f};
+
+    std::vector<uint64_t> res = math::argmax(t, 0);
+
+    ASSERT_EQ(res.size(), 3u);
+    for (uint64_t col = 0; col < 3; ++col)
+    {
+        uint64_t row = res[col];
+        float val = t.at(row * 3 + col);
+        EXPECT_FLOAT_EQ(val, std::max(t.at(col), t.at(3 + col)));
+    }
+}
+
+/**
+ * @test ARGMAX.argmax_axis1_2d
+ * @brief argmax along axis 1 of a 2x3 matrix (per-row argmax),
+ * verified via at().
+ */
+TEST(ARGMAX, argmax_axis1_2d)
+{
+    Tensor<float> t({2,3}, MemoryLocation::DEVICE);
+    t = {1.0f,4.0f,3.0f,
+         2.0f,0.0f,5.0f};
+
+    std::vector<uint64_t> res = math::argmax(t, 1);
+
+    ASSERT_EQ(res.size(), 2u);
+    EXPECT_FLOAT_EQ(t.at(0*3 + res[0]), 4.0f);
+    EXPECT_FLOAT_EQ(t.at(1*3 + res[1]), 5.0f);
+}
+
+/**
+ * @test ARGMAX.argmax_tie_prefers_first
+ * @brief argmax should prefer the first occurrence on ties.
+ */
+TEST(ARGMAX, argmax_tie_prefers_first)
+{
+    Tensor<float> t({2,3}, MemoryLocation::DEVICE);
+    std::vector<float> vals = {2.0f, 2.0f, 1.0f,
+                               0.0f, 5.0f, 5.0f};
+    t = vals;
+
+    std::vector<uint64_t> res = math::argmax(t, 1);
+
+    ASSERT_EQ(res.size(), 2u);
+    EXPECT_EQ(res[0], 0u);
+    EXPECT_EQ(res[1], 1u);
+}
+
+/**
+ * @test ARGMAX.argmax_axis_out_of_range
+ * @brief argmax should throw std::invalid_argument for invalid axes.
+ */
+TEST(ARGMAX, argmax_axis_out_of_range)
+{
+    Tensor<float> t({2,3}, MemoryLocation::DEVICE);
+    t = std::vector<float>{1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f};
+
+    EXPECT_THROW(math::argmax(t, 2), std::invalid_argument);
+    EXPECT_THROW(math::argmax(t, -2), std::invalid_argument);
+}
+
+/**
+ * @test ARGMAX.argmax_nan_throws
+ * @brief argmax should throw std::runtime_error when input contains NaN.
+ */
+TEST(ARGMAX, argmax_nan_throws)
+{
+    Tensor<float> t({3}, MemoryLocation::DEVICE);
+    std::vector<float> vals =
+        {1.0f, std::numeric_limits<float>::quiet_NaN(), 0.0f};
+    t = vals;
+
+    EXPECT_THROW(math::argmax(t, -1), std::runtime_error);
+}
+
+/**
+ * @test ARGMAX.argmax_alias_view
+ * @brief argmax on a 1D alias view (non-contiguous) returns index
+ * relative to view, verified via at().
+ */
+TEST(ARGMAX, argmax_alias_view)
+{
+    Tensor<float> owner({6}, MemoryLocation::DEVICE);
+    owner = {1.0f, 3.0f, 2.0f, 6.0f, 4.0f, 5.0f};
+
+    Tensor<float> v(owner, {1}, {3}, {2});
+
+    std::vector<uint64_t> res = math::argmax(v, -1);
+
+    ASSERT_EQ(res.size(), 1u);
+    EXPECT_FLOAT_EQ(v.at(res[0]), 6.0f);
+    EXPECT_FLOAT_EQ(owner.at(3), 6.0f);
+}
+
+/**
+ * @test ARGMAX.argmax_3d_view_flatten
+ * @brief argmax on a 3D sub-tensor view (flattened) returns the correct index.
+ */
+TEST(ARGMAX, argmax_3d_view_flatten)
+{
+    Tensor<float> t({2,2,3}, MemoryLocation::DEVICE);
+    t = {1,5,2,0,3,4,6,2,0,1,2,3};
+
+    Tensor<float> v(t, {1,0,0}, {1,2,3}, {6,3,1});
+    std::vector<uint64_t> res = math::argmax(v, -1);
+
+    ASSERT_EQ(res.size(), 1u);
+    EXPECT_FLOAT_EQ(v.at(res[0]), 6.0f);
+}
+
+/**
+ * @test ARGMAX.argmax_on_alias_view_strided
+ * @brief argmax on a 1D alias view with non-unit stride returns index relative
+ * to the view (checks correct handling of strides).
+ */
+TEST(ARGMAX, argmax_on_alias_view_strided)
+{
+    Tensor<float> owner({6}, MemoryLocation::DEVICE);
+    std::vector<float> vals = {1.0f, 3.0f, 2.0f, 6.0f, 4.0f, 5.0f};
+    owner = vals;
+
+    std::vector<uint64_t> start = {1ull};
+    std::vector<uint64_t> dims  = {3ull};
+    std::vector<uint64_t> strides = {2ull};
+    Tensor<float> v(owner, start, dims, strides);
+
+    std::vector<uint64_t> res = math::argmax(v, -1);
+
+    ASSERT_EQ(res.size(), 1u);
+    EXPECT_EQ(res[0], 1u);
 }
 
 } // namespace Test

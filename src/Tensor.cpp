@@ -2572,6 +2572,123 @@ uint64_t Tensor<float_t>::get_total_bytes() const noexcept
     return elems * elem_size;
 }
 
+template<typename float_t>
+std::vector<uint64_t> Tensor<float_t>::index_to_coords(uint64_t flat) const
+{
+    const size_t rank = m_dimensions.size();
+    if (rank == 0)
+        return {};
+
+    uint64_t total = 1;
+    for (uint64_t s : m_dimensions)
+        total *= s;
+
+    if (flat >= total)
+        throw std::out_of_range("Tensor::index_to_coords: flat out of range");
+
+    std::vector<uint64_t> divs = utils::compute_divisors(m_dimensions);
+    std::vector<uint64_t> coords(rank, 0);
+
+    for (size_t d = 0; d < rank; ++d)
+    {
+        if (divs[d] == 0)
+        {
+            coords[d] = 0;
+        }
+        else
+        {
+            coords[d] = (flat / divs[d]) % m_dimensions[d];
+        }
+    }
+
+    return coords;
+}
+
+template<typename float_t>
+uint64_t Tensor<float_t>::coords_to_index
+    (const std::vector<uint64_t>& coords) const
+{
+    const size_t rank = m_dimensions.size();
+    if (coords.size() != rank)
+    {
+        throw std::invalid_argument(R"(Tensor(coords_to_index):
+            size mismatch)");
+    }
+
+    if (rank == 0)
+    {
+        return 0;
+    }
+
+    std::vector<uint64_t> divs = temper::utils::compute_divisors(m_dimensions);
+    uint64_t flat = 0;
+
+    for (size_t d = 0; d < rank; ++d)
+    {
+        if (coords[d] >= m_dimensions[d])
+        {
+            throw std::out_of_range(R"(Tensor(coords_to_index):
+                coord out of range)");
+        }
+
+        flat += coords[d] * divs[d];
+    }
+
+    return flat;
+}
+
+template<typename float_t>
+float_t & Tensor<float_t>::at(uint64_t flat)
+{
+    const size_t rank = m_dimensions.size();
+    if (rank == 0)
+    {
+        throw std::out_of_range("Tensor(at): tensor has no elements.");
+    }
+
+    const uint64_t total = get_num_elements();
+    if (flat >= total)
+    {
+        throw std::out_of_range("Tensor(at): flat index out of range.");
+    }
+
+    std::vector<uint64_t> coords = index_to_coords(flat);
+
+    uint64_t offset = 0;
+    for (size_t d = 0; d < rank; ++d)
+    {
+        offset += coords[d] * m_strides[d];
+    }
+
+    return m_p_data.get()[offset];
+}
+
+template<typename float_t>
+const float_t& Tensor<float_t>::at(uint64_t flat) const
+{
+    const size_t rank = m_dimensions.size();
+    if (rank == 0)
+    {
+        throw std::out_of_range("Tensor(at): tensor has no elements.");
+    }
+
+    const uint64_t total = get_num_elements();
+    if (flat >= total)
+    {
+        throw std::out_of_range("Tensor(at): flat index out of range.");
+    }
+
+    std::vector<uint64_t> coords = index_to_coords(flat);
+
+    uint64_t offset = 0;
+    for (size_t d = 0; d < rank; ++d)
+    {
+        offset += coords[d] * m_strides[d];
+    }
+
+    return m_p_data.get()[offset];
+}
+
 template class Tensor<float>;
 
 } // namespace temper

@@ -657,6 +657,50 @@ public:
      * @return uint64_t Total size in bytes.
      */
     uint64_t get_total_bytes() const noexcept;
+
+    /**
+     * @brief Convert a flat row-major index (0..N-1) into per-axis coordinates.
+     *
+     * - If the tensor has rank 0 (empty shape) returns an empty vector.
+     * - Throws std::out_of_range if flat >= total elements.
+     *
+     * @param flat Flattened logical index.
+     * @return Vector of coordinates (size == rank).
+     */
+    std::vector<uint64_t> index_to_coords(uint64_t flat) const;
+
+    /**
+     * @brief Convert per-axis coordinates into a flat row-major index.
+     *
+     * - coords.size() must equal tensor rank.
+     * - each coords[d] must be < shape[d].
+     *
+     * @param coords Per-axis coordinates.
+     * @return Flattened index corresponding to coords.
+     * @throws std::invalid_argument if coords size mismatches rank.
+     * @throws std::out_of_range if any coordinate is outside its extent.
+     */
+    uint64_t coords_to_index
+        (const std::vector<uint64_t>& coords) const;
+
+    /**
+     * @brief Access element at the given flat (row-major) index.
+     *
+     * - Returns a reference to the underlying element.
+     * - Flat index must be in [0, total_elements).
+     * - Works for both host and device tensors.
+     *
+     * @param flat Flattened row-major index.
+     * @return Reference to element at flat index.
+     * @throws std::out_of_range if flat >= total elements.
+     */
+    float_t & at(uint64_t flat);
+
+    /**
+     * @brief Const version of at().
+     */
+    const float_t& at(uint64_t flat) const;
+
 };
 
 /// Explicit instantiation for float

@@ -227,8 +227,28 @@ Tensor<float_t> pad(const Tensor<float_t> & tensor,
 extern template Tensor<float> pad<float>
     (const Tensor<float>&, uint64_t, uint64_t, float);
 
+/**
+ * @brief Compute indices of maximum values along a specified axis.
+ *
+ * Returns a vector of indices corresponding to the maximum element of
+ * each slice along @p axis. For axis = -1, returns a single global max
+ * index. Ties are resolved by taking the first occurrence.
+ *
+ * @param tensor Input tensor of arbitrary rank.
+ * @param axis Axis to reduce (-1 = flatten, otherwise 0..rank-1).
+ * @return std::vector<uint64_t> Indices of maximum elements.
+ *
+ * @throws std::invalid_argument If tensor is empty or axis is out of range.
+ * @throws std::runtime_error If any input is NaN or a numeric error occurs.
+ * @throws std::bad_alloc If device memory allocation fails.
+ */
+template<typename float_t>
+std::vector<uint64_t> argmax(const Tensor<float_t> & tensor, int64_t axis);
+/// Explicit instantiation of argmax for float
+extern template std::vector<uint64_t> argmax<float>
+    (const Tensor<float>&, int64_t);
+
 /* todo
-    argmax
     linspace
     arange
     zeros

@@ -601,4 +601,202 @@ Tensor<float_t> pad(const Tensor<float_t> & tensor,
 template Tensor<float> pad<float>
     (const Tensor<float>&, uint64_t, uint64_t, float);
 
+template<typename float_t>
+std::vector<uint64_t> argmax(const Tensor<float_t> & tensor, int64_t axis)
+{
+    const std::vector<uint64_t> & in_shape = tensor.get_dimensions();
+    const uint64_t rank = tensor.get_rank();
+
+    if (in_shape.empty())
+    {
+        throw std::invalid_argument(R"(argmax:
+            input tensor has no elements.)");
+    }
+
+    bool flattened = false;
+    if (axis == -1)
+    {
+        flattened = true;
+    }
+
+    if (!flattened && (axis < 0 || static_cast<uint64_t>(axis) >= rank))
+    {
+        throw std::invalid_argument(R"(argmax:
+            axis out of range.)");
+    }
+
+    uint64_t total_output_elems = 1;
+    if (flattened)
+    {
+        total_output_elems = 1;
+    }
+    else
+    {
+        total_output_elems = 1;
+        for (uint64_t d = 0; d < rank; ++d)
+        {
+            if (d == static_cast<uint64_t>(axis))
+            {
+                continue;
+            }
+            total_output_elems *= in_shape[d];
+        }
+    }
+
+    const uint64_t total_input_elems = tensor.get_num_elements();
+
+    const std::vector<uint64_t> in_divs =
+        temper::utils::compute_divisors(in_shape);
+    const std::vector<uint64_t> in_strides = tensor.get_strides();
+
+    std::vector<uint64_t> res_full_shape;
+    if (!flattened)
+    {
+        res_full_shape = in_shape;
+        res_full_shape[static_cast<uint64_t>(axis)] = 1;
+    }
+
+    const uint64_t arr_len = rank;
+
+    uint64_t* p_in_divs = static_cast<uint64_t*>(
+        sycl::malloc_device(sizeof(uint64_t) * arr_len, g_sycl_queue));
+    uint64_t* p_in_strides = static_cast<uint64_t*>(
+        sycl::malloc_device(sizeof(uint64_t) * arr_len, g_sycl_queue));
+    uint64_t* p_res_full_divs = nullptr;
+    if (!flattened)
+    {
+        p_res_full_divs = static_cast<uint64_t*>(
+            sycl::malloc_device(sizeof(uint64_t) * arr_len, g_sycl_queue));
+    }
+
+    uint64_t* p_out_dev = static_cast<uint64_t*>(sycl::malloc_device
+        (sizeof(uint64_t) * static_cast<size_t>(total_output_elems),
+                            g_sycl_queue));
+
+    int32_t* p_error_flag = static_cast<int32_t*>(
+        sycl::malloc_shared(sizeof(int32_t), g_sycl_queue));
+
+    bool alloc_ok = (p_in_divs && p_in_strides && p_error_flag &&
+                     (flattened || p_res_full_divs) && p_out_dev);
+    if (!alloc_ok)
+    {
+        sycl::free(p_in_divs, g_sycl_queue);
+        sycl::free(p_in_strides, g_sycl_queue);
+        sycl::free(p_res_full_divs, g_sycl_queue);
+        sycl::free(p_out_dev, g_sycl_queue);
+        sycl::free(p_error_flag, g_sycl_queue);
+        throw std::bad_alloc();
+    }
+
+    g_sycl_queue.memcpy(p_in_divs,
+        in_divs.data(), sizeof(uint64_t) * arr_len).wait();
+    g_sycl_queue.memcpy(p_in_strides,
+        in_strides.data(), sizeof(uint64_t) * arr_len).wait();
+    if (!flattened)
+    {
+        const std::vector<uint64_t> res_full_divs =
+            temper::utils::compute_divisors(res_full_shape);
+        g_sycl_queue.memcpy(p_res_full_divs,
+            res_full_divs.data(), sizeof(uint64_t) * arr_len).wait();
+    }
+
+    *p_error_flag = 0;
+
+    const float_t* p_in_data = tensor.get_data();
+
+    uint64_t axis_u = 0;
+    uint64_t axis_dim = 0;
+    uint64_t axis_stride = 0;
+    if (!flattened)
+    {
+        axis_u = static_cast<uint64_t>(axis);
+        axis_dim = in_shape[axis_u];
+        axis_stride = in_strides[axis_u];
+    }
+
+    g_sycl_queue.submit([&](sycl::handler& cgh)
+    {
+        cgh.parallel_for(sycl::range<1>(static_cast<size_t>(total_output_elems)),
+            [=](sycl::id<1> id)
+        {
+            const uint64_t out_flat = static_cast<uint64_t>(id[0]);
+
+            if (flattened)
+            {
+                uint64_t best_idx = 0;
+                uint64_t first_offset = temper::sycl_utils::idx_of(
+                    0, p_in_divs, p_in_strides, arr_len);
+                float_t best_val = p_in_data[first_offset];
+                temper::sycl_utils::device_check_nan_and_set<float_t>
+                    (best_val, p_error_flag);
+
+                for (uint64_t t = 1; t < total_input_elems; ++t)
+                {
+                    uint64_t off = temper::sycl_utils::idx_of(
+                        t, p_in_divs, p_in_strides, arr_len);
+                    float_t v = p_in_data[off];
+                    temper::sycl_utils::device_check_nan_and_set<float_t>
+                        (v, p_error_flag);
+                    if (v > best_val)
+                    {
+                        best_val = v;
+                        best_idx = t;
+                    }
+                }
+                p_out_dev[0] = best_idx;
+                return;
+            }
+
+            uint64_t base = temper::sycl_utils::idx_of(
+                out_flat, p_res_full_divs, p_in_strides, arr_len);
+
+            uint64_t best_rel = 0;
+            float_t best_val = p_in_data[base + 0 * axis_stride];
+            temper::sycl_utils::device_check_nan_and_set<float_t>
+                (best_val, p_error_flag);
+
+            for (uint64_t t = 1; t < axis_dim; ++t)
+            {
+                float_t v = p_in_data[base + t * axis_stride];
+                temper::sycl_utils::device_check_nan_and_set<float_t>
+                    (v, p_error_flag);
+                if (v > best_val)
+                {
+                    best_val = v;
+                    best_rel = t;
+                }
+            }
+
+            p_out_dev[out_flat] = best_rel;
+        });
+    }).wait();
+
+    int32_t err = *p_error_flag;
+
+    sycl::free(p_error_flag, g_sycl_queue);
+    sycl::free(p_in_divs, g_sycl_queue);
+    sycl::free(p_in_strides, g_sycl_queue);
+    sycl::free(p_res_full_divs, g_sycl_queue);
+
+    if (err != 0)
+    {
+        sycl::free(p_out_dev, g_sycl_queue);
+        if (err == 1)
+        {
+            throw std::runtime_error(R"(argmax: NaN detected in inputs.)");
+        }
+        throw std::runtime_error(R"(argmax: numeric error during argmax.)");
+    }
+
+    std::vector<uint64_t> host_out(static_cast<size_t>(total_output_elems));
+    g_sycl_queue.memcpy(host_out.data(), p_out_dev,
+                        sizeof(uint64_t) * static_cast<size_t>(total_output_elems)).wait();
+
+    sycl::free(p_out_dev, g_sycl_queue);
+
+    return host_out;
+}
+template std::vector<uint64_t> argmax<float>
+    (const Tensor<float>&, int64_t);
+
 } // namespace temper::math
