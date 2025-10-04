@@ -1823,4 +1823,510 @@ TEST(ARGMAX, argmax_on_alias_view_strided)
     EXPECT_EQ(res[0], 1u);
 }
 
+/**
+ * @test LINSPACE.scalar_endpoint_true
+ * @brief Linspace with 1-element start/stop (shape {1}), endpoint=true,
+ * produces expected evenly spaced values when inserting axis 0.
+ */
+TEST(LINSPACE, scalar_endpoint_true)
+{
+    Tensor<float> start({1}, MemoryLocation::DEVICE);
+    Tensor<float> stop({1}, MemoryLocation::DEVICE);
+    start = std::vector<float>{0.0f};
+    stop  = std::vector<float>{4.0f};
+
+    const uint64_t num = 5;
+    Tensor<float> out =
+        math::linspace(start, stop, num, MemoryLocation::DEVICE, 0, true);
+
+    const uint64_t total = out.get_num_elements();
+    ASSERT_EQ(total, num);
+
+    std::vector<float> host(total);
+    g_sycl_queue.memcpy
+        (host.data(), out.m_p_data.get(), sizeof(float) * total).wait();
+
+    for (uint64_t i = 0; i < num; ++i)
+    {
+        EXPECT_FLOAT_EQ(host[i], static_cast<float>(i));
+    }
+}
+
+/**
+ * @test LINSPACE.num_one_returns_start_and_zero_step
+ * @brief num == 1 should return start values and step tensor of zeros.
+ */
+TEST(LINSPACE, num_one_returns_start_and_zero_step)
+{
+    Tensor<float> start({1}, MemoryLocation::DEVICE);
+    Tensor<float> stop({1}, MemoryLocation::DEVICE);
+    start = std::vector<float>{7.5f};
+    stop  = std::vector<float>{123.4f};
+
+    const uint64_t num = 1;
+    Tensor<float> step_out;
+    Tensor<float> out = math::linspace
+        (start, stop, num, MemoryLocation::DEVICE, 0, true, &step_out);
+
+    std::vector<float> host_out(1);
+    g_sycl_queue.memcpy
+        (host_out.data(), out.m_p_data.get(), sizeof(float)).wait();
+    EXPECT_FLOAT_EQ(host_out[0], 7.5f);
+
+    ASSERT_EQ(step_out.get_num_elements(), 1u);
+    std::vector<float> host_step(1);
+    g_sycl_queue.memcpy
+        (host_step.data(), step_out.m_p_data.get(), sizeof(float)).wait();
+    EXPECT_FLOAT_EQ(host_step[0], 0.0f);
+}
+
+/**
+ * @test LINSPACE.broadcast_2x1_and_1x3_axis2_endpoint_true
+ * @brief Broadcast start {2,1} and stop {1,3} -> S_shape {2,3}.
+ * Insert new axis at the end (axis = 2) with num = 3 and endpoint=true.
+ * For each (a,b) the sequence is [a, (a+b)/2, b].
+ */
+TEST(LINSPACE, broadcast_2x1_and_1x3_axis2_endpoint_true)
+{
+    Tensor<float> start({2,1}, MemoryLocation::DEVICE);
+    start = std::vector<float>{0.0f, 10.0f};
+
+    Tensor<float> stop({1,3}, MemoryLocation::DEVICE);
+    stop = std::vector<float>{3.0f, 4.0f, 5.0f};
+
+    const uint64_t num = 3;
+    Tensor<float> out =
+        math::linspace(start, stop, num, MemoryLocation::DEVICE, 2, true);
+
+    const uint64_t B0 = 2, B1 = 3, N = 3;
+    ASSERT_EQ(out.get_num_elements(), B0 * B1 * N);
+
+    std::vector<float> host(B0 * B1 * N);
+    g_sycl_queue.memcpy
+        (host.data(), out.m_p_data.get(), host.size() * sizeof(float)).wait();
+
+    std::vector<float> expected;
+    expected.reserve(B0 * B1 * N);
+
+    const std::array<float, 2> start_vals = {0.0f, 10.0f};
+    const std::array<float, 3> stop_vals  = {3.0f, 4.0f, 5.0f};
+
+    for (uint64_t i = 0; i < B0; ++i) {
+        for (uint64_t j = 0; j < B1; ++j) {
+            float a = start_vals[i];
+            float b = stop_vals[j];
+            float step = (b - a) / static_cast<float>(num - 1);
+            for (uint64_t p = 0; p < N; ++p) {
+                expected.push_back(a + step * static_cast<float>(p));
+            }
+        }
+    }
+
+    for (size_t idx = 0; idx < host.size(); ++idx)
+    {
+        EXPECT_FLOAT_EQ(host[idx], expected[idx]);
+    }
+}
+
+/**
+ * @test LINSPACE.nan_inputs_throw
+ * @brief If start or stop contains NaN the function should throw.
+ */
+TEST(LINSPACE, nan_inputs_throw)
+{
+    Tensor<float> start({1}, MemoryLocation::DEVICE);
+    Tensor<float> stop({1}, MemoryLocation::DEVICE);
+    start = std::vector<float>{std::numeric_limits<float>::quiet_NaN()};
+    stop  = std::vector<float>{1.0f};
+
+    EXPECT_THROW(
+        {
+            auto r = math::linspace
+                (start, stop, 3, MemoryLocation::DEVICE, 0, true);
+        },
+        std::runtime_error
+    );
+}
+
+/**
+ * @test LINSPACE.step_out_broadcast_matches_values
+ * @brief When start {2,1} and stop {1,3} are broadcast to S_shape {2,3},
+ * the step_out produced when passing step_out pointer must contain
+ * the per-(i,j) steps (i.e. (b-a)/(num-1) for endpoint=true).
+ */
+TEST(LINSPACE, step_out_broadcast_matches_values)
+{
+    Tensor<float> start({2,1}, MemoryLocation::DEVICE);
+    start = std::vector<float>{0.0f, 10.0f};
+
+    Tensor<float> stop({1,3}, MemoryLocation::DEVICE);
+    stop = std::vector<float>{3.0f, 4.0f, 5.0f};
+
+    const uint64_t num = 3;
+    Tensor<float> step_out;
+    Tensor<float> out = math::linspace
+        (start, stop, num, MemoryLocation::DEVICE, 2, true, &step_out);
+
+    ASSERT_EQ(step_out.get_num_elements(), 6u);
+
+    std::vector<float> host_steps(6);
+    g_sycl_queue.memcpy(host_steps.data(),
+        step_out.m_p_data.get(), sizeof(float) * host_steps.size()).wait();
+
+    std::vector<float> expected_steps;
+    expected_steps.reserve(6);
+
+    const std::array<float, 2> start_vals = {0.0f, 10.0f};
+    const std::array<float, 3> stop_vals  = {3.0f, 4.0f, 5.0f};
+
+    for (uint64_t i = 0; i < start_vals.size(); ++i) {
+        for (uint64_t j = 0; j < stop_vals.size(); ++j) {
+            float a = start_vals[i];
+            float b = stop_vals[j];
+            expected_steps.push_back((b - a) / static_cast<float>(num - 1));
+        }
+    }
+
+    for (size_t idx = 0; idx < host_steps.size(); ++idx)
+    {
+        EXPECT_FLOAT_EQ(host_steps[idx], expected_steps[idx]);
+    }
+}
+
+/**
+ * @test LINSPACE.axis_out_of_range_throws
+ * @brief Axis values outside [ -out_rank, out_rank-1 ] must throw.
+ */
+TEST(LINSPACE, axis_out_of_range_throws)
+{
+    Tensor<float> start({1}, MemoryLocation::DEVICE);
+    Tensor<float> stop({1}, MemoryLocation::DEVICE);
+    start = std::vector<float>{0.0f};
+    stop  = std::vector<float>{1.0f};
+
+    EXPECT_THROW(
+        {
+            math::linspace(start, stop, 3, MemoryLocation::DEVICE, 5, true);
+        },
+        std::invalid_argument
+    );
+}
+
+/**
+ * @test LINSPACE.inf_inputs_throw
+ * @brief If start or stop contains +Inf/-Inf the function should report an error.
+ */
+TEST(LINSPACE, inf_inputs_throw)
+{
+    Tensor<float> start({1}, MemoryLocation::DEVICE);
+    Tensor<float> stop({1}, MemoryLocation::DEVICE);
+    start = std::vector<float>{std::numeric_limits<float>::infinity()};
+    stop  = std::vector<float>{1.0f};
+
+    EXPECT_THROW(
+        {
+            auto r =
+                math::linspace(start, stop, 3, MemoryLocation::DEVICE, 0, true);
+        },
+        std::runtime_error
+    );
+}
+
+/**
+ * @test LINSPACE.scalar_vs_array_broadcast_front_axis
+ * @brief start shape {1} (value 2) and stop shape {2} (values {3,7}) broadcast
+ * to S_shape {2}. Insert axis at front (axis=0) with num=5 -> out shape {5,2}.
+ */
+TEST(LINSPACE, scalar_vs_array_broadcast_front_axis)
+{
+    Tensor<float> start({1}, MemoryLocation::DEVICE);
+    start = std::vector<float>{2.0f};
+
+    Tensor<float> stop({2}, MemoryLocation::DEVICE);
+    stop = std::vector<float>{3.0f, 7.0f};
+
+    const uint64_t num = 5;
+    Tensor<float> out =
+        math::linspace(start, stop, num, MemoryLocation::DEVICE, 0, true);
+
+    ASSERT_EQ(out.get_num_elements(), num * 2u);
+
+    std::vector<float> host(num * 2);
+    g_sycl_queue.memcpy(host.data(),
+        out.m_p_data.get(), sizeof(float) * host.size()).wait();
+
+    std::vector<float> expected;
+    expected.reserve(num * 2);
+
+    const std::array<float, 2> stop_vals = {3.0f, 7.0f};
+    const float a = 2.0f;
+
+    for (uint64_t i = 0; i < num; ++i) {
+        for (uint64_t j = 0; j < stop_vals.size(); ++j) {
+            float b = stop_vals[j];
+            float step = (b - a) / static_cast<float>(num - 1);
+            expected.push_back(a + step * static_cast<float>(i));
+        }
+    }
+
+    for (size_t idx = 0; idx < host.size(); ++idx)
+    {
+        EXPECT_FLOAT_EQ(host[idx], expected[idx]);
+    }
+}
+
+/**
+ * @test LINSPACE.num_zero_returns_scalar_like
+ * @brief When num == 0 the function should return a scalar-like output (1
+ * element) and a step_out tensor with 1 element. The returned value must be
+ * finite (not NaN) and the step must be finite as well.
+ */
+TEST(LINSPACE, num_zero_returns_scalar_like)
+{
+    Tensor<float> start({1}, MemoryLocation::DEVICE);
+    Tensor<float> stop({1}, MemoryLocation::DEVICE);
+    start = std::vector<float>{2.0f};
+    stop  = std::vector<float>{3.0f};
+
+    const uint64_t num = 0;
+    Tensor<float> step_out;
+    Tensor<float> out = math::linspace(start, stop, num,
+       MemoryLocation::DEVICE, 0, true, &step_out);
+
+    ASSERT_EQ(out.get_num_elements(), 1u);
+    ASSERT_EQ(step_out.get_num_elements(), 1u);
+
+    std::vector<float> host_out(1), host_step(1);
+    g_sycl_queue.memcpy(host_out.data(),
+        out.m_p_data.get(), sizeof(float)).wait();
+    g_sycl_queue.memcpy(host_step.data(),
+        step_out.m_p_data.get(), sizeof(float)).wait();
+
+    EXPECT_FALSE(std::isnan(host_out[0]));
+    EXPECT_TRUE(std::isfinite(host_step[0]));
+}
+
+/**
+ * @test LINSPACE.scalar_endpoint_false
+ * @brief Linspace with scalar start/stop, endpoint=false and num>1 should
+ * produce evenly spaced values that exclude the stop value. Example:
+ * start=0, stop=1, num=4 -> [0.0, 0.25, 0.50, 0.75].
+ */
+TEST(LINSPACE, scalar_endpoint_false)
+{
+    Tensor<float> start({1}, MemoryLocation::DEVICE);
+    Tensor<float> stop({1}, MemoryLocation::DEVICE);
+    start = std::vector<float>{0.0f};
+    stop  = std::vector<float>{1.0f};
+
+    const uint64_t num = 4;
+    Tensor<float> out = math::linspace(start, stop, num,
+                                       MemoryLocation::DEVICE, 0, false);
+
+    ASSERT_EQ(out.get_num_elements(), num);
+    std::vector<float> host(num);
+    g_sycl_queue.memcpy(host.data(), out.m_p_data.get(), sizeof(float) * num).wait();
+
+    EXPECT_FLOAT_EQ(host[0], 0.0f);
+    EXPECT_FLOAT_EQ(host[1], 0.25f);
+    EXPECT_FLOAT_EQ(host[2], 0.5f);
+    EXPECT_FLOAT_EQ(host[3], 0.75f);
+}
+
+/**
+ * @test LINSPACE.decreasing_range_step_negative
+ * @brief Linspace must handle decreasing ranges correctly: when start > stop
+ * the generated sequence must decrease and the produced step_out must be
+ * negative. Example: start=5, stop=1, num=5 -> [5,4,3,2,1] and step = -1.
+ */
+TEST(LINSPACE, decreasing_range_step_negative)
+{
+    Tensor<float> start({1}, MemoryLocation::DEVICE);
+    start = std::vector<float>{5.0f};
+    Tensor<float> stop({1},  MemoryLocation::DEVICE);
+    stop  = std::vector<float>{1.0f};
+    const uint64_t num = 5;
+    Tensor<float> step_out;
+    Tensor<float> out = math::linspace
+        (start, stop, num, MemoryLocation::DEVICE, 0, true, &step_out);
+
+    std::vector<float> host(out.get_num_elements());
+    g_sycl_queue.memcpy(host.data(),
+        out.m_p_data.get(), sizeof(float)*host.size()).wait();
+    for (uint64_t i = 0; i < num; ++i)
+    {
+        EXPECT_FLOAT_EQ(host[i], 5.0f - static_cast<float>(i));
+    }
+
+    ASSERT_EQ(step_out.get_num_elements(), 1u);
+    std::vector<float> hs(1);
+    g_sycl_queue.memcpy(hs.data(),
+        step_out.m_p_data.get(), sizeof(float)).wait();
+    EXPECT_FLOAT_EQ(hs[0], -1.0f);
+}
+
+/**
+ * @test LINSPACE.start_equals_stop_zero_step
+ * @brief When start and stop are equal elementwise the output sequences must
+ * contain the same constant value and the corresponding step_out entries must
+ * be zero.
+ */
+TEST(LINSPACE, start_equals_stop_zero_step)
+{
+    Tensor<float> start({2,1}, MemoryLocation::DEVICE);
+    start = std::vector<float>{2.0f, 2.0f};
+    Tensor<float> stop({1,3}, MemoryLocation::DEVICE);
+    stop = std::vector<float>{2.0f, 2.0f, 2.0f};
+    const uint64_t num = 4;
+    Tensor<float> step_out;
+    Tensor<float> out = math::linspace
+        (start, stop, num, MemoryLocation::DEVICE, 2, true, &step_out);
+
+    std::vector<float> host(out.get_num_elements());
+    g_sycl_queue.memcpy(host.data(),
+        out.m_p_data.get(), host.size()*sizeof(float)).wait();
+    for (auto v : host)
+    {
+        EXPECT_FLOAT_EQ(v, 2.0f);
+    }
+
+    std::vector<float> hs(step_out.get_num_elements());
+    g_sycl_queue.memcpy(hs.data(),
+        step_out.m_p_data.get(), hs.size()*sizeof(float)).wait();
+    for (auto s : hs)
+    {
+        EXPECT_FLOAT_EQ(s, 0.0f);
+    }
+}
+
+/**
+ * @test LINSPACE.view_constructor_broadcast
+ * @brief Verify linspace when start and stop are constructed as alias/views
+ * that require broadcasting. Ensures:
+ *  - correct broadcasting of view-constructed start/stop to S_shape,
+ *  - correct output values for each broadcasted pair,
+ *  - step_out has one step per broadcasted element (shape == S_shape).
+ */
+TEST(LINSPACE, view_constructor_broadcast)
+{
+    Tensor<float> owner_start({2,2}, MemoryLocation::DEVICE);
+    owner_start = std::vector<float>{0.0f, 999.0f, 10.0f, 999.0f};
+
+    Tensor<float> start
+        (owner_start, std::vector<uint64_t>{0,0}, std::vector<uint64_t>{2,1});
+
+    Tensor<float> owner_stop({1,4}, MemoryLocation::DEVICE);
+    owner_stop = std::vector<float>{3.0f, 4.0f, 5.0f, 999.0f};
+
+    Tensor<float> stop
+        (owner_stop, std::vector<uint64_t>{0,0}, std::vector<uint64_t>{1,3});
+
+    const uint64_t num = 3;
+    Tensor<float> step_out;
+    Tensor<float> out = math::linspace
+        (start, stop, num, MemoryLocation::DEVICE, 2, true, &step_out);
+
+    const uint64_t B0 = 2, B1 = 3, N = 3;
+    ASSERT_EQ(out.get_num_elements(), B0 * B1 * N);
+    ASSERT_EQ(step_out.get_num_elements(), B0 * B1);
+
+    std::vector<float> host(out.get_num_elements());
+    g_sycl_queue.memcpy
+        (host.data(), out.m_p_data.get(), host.size() * sizeof(float)).wait();
+
+    std::vector<float> host_steps(step_out.get_num_elements());
+    g_sycl_queue.memcpy(host_steps.data(), step_out.m_p_data.get(),
+        host_steps.size() * sizeof(float)).wait();
+
+    const std::array<float,2> start_vals = {0.0f, 10.0f};
+    const std::array<float,3> stop_vals  = {3.0f, 4.0f, 5.0f};
+
+    std::vector<float> expected;
+    expected.reserve(B0 * B1 * N);
+    for (uint64_t i = 0; i < B0; ++i)
+    {
+        for (uint64_t j = 0; j < B1; ++j)
+        {
+            float a = start_vals[i];
+            float b = stop_vals[j];
+            float step = (b - a) / static_cast<float>(num - 1);
+            for (uint64_t p = 0; p < N; ++p) {
+                expected.push_back(a + step * static_cast<float>(p));
+            }
+        }
+    }
+
+    ASSERT_EQ(host.size(), expected.size());
+    for (size_t k = 0; k < host.size(); ++k)
+    {
+        EXPECT_FLOAT_EQ(host[k], expected[k]);
+    }
+
+    std::vector<float> expected_steps;
+    expected_steps.reserve(B0 * B1);
+    for (uint64_t i = 0; i < start_vals.size(); ++i)
+    {
+        for (uint64_t j = 0; j < stop_vals.size(); ++j)
+        {
+            expected_steps.push_back
+                ((stop_vals[j] - start_vals[i]) / static_cast<float>(num - 1));
+        }
+    }
+
+    ASSERT_EQ(host_steps.size(), expected_steps.size());
+    for (size_t k = 0; k < host_steps.size(); ++k)
+    {
+        EXPECT_FLOAT_EQ(host_steps[k], expected_steps[k]);
+    }
+}
+
+/**
+ * @test LINSPACE.alias_view_stride_every_other
+ * @brief Linspace where `start` is an alias view that picks every-other
+ * element (non-unit stride). Ensures correct reading of alias view values,
+ * correct broadcasting with `stop`, correct output ordering and that step_out
+ * contains the per-entry steps.
+ */
+TEST(LINSPACE, alias_view_stride_every_other)
+{
+    Tensor<float> owner({6}, MemoryLocation::DEVICE);
+    owner = std::vector<float>{0.f,1.f,2.f,3.f,4.f,5.f};
+
+    Tensor<float> start_alias(owner,
+        std::vector<uint64_t>{0},
+        std::vector<uint64_t>{3},
+        std::vector<uint64_t>{2});
+
+    Tensor<float> stop({3}, MemoryLocation::DEVICE);
+    stop = std::vector<float>{10.0f, 20.0f, 30.0f};
+
+    const uint64_t num = 2;
+    Tensor<float> step_out;
+    Tensor<float> out = math::linspace
+        (start_alias, stop, num, MemoryLocation::DEVICE, 0, true, &step_out);
+
+    ASSERT_EQ(out.get_num_elements(), num * 3u);
+    ASSERT_EQ(step_out.get_num_elements(), 3u);
+
+    std::vector<float> host(out.get_num_elements());
+    g_sycl_queue.memcpy
+        (host.data(), out.m_p_data.get(), host.size() * sizeof(float)).wait();
+
+    std::vector<float> host_steps(3);
+    g_sycl_queue.memcpy(host_steps.data(),
+        step_out.m_p_data.get(), sizeof(float) * host_steps.size()).wait();
+
+    std::vector<float> expected = {0.0f, 2.0f, 4.0f, 10.0f, 20.0f, 30.0f};
+    for (size_t k = 0; k < host.size(); ++k)
+    {
+        EXPECT_FLOAT_EQ(host[k], expected[k]);
+    }
+
+    std::vector<float> expected_steps = {10.0f, 18.0f, 26.0f};
+    for (size_t k = 0; k < host_steps.size(); ++k)
+    {
+        EXPECT_FLOAT_EQ(host_steps[k], expected_steps[k]);
+    }
+}
+
 } // namespace Test

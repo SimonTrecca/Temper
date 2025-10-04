@@ -93,7 +93,7 @@ extern template Tensor<float> reshape<float>
  * @throws std::bad_alloc If required device memory cannot be allocated.
  */
 template <typename float_t>
-Tensor<float_t> sort(const Tensor<float_t> & tensor, int64_t axis);
+Tensor<float_t> sort(const Tensor<float_t> & tensor, int64_t axis = -1);
 /// Explicit instantiation of sort for float
 extern template Tensor<float> sort<float>
     (const Tensor<float>&, int64_t);
@@ -115,7 +115,7 @@ extern template Tensor<float> sort<float>
  * in the inputs or the results.
  */
 template <typename float_t>
-Tensor<float_t> sum(const Tensor<float_t> & tensor, int64_t axis);
+Tensor<float_t> sum(const Tensor<float_t> & tensor, int64_t axis = -1);
 /// Explicit instantiation of sum for float
 extern template Tensor<float> sum<float>
     (const Tensor<float>&, int64_t);
@@ -137,7 +137,7 @@ extern template Tensor<float> sum<float>
  * in the inputs or the results.
  */
 template <typename float_t>
-Tensor<float_t> cumsum(const Tensor<float_t> & tensor, int64_t axis);
+Tensor<float_t> cumsum(const Tensor<float_t> & tensor, int64_t axis = -1);
 /// Explicit instantiation of cumsum for float
 extern template Tensor<float> cumsum<float>
     (const Tensor<float>&, int64_t);
@@ -248,8 +248,43 @@ std::vector<uint64_t> argmax(const Tensor<float_t> & tensor, int64_t axis);
 extern template std::vector<uint64_t> argmax<float>
     (const Tensor<float>&, int64_t);
 
+/**
+ * @brief Elementwise linear interpolation between two tensors.
+ *
+ * Produces `num` samples interpolated between corresponding elements of
+ * `start` and `stop` after broadcasting. The output shape equals the
+ * broadcasted shape with an extra axis of length `num` inserted at
+ * `axis`. If both inputs are scalar a 1-D tensor of length `num` is
+ * returned. Optionally the per-S step values are returned via `step_out`.
+ *
+ * @param start Left endpoint tensor (broadcastable with `stop`).
+ * @param stop Right endpoint tensor (broadcastable with `start`).
+ * @param num Number of samples along the new axis (>= 0).
+ * @param res_loc Memory location for result and step tensors.
+ * @param axis Position to insert the samples axis in the output.
+ * @param endpoint If true include `stop` as the last sample; otherwise
+ *        use a half-open interval that excludes `stop`.
+ * @param step_out If non-null, moved a tensor of per-S step values into
+ *        `*step_out` on return.
+ * @return Tensor<float_t> Interpolated tensor (broadcasted shape with
+ *         inserted axis).
+ * @throws std::invalid_argument For empty inputs or out-of-range axis.
+ * @throws std::bad_alloc On device allocation failure.
+ * @throws std::runtime_error If numeric errors (NaN/Inf/overflow) occur.
+ */
+template<typename float_t>
+Tensor<float_t> linspace(const Tensor<float_t>& start,
+                        const Tensor<float_t>& stop,
+                        uint64_t num,
+                        MemoryLocation res_loc = MemoryLocation::DEVICE,
+                        uint64_t axis = 0,
+                        bool endpoint = true,
+                        Tensor<float_t>* step_out = nullptr);
+/// Explicit instantiation of linspace for float
+extern template Tensor<float> linspace<float>(const Tensor<float>&,
+const Tensor<float>&, uint64_t, MemoryLocation, uint64_t, bool, Tensor<float>*);
+
 /* todo
-    linspace
     arange
     zeros
     integral

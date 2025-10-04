@@ -790,7 +790,7 @@ std::vector<uint64_t> argmax(const Tensor<float_t> & tensor, int64_t axis)
 
     std::vector<uint64_t> host_out(static_cast<size_t>(total_output_elems));
     g_sycl_queue.memcpy(host_out.data(), p_out_dev,
-                        sizeof(uint64_t) * static_cast<size_t>(total_output_elems)).wait();
+        sizeof(uint64_t) * static_cast<size_t>(total_output_elems)).wait();
 
     sycl::free(p_out_dev, g_sycl_queue);
 
@@ -798,5 +798,287 @@ std::vector<uint64_t> argmax(const Tensor<float_t> & tensor, int64_t axis)
 }
 template std::vector<uint64_t> argmax<float>
     (const Tensor<float>&, int64_t);
+
+template<typename float_t>
+Tensor<float_t> linspace(const Tensor<float_t>& start,
+                        const Tensor<float_t>& stop,
+                        uint64_t num,
+                        MemoryLocation res_loc,
+                        uint64_t axis,
+                        bool endpoint,
+                        Tensor<float_t>* step_out)
+{
+    const std::vector<uint64_t> & start_shape = start.get_dimensions();
+    const std::vector<uint64_t> & stop_shape = stop.get_dimensions();
+
+    if (start_shape.empty())
+    {
+        throw std::invalid_argument(R"(linspace:
+            start tensor has no elements.)");
+    }
+
+    if (stop_shape.empty())
+    {
+        throw std::invalid_argument(R"(linspace:
+            stop tensor has no elements.)");
+    }
+
+    if (num == 0)
+    {
+        Tensor<float_t> result({1}, res_loc);
+        Tensor<float_t> step_tensor({1}, res_loc);
+        if (step_out != nullptr)
+        {
+            *step_out = std::move(step_tensor);
+        }
+        return result;
+    }
+
+    temper::utils::TensorDesc a_desc, b_desc;
+    a_desc.shape = start_shape;
+    b_desc.shape = stop_shape;
+    a_desc.strides = start.get_strides();
+    b_desc.strides = stop.get_strides();
+
+    const uint64_t a_rank = start.get_rank();
+    const uint64_t b_rank = stop.get_rank();
+    uint64_t full_rank = std::max(a_rank, b_rank);
+
+    a_desc = temper::utils::align_tensor(a_desc, full_rank);
+    b_desc = temper::utils::align_tensor(b_desc, full_rank);
+
+    temper::utils::BroadcastResult b_res =
+        temper::utils::compute_broadcast(a_desc, b_desc);
+
+    const std::vector<uint64_t> res_shape = b_res.out.shape;
+    const std::vector<uint64_t> a_bcast_strides = b_res.a_strides;
+    const std::vector<uint64_t> b_bcast_strides = b_res.b_strides;
+    const uint64_t res_rank = static_cast<uint64_t>(res_shape.size());
+
+    const bool start_is_shape1 =
+        (start_shape.size() == 1 && start_shape[0] == 1);
+    const bool stop_is_shape1  =
+        (stop_shape.size() == 1 && stop_shape[0] == 1);
+    const bool both_scalars = (start_is_shape1 && stop_is_shape1);
+
+    uint64_t out_rank;
+    std::vector<uint64_t> out_shape;
+    if (both_scalars)
+    {
+        out_rank = 1;
+        out_shape = { num };
+        if (axis >= out_rank)
+        {
+            throw std::invalid_argument(R"(linspace: axis out of range)");
+        }
+    }
+    else
+    {
+        out_rank = res_rank + 1;
+        if (axis >= out_rank)
+        {
+            throw std::invalid_argument(R"(linspace: axis out of range)");
+        }
+        out_shape.reserve(out_rank);
+        for (uint64_t d = 0; d < axis; ++d)
+        {
+            out_shape.push_back(res_shape[d]);
+        }
+        out_shape.push_back(num);
+        for (uint64_t d = axis; d < res_rank; ++d)
+        {
+            out_shape.push_back(res_shape[d]);
+        }
+    }
+
+    Tensor<float_t> result(out_shape, res_loc);
+
+    std::vector<uint64_t> step_shape = res_shape;
+    Tensor<float_t> step_tensor(step_shape, res_loc);
+
+    std::vector<uint64_t> out_divs = temper::utils::compute_divisors(out_shape);
+    std::vector<uint64_t> res_divs = temper::utils::compute_divisors(res_shape);
+
+    uint64_t* p_out_divs = static_cast<uint64_t*>(
+        sycl::malloc_device(sizeof(uint64_t) * out_rank, g_sycl_queue));
+
+    uint64_t* p_a_bcast_strides_expanded = static_cast<uint64_t*>(
+        sycl::malloc_device(sizeof(uint64_t) * out_rank, g_sycl_queue));
+    uint64_t* p_b_bcast_strides_expanded = static_cast<uint64_t*>(
+        sycl::malloc_device(sizeof(uint64_t) * out_rank, g_sycl_queue));
+    uint64_t* p_res_strides_expanded = static_cast<uint64_t*>(
+        sycl::malloc_device(sizeof(uint64_t) * out_rank, g_sycl_queue));
+
+    int32_t* p_error_flag = static_cast<int32_t*>(
+        sycl::malloc_shared(sizeof(int32_t), g_sycl_queue));
+
+    bool alloc_ok = (p_out_divs &&
+                     p_a_bcast_strides_expanded && p_b_bcast_strides_expanded &&
+                     p_res_strides_expanded && p_error_flag);
+
+
+    if (!alloc_ok)
+    {
+        sycl::free(p_out_divs, g_sycl_queue);
+        sycl::free(p_a_bcast_strides_expanded, g_sycl_queue);
+        sycl::free(p_b_bcast_strides_expanded, g_sycl_queue);
+        sycl::free(p_res_strides_expanded, g_sycl_queue);
+        sycl::free(p_error_flag, g_sycl_queue);
+        throw std::bad_alloc();
+    }
+
+    g_sycl_queue.memcpy(p_out_divs,
+        out_divs.data(), sizeof(uint64_t) * out_rank).wait();
+
+    std::vector<uint64_t> a_bcast_strides_expanded(out_rank, 0);
+    std::vector<uint64_t> b_bcast_strides_expanded(out_rank, 0);
+    std::vector<uint64_t> res_strides_expanded(out_rank, 0);
+
+    for (uint64_t d = 0; d < axis; ++d)
+    {
+        if (d < res_rank)
+        {
+            a_bcast_strides_expanded[d] = a_bcast_strides[d];
+            b_bcast_strides_expanded[d] = b_bcast_strides[d];
+        }
+    }
+    a_bcast_strides_expanded[axis] = 0;
+    b_bcast_strides_expanded[axis] = 0;
+    for (uint64_t d = axis; d < res_rank; ++d)
+    {
+        a_bcast_strides_expanded[d + 1] = a_bcast_strides[d];
+        b_bcast_strides_expanded[d + 1] = b_bcast_strides[d];
+    }
+
+    for (uint64_t d = 0; d < axis; ++d)
+    {
+        if (d < res_rank)
+        {
+            res_strides_expanded[d] = res_divs[d];
+        }
+    }
+    res_strides_expanded[axis] = 0;
+    for (uint64_t d = axis; d < res_rank; ++d)
+    {
+        res_strides_expanded[d + 1] = res_divs[d];
+    }
+
+    g_sycl_queue.memcpy(p_a_bcast_strides_expanded,
+        a_bcast_strides_expanded.data(), sizeof(uint64_t) * out_rank).wait();
+    g_sycl_queue.memcpy(p_b_bcast_strides_expanded,
+        b_bcast_strides_expanded.data(), sizeof(uint64_t) * out_rank).wait();
+    g_sycl_queue.memcpy(p_res_strides_expanded,
+        res_strides_expanded.data(), sizeof(uint64_t) * out_rank).wait();
+
+    *p_error_flag = 0;
+
+    const float_t* p_a_data = start.get_data();
+    const float_t* p_b_data = stop.get_data();
+    float_t* p_out = result.get_data();
+    float_t* p_step_out = step_tensor.get_data();
+
+    const uint64_t total_output_elems = result.get_num_elements();
+
+    g_sycl_queue.submit([&](sycl::handler& cgh) {
+        cgh.parallel_for(sycl::range<1>(static_cast<size_t>(total_output_elems)),
+            [=](sycl::id<1> id)
+        {
+            const uint64_t flat = static_cast<uint64_t>(id[0]);
+
+            uint64_t pos_axis = 0;
+            pos_axis = (flat / p_out_divs[axis]) % static_cast<uint64_t>(num);
+
+            const uint64_t a_idx = temper::sycl_utils::idx_of(flat,
+                p_out_divs,
+                p_a_bcast_strides_expanded,
+                static_cast<uint64_t>(out_rank));
+            const uint64_t b_idx = temper::sycl_utils::idx_of(flat,
+                p_out_divs,
+                p_b_bcast_strides_expanded,
+                static_cast<uint64_t>(out_rank));
+            const uint64_t res_flat = temper::sycl_utils::idx_of(flat,
+                p_out_divs,
+                p_res_strides_expanded,
+                static_cast<uint64_t>(out_rank));
+
+            float_t a_val = p_a_data[a_idx];
+            float_t b_val = p_b_data[b_idx];
+            temper::sycl_utils::device_check_nan_and_set<float_t>
+                (a_val, p_error_flag);
+            temper::sycl_utils::device_check_nan_and_set<float_t>
+                (b_val, p_error_flag);
+
+            float_t step;
+            if (num == 1)
+            {
+                step = float_t{0};
+            }
+            else
+            {
+                if (endpoint)
+                {
+                    step = (b_val - a_val) / static_cast<float_t>(num - 1);
+                }
+                else
+                {
+                    step = (b_val - a_val) / static_cast<float_t>(num);
+                }
+            }
+            temper::sycl_utils::device_check_finite_and_set<float_t>
+                (step, p_error_flag);
+
+            if (pos_axis == 0)
+            {
+                p_step_out[res_flat] = step;
+            }
+
+            float_t val;
+            if (num == 1)
+            {
+                val = a_val;
+            }
+            else
+            {
+                val = a_val + step * static_cast<float_t>(pos_axis);
+            }
+            temper::sycl_utils::device_check_finite_and_set<float_t>
+                (val, p_error_flag);
+            p_out[flat] = val;
+        });
+    }).wait();
+
+
+    int32_t err = *p_error_flag;
+
+    sycl::free(p_out_divs, g_sycl_queue);
+    sycl::free(p_a_bcast_strides_expanded, g_sycl_queue);
+    sycl::free(p_b_bcast_strides_expanded, g_sycl_queue);
+    sycl::free(p_res_strides_expanded, g_sycl_queue);
+    sycl::free(p_error_flag, g_sycl_queue);
+
+    if (err != 0)
+    {
+        if (err == 1)
+        {
+            throw std::runtime_error(R"(linspace:
+                NaN detected in inputs or computed values.)");
+        }
+        if (err == 2)
+        {
+            throw std::runtime_error(R"(linspace:
+                non-finite result (overflow or Inf) produced.)");
+        }
+        throw std::runtime_error(R"(linspace: numeric error during linspace generation.)");
+    }
+
+    if (step_out != nullptr)
+    {
+        *step_out = std::move(step_tensor);
+    }
+
+    return result;
+}
+template Tensor<float> linspace<float>(const Tensor<float>&,
+const Tensor<float>&, uint64_t, MemoryLocation, uint64_t, bool, Tensor<float>*);
 
 } // namespace temper::math
