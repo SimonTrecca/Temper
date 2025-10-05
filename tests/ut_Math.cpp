@@ -2329,4 +2329,130 @@ TEST(LINSPACE, alias_view_stride_every_other)
     }
 }
 
+/**
+ * @test ARANGE.basic_positive_step
+ * @brief arange with positive step generates the correct sequence.
+ * Example: start=0, stop=5, step=1 -> [0,1,2,3,4]
+ */
+TEST(ARANGE, basic_positive_step)
+{
+    Tensor<float> out = math::arange(0.0f, 5.0f, 1.0f, MemoryLocation::DEVICE);
+    ASSERT_EQ(out.get_num_elements(), 5u);
+
+    std::vector<float> host(5);
+    g_sycl_queue.memcpy(host.data(), out.get_data(), 5 * sizeof(float)).wait();
+
+    std::vector<float> expected = {0,1,2,3,4};
+    for (size_t i = 0; i < host.size(); ++i) {
+        EXPECT_FLOAT_EQ(host[i], expected[i]);
+    }
+}
+
+/**
+ * @test ARANGE.basic_negative_step
+ * @brief arange with negative step generates the correct decreasing sequence.
+ * Example: start=5, stop=0, step=-1 -> [5,4,3,2,1]
+ */
+TEST(ARANGE, basic_negative_step)
+{
+    Tensor<float> out = math::arange(5.0f, 0.0f, -1.0f, MemoryLocation::DEVICE);
+    ASSERT_EQ(out.get_num_elements(), 5u);
+
+    std::vector<float> host(5);
+    g_sycl_queue.memcpy(host.data(), out.get_data(), 5 * sizeof(float)).wait();
+
+    std::vector<float> expected = {5,4,3,2,1};
+    for (size_t i = 0; i < host.size(); ++i) {
+        EXPECT_FLOAT_EQ(host[i], expected[i]);
+    }
+}
+
+/**
+ * @test ARANGE.zero_step_throws
+ * @brief arange must throw when step is zero.
+ */
+TEST(ARANGE, zero_step_throws)
+{
+    EXPECT_THROW(
+        {
+            auto out = math::arange(0.0f, 5.0f, 0.0f, MemoryLocation::DEVICE);
+        },
+        std::invalid_argument
+    );
+}
+
+/**
+ * @test ARANGE.non_finite_inputs_throw
+ * @brief arange must throw if start, stop or step is NaN or Inf.
+ */
+TEST(ARANGE, non_finite_inputs_throw)
+{
+    EXPECT_THROW(math::arange
+        (std::numeric_limits<float>::quiet_NaN(), 1.0f, 1.0f,
+            MemoryLocation::DEVICE), std::runtime_error);
+    EXPECT_THROW(math::arange
+        (0.0f, std::numeric_limits<float>::infinity(), 1.0f,
+            MemoryLocation::DEVICE), std::runtime_error);
+    EXPECT_THROW(math::arange
+        (0.0f, 1.0f, std::numeric_limits<float>::quiet_NaN(),
+            MemoryLocation::DEVICE), std::runtime_error);
+}
+
+/**
+ * @test ARANGE_stop_only
+ * @brief arange(stop) variant generates 0..stop-1 sequence.
+ * Example: stop=4 -> [0,1,2,3]
+ */
+TEST(ARANGE, stop_only)
+{
+    Tensor<float> out = math::arange(4.0f, MemoryLocation::DEVICE);
+    ASSERT_EQ(out.get_num_elements(), 4u);
+
+    std::vector<float> host(4);
+    g_sycl_queue.memcpy(host.data(), out.get_data(), 4 * sizeof(float)).wait();
+
+    std::vector<float> expected = {0,1,2,3};
+    for (size_t i = 0; i < host.size(); ++i) {
+        EXPECT_FLOAT_EQ(host[i], expected[i]);
+    }
+}
+
+/**
+ * @test ARANGE_empty_result
+ * @brief arange returns empty tensor with a single element set to 0
+ * when range cannot produce elements.
+ * Example: start=0, stop=0 or start=5, stop=0 with positive step.
+ */
+TEST(ARANGE, empty_result)
+{
+    Tensor<float> out1 = math::arange(0.0f, 0.0f, 1.0f, MemoryLocation::DEVICE);
+    ASSERT_EQ(out1.get_num_elements(), 1u);
+    ASSERT_EQ(out1[0], 0.0f);
+
+    Tensor<float> out2 = math::arange(5.0f, 0.0f, 1.0f, MemoryLocation::DEVICE);
+    ASSERT_EQ(out2.get_num_elements(), 1u);
+    ASSERT_EQ(out2[0], 0.0f);
+
+}
+
+/**
+ * @test ARANGE_floating_point_step
+ * @brief arange with non-integer step produces correct values.
+ * Example: start=0, stop=1, step=0.2 -> [0.0,0.2,0.4,0.6,0.8]
+ */
+TEST(ARANGE, floating_point_step)
+{
+    Tensor<float> out = math::arange(0.0f, 1.0f, 0.2f, MemoryLocation::DEVICE);
+    ASSERT_EQ(out.get_num_elements(), 5u);
+
+    std::vector<float> host(5);
+    g_sycl_queue.memcpy(host.data(), out.get_data(), 5 * sizeof(float)).wait();
+
+    std::vector<float> expected = {0.0f, 0.2f, 0.4f, 0.6f, 0.8f};
+    for (size_t i = 0; i < host.size(); ++i) {
+        EXPECT_FLOAT_EQ(host[i], expected[i]);
+    }
+}
+
+
 } // namespace Test

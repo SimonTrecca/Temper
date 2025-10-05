@@ -1068,7 +1068,8 @@ Tensor<float_t> linspace(const Tensor<float_t>& start,
             throw std::runtime_error(R"(linspace:
                 non-finite result (overflow or Inf) produced.)");
         }
-        throw std::runtime_error(R"(linspace: numeric error during linspace generation.)");
+        throw std::runtime_error(R"(linspace:
+            numeric error during linspace generation.)");
     }
 
     if (step_out != nullptr)
@@ -1080,5 +1081,111 @@ Tensor<float_t> linspace(const Tensor<float_t>& start,
 }
 template Tensor<float> linspace<float>(const Tensor<float>&,
 const Tensor<float>&, uint64_t, MemoryLocation, uint64_t, bool, Tensor<float>*);
+
+template<typename float_t>
+Tensor<float_t> arange(float_t start,
+                       float_t stop,
+                       float_t step,
+                       MemoryLocation res_loc)
+{
+    if (step == static_cast<float_t>(0))
+    {
+        throw std::invalid_argument(R"(arange: step must be non-zero.)");
+    }
+
+    if (!std::isfinite(static_cast<double>(start)) ||
+        !std::isfinite(static_cast<double>(stop))  ||
+        !std::isfinite(static_cast<double>(step)))
+    {
+        throw std::runtime_error(R"(arange:
+            non-finite start/stop/step provided.)");
+    }
+
+    double raw   = static_cast<double>(stop) - static_cast<double>(start);
+    double ratio = raw / static_cast<double>(step);
+
+    uint64_t num = 0;
+    if (step > static_cast<float_t>(0))
+    {
+        if (ratio > 0.0)
+        {
+            num = static_cast<uint64_t>(std::ceil(ratio));
+        }
+    }
+    else
+    {
+        if (ratio > 0.0)
+        {
+            num = static_cast<uint64_t>(std::ceil(ratio));
+        }
+    }
+
+    if (num == 0)
+    {
+        Tensor<float_t> result({1}, res_loc);
+        return result;
+    }
+
+    std::vector<uint64_t> out_shape = { num };
+    Tensor<float_t> result(out_shape, res_loc);
+
+    int32_t* p_error_flag = static_cast<int32_t*>(
+        sycl::malloc_shared(sizeof(int32_t), g_sycl_queue));
+    if (!p_error_flag)
+    {
+        throw std::bad_alloc();
+    }
+    *p_error_flag = 0;
+
+    float_t* p_out = result.get_data();
+    const uint64_t total_output_elems = result.get_num_elements();
+
+    g_sycl_queue.submit([&](sycl::handler& cgh) {
+        cgh.parallel_for(sycl::range<1>(static_cast<size_t>(total_output_elems)),
+            [=](sycl::id<1> id)
+        {
+            const uint64_t idx = static_cast<uint64_t>(id[0]);
+            float_t val = static_cast<float_t>
+                (start + static_cast<double>(idx) * static_cast<double>(step));
+
+            temper::sycl_utils::device_check_nan_and_set<float_t>
+                (val, p_error_flag);
+            temper::sycl_utils::device_check_finite_and_set<float_t>
+                (val, p_error_flag);
+
+            p_out[idx] = val;
+        });
+    }).wait();
+
+    int32_t err = *p_error_flag;
+    sycl::free(p_error_flag, g_sycl_queue);
+
+    if (err != 0)
+    {
+        if (err == 1)
+        {
+            throw std::runtime_error(R"(arange:
+                NaN detected in computed values.)");
+        }
+        if (err == 2)
+        {
+            throw std::runtime_error(R"(arange:
+                non-finite result (overflow or Inf) produced.)");
+        }
+        throw std::runtime_error(R"(arange:
+            numeric error during generation.)");
+    }
+
+    return result;
+}
+template Tensor<float> arange<float>(float, float, float, MemoryLocation);
+
+template<typename float_t>
+Tensor<float_t> arange(float_t stop, MemoryLocation res_loc)
+{
+    return arange<float_t>
+        (static_cast<float_t>(0), stop, static_cast<float_t>(1), res_loc);
+}
+template Tensor<float> arange<float>(float, MemoryLocation);
 
 } // namespace temper::math

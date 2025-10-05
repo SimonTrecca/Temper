@@ -284,6 +284,54 @@ Tensor<float_t> linspace(const Tensor<float_t>& start,
 extern template Tensor<float> linspace<float>(const Tensor<float>&,
 const Tensor<float>&, uint64_t, MemoryLocation, uint64_t, bool, Tensor<float>*);
 
+/**
+ * @brief Generate a 1-D tensor with values in the half-open interval
+ * [start, stop) using a fixed step.
+ *
+ * Produces a sequence of values starting at @p start, incremented by @p step,
+ * stopping before reaching @p stop. The output length is computed as:
+ *   `ceil((stop - start)/step)` for non-zero step. Supports positive
+ * or negative step values.
+ *
+ * @param start First value of the sequence.
+ * @param stop Upper bound of the sequence (exclusive).
+ * @param step Increment between consecutive elements (non-zero).
+ * @param res_loc Memory location for the resulting tensor.
+ * @return Tensor<float_t> 1-D tensor containing the generated sequence.
+ *
+ * @throws std::invalid_argument If @p step is zero.
+ * @throws std::runtime_error If any input is NaN/Inf or if a numeric error
+ * (NaN/Inf/overflow) occurs during generation.
+ * @throws std::bad_alloc If device memory allocation fails.
+ */
+template<typename float_t>
+Tensor<float_t> arange(float_t start,
+                       float_t stop,
+                       float_t step,
+                       MemoryLocation res_loc);
+/// Explicit instantiation of linspace for float
+extern template Tensor<float> arange<float>(float, float, float, MemoryLocation);
+
+/**
+ * @brief Generate a 1-D tensor with values from 0 up to stop-1.
+ *
+ * Equivalent to `arange(0, stop, 1)`. Produces a 1-D tensor with integer-like
+ * increments cast to @p float_t type.
+ *
+ * @param stop Upper bound of the sequence (exclusive).
+ * @param res_loc Memory location for the resulting tensor.
+ * @return Tensor<float_t> 1-D tensor containing the generated sequence
+ * from 0 to stop-1.
+ *
+ * @throws std::runtime_error If @p stop is NaN/Inf.
+ * @throws std::bad_alloc If device memory allocation fails.
+ */
+template<typename float_t>
+Tensor<float_t> arange(float_t stop,
+    MemoryLocation res_loc = MemoryLocation::DEVICE);
+/// Explicit instantiation of linspace(stop) for float
+extern template Tensor<float> arange<float>(float, MemoryLocation);
+
 /* todo
     arange
     zeros
