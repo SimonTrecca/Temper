@@ -6052,5 +6052,4 @@ TEST(TENSOR, at_view_out_of_range)
     EXPECT_THROW(v.at(100), std::out_of_range);
 }
 
-
 } // namespace Test

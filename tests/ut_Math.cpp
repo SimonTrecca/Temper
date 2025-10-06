@@ -2330,6 +2330,39 @@ TEST(LINSPACE, alias_view_stride_every_other)
 }
 
 /**
+ * @test LINSPACE.scalar_overload_endpoint_true_with_step_out
+ * @brief Scalar overload taking float start/stop with endpoint=true and step_out.
+ * Should produce the evenly spaced sequence and the correct step value.
+ */
+TEST(LINSPACE, scalar_overload_endpoint_true_with_step_out)
+{
+    float start = 2.0f;
+    float stop  = 6.0f;
+
+    const uint64_t num = 5;
+    Tensor<float> step_out;
+    Tensor<float> out = math::linspace
+        (start, stop, num, MemoryLocation::DEVICE, 0, true, &step_out);
+
+    ASSERT_EQ(out.get_num_elements(), num);
+
+    std::vector<float> host(num);
+    g_sycl_queue.memcpy(host.data(),
+        out.m_p_data.get(), sizeof(float) * num).wait();
+
+    for (uint64_t i = 0; i < num; ++i)
+    {
+        EXPECT_FLOAT_EQ(host[i], start + static_cast<float>(i));
+    }
+
+    ASSERT_EQ(step_out.get_num_elements(), 1u);
+    std::vector<float> host_step(1);
+    g_sycl_queue.memcpy(host_step.data(),
+        step_out.m_p_data.get(), sizeof(float)).wait();
+    EXPECT_FLOAT_EQ(host_step[0], (stop - start) / static_cast<float>(num - 1));
+}
+
+/**
  * @test ARANGE.basic_positive_step
  * @brief arange with positive step generates the correct sequence.
  * Example: start=0, stop=5, step=1 -> [0,1,2,3,4]
@@ -2452,6 +2485,387 @@ TEST(ARANGE, floating_point_step)
     for (size_t i = 0; i < host.size(); ++i) {
         EXPECT_FLOAT_EQ(host[i], expected[i]);
     }
+}
+
+/**
+ * @test ZEROS.device
+ * @brief zeros<float> returns a device tensor that is zero-initialized.
+ */
+TEST(ZEROS, device)
+{
+    std::vector<uint64_t> shape = {2, 3};
+    Tensor<float> z = math::zeros<float>(shape, MemoryLocation::DEVICE);
+
+    ASSERT_NE(z.m_p_data.get(), nullptr);
+
+    uint64_t total = z.get_num_elements();
+
+    std::vector<float> host(total, -1.0f);
+    g_sycl_queue.memcpy(host.data(),
+        z.m_p_data.get(), total * sizeof(float)).wait();
+
+    for (uint64_t i = 0; i < total; ++i)
+    {
+        EXPECT_FLOAT_EQ(host[i], 0.0f);
+    }
+}
+
+/**
+ * @test ZEROS.host
+ * @brief zeros<float> returns a host tensor that is zero-initialized.
+ */
+TEST(ZEROS, host)
+{
+    std::vector<uint64_t> shape = {5};
+    Tensor<float> z = math::zeros<float>(shape, MemoryLocation::HOST);
+
+    ASSERT_NE(z.m_p_data.get(), nullptr);
+
+    uint64_t total = z.get_num_elements();
+
+    std::vector<float> host(total, -1.0f);
+    g_sycl_queue.memcpy(host.data(),
+        z.m_p_data.get(), total * sizeof(float)).wait();
+
+    for (uint64_t i = 0; i < total; ++i)
+    {
+        EXPECT_FLOAT_EQ(host[i], 0.0f);
+    }
+}
+
+/**
+ * @test INTEGRAL.polynomial_exact
+ * @brief Integrate f(x) = x^2 on [0,1]. Exact result = 1/3.
+ */
+TEST(INTEGRAL, polynomial_exact)
+{
+    auto f = std::function<float(float)>([](float x) -> float { return x * x; });
+
+    float a = 0.0f;
+    float b = 1.0f;
+    uint64_t n_bins = 4;
+
+    float result = math::integral<float>(f, a, b, n_bins);
+
+    const float expected = 1.0f / 3.0f;
+    EXPECT_NEAR(result, expected, 1e-6f);
+}
+
+/**
+ * @test INTEGRAL.convergence
+ * @brief Check that the error for integrating sin(x) on [0, pi] decreases
+ * overall as n_bins increases and final (finest) result
+ * meets a reasonable tolerance.
+ */
+TEST(INTEGRAL, convergence)
+{
+    auto f = std::function<float(float)>
+        ([](float x) -> float { return std::sin(x); });
+
+    const float pi = 3.14159265358979323846f;
+    const float a = 0.0f;
+    const float b = pi;
+    const float expected = 2.0f;
+
+    std::vector<uint64_t> n_bins_list =
+        {4u, 8u, 16u, 32u, 64u, 128u, 256u, 1024u, 4096u};
+
+    std::vector<float> errors;
+    errors.reserve(n_bins_list.size());
+
+    for (uint64_t n_bins : n_bins_list)
+    {
+        float result = math::integral<float>(f, a, b, n_bins);
+        float err = std::fabs(result - expected);
+        errors.push_back(err);
+    }
+
+    EXPECT_GT(errors.front(), errors.back());
+
+    const float finest_tolerance = 5e-6f;
+    EXPECT_LE(errors.back(), finest_tolerance);
+
+
+    const float reduction_factor = 10.0f;
+    EXPECT_GE(errors.front() / (errors.back() + 1e-30f), reduction_factor);
+}
+
+/**
+ * @test INTEGRAL.invalid_bins
+ * @brief integral should throw when n_bins < 1
+ */
+TEST(INTEGRAL, invalid_bins)
+{
+    auto f = std::function<float(float)>([](float) -> float { return 1.0f; });
+
+    EXPECT_THROW(math::integral<float>
+        (f, 0.0f, 1.0f, 0), std::invalid_argument);
+}
+
+/**
+ * @test INTEGRAL.reverse_interval
+ * @brief Integrating over [1,0] should produce the negative of
+ * integrating over [0,1].
+ */
+TEST(INTEGRAL, reverse_interval)
+{
+    auto f = std::function<float(float)>([](float x) -> float { return x * x; });
+
+    const float a = 1.0f;
+    const float b = 0.0f;
+    const uint64_t n_bins = 8;
+
+    const float result = math::integral<float>(f, a, b, n_bins);
+
+    const float expected = - (1.0f / 3.0f);
+    EXPECT_NEAR(result, expected, 1e-6f);
+}
+
+/**
+ * @test FACTORIAL.basic_values
+ * @brief factorial on a simple 1D tensor (0..5) returns expected values.
+ */
+TEST(FACTORIAL, basic_values)
+{
+    Tensor<float> t({6}, MemoryLocation::DEVICE);
+    t = std::vector<float>{0.0f, 1.0f, 2.0f, 3.0f, 4.0f, 5.0f};
+
+    Tensor<float> out = math::factorial(t);
+
+    const uint64_t N = out.get_num_elements();
+    ASSERT_EQ(N, 6u);
+
+    std::vector<float> host(N);
+    g_sycl_queue.memcpy(host.data(),
+        out.m_p_data.get(), sizeof(float) * N).wait();
+
+    const std::vector<float> expected = {1.0f, 1.0f, 2.0f, 6.0f, 24.0f, 120.0f};
+    for (uint64_t i = 0; i < N; ++i)
+    {
+        EXPECT_FLOAT_EQ(host[i], expected[i]);
+    }
+}
+
+/**
+ * @test FACTORIAL.alias_view_strided
+ * @brief factorial on a 1D alias view with non-unit stride uses view indexing.
+ */
+TEST(FACTORIAL, alias_view_strided)
+{
+    Tensor<float> owner({6}, MemoryLocation::DEVICE);
+    owner = std::vector<float>{1.0f, 3.0f, 2.0f, 6.0f, 4.0f, 5.0f};
+
+    std::vector<uint64_t> start = {1ull};
+    std::vector<uint64_t> dims  = {3ull};
+    std::vector<uint64_t> strides = {2ull};
+    Tensor<float> v(owner, start, dims, strides);
+
+    Tensor<float> out = math::factorial(v);
+
+    ASSERT_EQ(out.get_num_elements(), 3u);
+    std::vector<float> host(3);
+    g_sycl_queue.memcpy(host.data(),
+        out.m_p_data.get(), sizeof(float) * 3).wait();
+
+    EXPECT_FLOAT_EQ(host[0], 6.0f);
+    EXPECT_FLOAT_EQ(host[1], 720.0f);
+    EXPECT_FLOAT_EQ(host[2], 120.0f);
+
+    EXPECT_FLOAT_EQ(owner.at(1), 3.0f);
+    EXPECT_FLOAT_EQ(owner.at(3), 6.0f);
+    EXPECT_FLOAT_EQ(owner.at(5), 5.0f);
+}
+
+/**
+ * @test FACTORIAL.nan_throws
+ * @brief factorial should throw std::runtime_error if input contains NaN.
+ */
+TEST(FACTORIAL, nan_throws)
+{
+    Tensor<float> t({3}, MemoryLocation::DEVICE);
+    t = std::vector<float>{1.0f, std::numeric_limits<float>::quiet_NaN(), 2.0f};
+
+    EXPECT_THROW(math::factorial(t), std::runtime_error);
+}
+
+/**
+ * @test FACTORIAL.inf_throws
+ * @brief factorial should throw std::runtime_error if input contains +Inf/-Inf.
+ */
+TEST(FACTORIAL, inf_throws)
+{
+    Tensor<float> t({2}, MemoryLocation::DEVICE);
+    t = std::vector<float>{std::numeric_limits<float>::infinity(), 1.0f};
+
+    EXPECT_THROW(math::factorial(t), std::runtime_error);
+}
+
+/**
+ * @test FACTORIAL_negative_and_noninteger_throws
+ * @brief negative or non-integer inputs should throw std::invalid_argument.
+ */
+TEST(FACTORIAL, negative_and_noninteger_throws)
+{
+    Tensor<float> neg({1}, MemoryLocation::DEVICE);
+    neg = std::vector<float>{-1.0f};
+    EXPECT_THROW(math::factorial(neg), std::invalid_argument);
+
+    Tensor<float> nonint({2}, MemoryLocation::DEVICE);
+    nonint = std::vector<float>{2.5f, 3.14159f};
+    EXPECT_THROW(math::factorial(nonint), std::invalid_argument);
+}
+
+/**
+ * @test FACTORIAL_overflow_throws
+ * @brief factorial of sufficiently large n should overflow float
+ * and provoke runtime_error.
+ *
+ * 35! > float max (≈3.4e38), so 35 should produce non-finite and raise.
+ */
+TEST(FACTORIAL, overflow_throws)
+{
+    Tensor<float> t({1}, MemoryLocation::DEVICE);
+    t = std::vector<float>{35.0f};
+
+    EXPECT_THROW(math::factorial(t), std::runtime_error);
+}
+
+/**
+ * @test FACTORIAL_zero_and_one
+ * @brief factorial(0) == 1 and factorial(1) == 1.
+ */
+TEST(FACTORIAL, zero_and_one)
+{
+    Tensor<float> t({2}, MemoryLocation::DEVICE);
+    t = std::vector<float>{0.0f, 1.0f};
+
+    Tensor<float> out = math::factorial(t);
+
+    ASSERT_EQ(out.get_num_elements(), 2u);
+    std::vector<float> host(2);
+    g_sycl_queue.memcpy(host.data(),
+        out.m_p_data.get(), sizeof(float) * 2).wait();
+
+    EXPECT_FLOAT_EQ(host[0], 1.0f);
+    EXPECT_FLOAT_EQ(host[1], 1.0f);
+}
+
+/**
+ * @test LOG.basic_values
+ * @brief log on simple positive values returns expected natural logs.
+ */
+TEST(LOG, basic_values)
+{
+    Tensor<float> t({4}, MemoryLocation::DEVICE);
+    t = std::vector<float>{1.0f, static_cast<float>(M_E), 10.0f, 0.5f};
+
+    Tensor<float> out = math::log(t);
+
+    const uint64_t N = out.get_num_elements();
+    ASSERT_EQ(N, 4u);
+
+    std::vector<float> host(N);
+    g_sycl_queue.memcpy(host.data(),
+        out.m_p_data.get(), sizeof(float) * N).wait();
+
+    EXPECT_FLOAT_EQ(host[0], std::log(1.0f));
+    EXPECT_FLOAT_EQ(host[1], std::log(static_cast<float>(M_E)));
+    EXPECT_FLOAT_EQ(host[2], std::log(10.0f));
+    EXPECT_FLOAT_EQ(host[3], std::log(0.5f));
+}
+
+/**
+ * @test LOG.alias_view_strided
+ * @brief log on a 1D alias view with non-unit stride reads view elements.
+ */
+TEST(LOG, alias_view_strided)
+{
+    Tensor<float> owner({6}, MemoryLocation::DEVICE);
+    owner = std::vector<float>{1.0f, 3.0f, 2.0f, 6.0f, 4.0f, 5.0f};
+
+    std::vector<uint64_t> start = {0ull};
+    std::vector<uint64_t> dims  = {3ull};
+    std::vector<uint64_t> strides = {2ull};
+    Tensor<float> v(owner, start, dims, strides);
+
+    Tensor<float> out = math::log(v);
+
+    ASSERT_EQ(out.get_num_elements(), 3u);
+    std::vector<float> host(3);
+    g_sycl_queue.memcpy(host.data(),
+        out.m_p_data.get(), sizeof(float) * 3).wait();
+
+    EXPECT_FLOAT_EQ(host[0], std::log(1.0f));
+    EXPECT_FLOAT_EQ(host[1], std::log(2.0f));
+    EXPECT_FLOAT_EQ(host[2], std::log(4.0f));
+}
+
+/**
+ * @test LOG.nan_throws
+ * @brief log should throw std::runtime_error if input contains NaN.
+ */
+TEST(LOG, nan_throws)
+{
+    Tensor<float> t({3}, MemoryLocation::DEVICE);
+    t = std::vector<float>{1.0f, std::numeric_limits<float>::quiet_NaN(), 2.0f};
+
+    EXPECT_THROW(math::log(t), std::runtime_error);
+}
+
+/**
+ * @test LOG_inf_throws
+ * @brief log should throw std::runtime_error if input contains +Inf/-Inf.
+ */
+TEST(LOG, inf_throws)
+{
+    Tensor<float> t({2}, MemoryLocation::DEVICE);
+    t = std::vector<float>{std::numeric_limits<float>::infinity(), 1.0f};
+
+    EXPECT_THROW(math::log(t), std::runtime_error);
+}
+
+/**
+ * @test LOG_zero_throws
+ * @brief log(0) produces -inf which the implementation treats as non-finite
+ * and should therefore throw std::runtime_error.
+ */
+TEST(LOG, zero_throws)
+{
+    Tensor<float> t({2}, MemoryLocation::DEVICE);
+    t = std::vector<float>{0.0f, 1.0f};
+
+    EXPECT_THROW(math::log(t), std::runtime_error);
+}
+
+/**
+ * @test LOG_negative_throws
+ * @brief log of negative real values produces NaN/invalid result and should
+ * throw std::runtime_error in this implementation.
+ */
+TEST(LOG, negative_throws)
+{
+    Tensor<float> t({2}, MemoryLocation::DEVICE);
+    t = std::vector<float>{-1.0f, 2.0f};
+
+    EXPECT_THROW(math::log(t), std::runtime_error);
+}
+
+/**
+ * @test LOG_scalar
+ * @brief log of a scalar-like 1-element tensor returns a single-element
+ * tensor with the expected value.
+ */
+TEST(LOG, scalar)
+{
+    Tensor<float> s({1}, MemoryLocation::DEVICE);
+    s = std::vector<float>{2.7182818f};
+
+    Tensor<float> out = math::log(s);
+    ASSERT_EQ(out.get_num_elements(), 1u);
+
+    std::vector<float> host(1);
+    g_sycl_queue.memcpy(host.data(), out.m_p_data.get(), sizeof(float)).wait();
+    EXPECT_NEAR(host[0], 1.0f, 1e-6f);
 }
 
 

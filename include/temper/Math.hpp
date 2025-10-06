@@ -50,7 +50,7 @@ Tensor<float_t> matmul(const Tensor<float_t> & first,
                         const Tensor<float_t> & second);
 /// Explicit instantiation of matmul for float
 extern template Tensor<float> matmul<float>
-	(const Tensor<float>&, const Tensor<float>&);
+    (const Tensor<float>&, const Tensor<float>&);
 
 /**
  * @brief Reshape a tensor (free function wrapper).
@@ -284,6 +284,18 @@ Tensor<float_t> linspace(const Tensor<float_t>& start,
 extern template Tensor<float> linspace<float>(const Tensor<float>&,
 const Tensor<float>&, uint64_t, MemoryLocation, uint64_t, bool, Tensor<float>*);
 
+template<typename float_t>
+Tensor<float_t> linspace(float_t start,
+                        float_t stop,
+                        uint64_t num,
+                        MemoryLocation res_loc = MemoryLocation::DEVICE,
+                        uint64_t axis = 0,
+                        bool endpoint = true,
+                        Tensor<float_t>* step_out = nullptr);
+/// Explicit instantiation of linspace(scalars) for float
+extern template Tensor<float> linspace<float>(float,
+float, uint64_t, MemoryLocation, uint64_t, bool, Tensor<float>*);
+
 /**
  * @brief Generate a 1-D tensor with values in the half-open interval
  * [start, stop) using a fixed step.
@@ -309,7 +321,7 @@ Tensor<float_t> arange(float_t start,
                        float_t stop,
                        float_t step,
                        MemoryLocation res_loc);
-/// Explicit instantiation of linspace for float
+/// Explicit instantiation of arange for float
 extern template Tensor<float> arange<float>(float, float, float, MemoryLocation);
 
 /**
@@ -329,15 +341,95 @@ extern template Tensor<float> arange<float>(float, float, float, MemoryLocation)
 template<typename float_t>
 Tensor<float_t> arange(float_t stop,
     MemoryLocation res_loc = MemoryLocation::DEVICE);
-/// Explicit instantiation of linspace(stop) for float
+/// Explicit instantiation of arange(stop) for float
 extern template Tensor<float> arange<float>(float, MemoryLocation);
 
+/**
+ * @brief Create a tensor filled with zeros.
+ *
+ * Constructs a tensor with the given @p shape in which every element is
+ * zero-initialized (value `0` converted to @p float_t). Memory for the
+ * tensor is allocated in the location specified by @p res_loc.
+ *
+ * @param shape Vector of dimension sizes for the tensor. The product of the
+ *        entries defines the total number of elements.
+ * @param res_loc Memory location for the resulting tensor (default: DEVICE).
+ * @return Tensor<float_t> Tensor of the given shape with all elements equal to zero.
+ *
+ * @note The default Tensor builder used by this implementation already
+ *       zero-initializes allocated memory.
+ *
+ */
+template<typename float_t>
+Tensor<float_t> zeros(const std::vector<uint64_t> & shape,
+    MemoryLocation res_loc = MemoryLocation::DEVICE);
+/// Explicit instantiation of zeros for float
+extern template Tensor<float> zeros<float>
+    (const std::vector<uint64_t>&, MemoryLocation);
+
+/**
+ * @brief Approximate the integral of f over [a, b] using Simpson's rule.
+ *
+ * Splits [a, b] into @p n_bins equal intervals and applies composite
+ * Simpson's rule to estimate the area under @p f.
+ *
+ * @param f Integrand function.
+ * @param a Lower bound of integration.
+ * @param b Upper bound of integration.
+ * @param n_bins Number of subintervals (must be >= 1).
+ * @return Approximate value of the integral.
+ *
+ * @throws std::invalid_argument If @p n_bins is less than 1.
+ */
+template <typename float_t>
+float_t integral(std::function<float_t(float_t)> f,
+                        float_t a,
+                        float_t b,
+                        uint64_t n_bins = 1000);
+/// Explicit instantiation of integral for float
+extern template float integral<float>
+    (std::function<float(float)>, float, float, uint64_t);
+
+/**
+ * @brief Elementwise factorial computed on the device.
+ *
+ * Computes the factorial of each element and returns a tensor with the same
+ * shape and memory location.
+ *
+ * @param tensor Input tensor (elements must be non-negative integers
+ * within a small tolerance).
+ * @return Tensor<float_t> Tensor of elementwise factorials.
+ * @throws std::invalid_argument If tensor is empty or contains
+ * negative/non-integer values.
+ * @throws std::bad_alloc On device allocation failure.
+ * @throws std::runtime_error On NaN/Inf/overflow during
+ * input checks or accumulation.
+ */
+template<typename float_t>
+Tensor<float_t> factorial(const Tensor<float_t> & tensor);
+/// Explicit instantiation of factorial for float
+extern template Tensor<float> factorial<float>(const Tensor<float>&);
+
+/**
+ * @brief Elementwise natural logarithm computed on the device.
+ *
+ * Computes ln(x) for every element of @p tensor and returns a tensor with
+ * the same shape and memory location.
+ *
+ * @param tensor Input tensor.
+ * @return Tensor<float_t> Tensor containing elementwise natural logs.
+ *
+ * @throws std::invalid_argument If @p tensor is empty.
+ * @throws std::bad_alloc On device allocation failure.
+ * @throws std::runtime_error If inputs contain NaN, or if any computed
+ * output is non-finite (Inf / -Inf / NaN) during computation.
+ */
+template<typename float_t>
+Tensor<float_t> log(const Tensor<float_t> & tensor);
+/// Explicit instantiation of log for float
+extern template Tensor<float> log<float>(const Tensor<float>&);
+
 /* todo
-    arange
-    zeros
-    integral
-    factorial
-    log?
     mean
     var
     std
