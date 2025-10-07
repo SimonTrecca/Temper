@@ -5344,6 +5344,433 @@ TEST(TENSOR, cumsum_empty)
 }
 
 /**
+ * @test TENSOR.mean_flatten
+ * @brief Mean of a 1D tensor flattened.
+ */
+TEST(TENSOR, mean_flatten)
+{
+    Tensor<float> t({3}, MemoryLocation::DEVICE);
+    std::vector<float> vals = {1.0f, 2.0f, 3.0f};
+    t = vals;
+
+    Tensor<float> res = t.mean(-1);
+
+    std::vector<float> host(1);
+    g_sycl_queue.memcpy(host.data(), res.m_p_data.get(), sizeof(float)).wait();
+
+    EXPECT_FLOAT_EQ(host[0], 2.0f);
+}
+
+/**
+ * @test TENSOR.mean_axis0_2D
+ * @brief Mean along axis 0 of a 2D tensor.
+ */
+TEST(TENSOR, mean_axis0_2D)
+{
+    Tensor<float> t({2, 3}, MemoryLocation::DEVICE);
+    std::vector<float> vals = {1.0f, 2.0f, 3.0f,
+                               4.0f, 5.0f, 6.0f};
+    t = vals;
+
+    Tensor<float> res = t.mean(0);
+
+    std::vector<float> host(3);
+    g_sycl_queue.memcpy(host.data(),
+        res.m_p_data.get(), 3 * sizeof(float)).wait();
+
+    EXPECT_FLOAT_EQ(host[0], 2.5f);
+    EXPECT_FLOAT_EQ(host[1], 3.5f);
+    EXPECT_FLOAT_EQ(host[2], 4.5f);
+}
+
+/**
+ * @test TENSOR.mean_axis1_2D
+ * @brief Mean along axis 1 of a 2D tensor.
+ */
+TEST(TENSOR, mean_axis1_2D)
+{
+    Tensor<float> t({2, 3}, MemoryLocation::DEVICE);
+    std::vector<float> vals = {1.0f, 2.0f, 3.0f,
+                               4.0f, 5.0f, 6.0f};
+    t = vals;
+
+    Tensor<float> res = t.mean(1);
+
+    std::vector<float> host(2);
+    g_sycl_queue.memcpy(host.data(),
+        res.m_p_data.get(), 2 * sizeof(float)).wait();
+
+    EXPECT_FLOAT_EQ(host[0], 2.0f);
+    EXPECT_FLOAT_EQ(host[1], 5.0f);
+}
+
+/**
+ * @test TENSOR.mean_empty
+ * @brief mean() on an empty tensor throws std::invalid_argument.
+ */
+TEST(TENSOR, mean_empty)
+{
+    Tensor<float> t;
+
+    EXPECT_THROW(t.mean(-1), std::invalid_argument);
+}
+
+/**
+ * @test TENSOR.mean_nan_throws
+ * @brief Mean throws when tensor contains NaN values.
+ */
+TEST(TENSOR, mean_nan_throws)
+{
+    Tensor<float> t({3}, MemoryLocation::DEVICE);
+    std::vector<float> vals =
+        {1.0f, std::numeric_limits<float>::quiet_NaN(), 3.0f};
+    t = vals;
+
+    EXPECT_THROW(t.mean(-1), std::runtime_error);
+}
+
+/**
+ * @test TENSOR.mean_non_finite_throws
+ * @brief Mean throws when tensor contains non-finite values (inf).
+ */
+TEST(TENSOR, mean_non_finite_throws)
+{
+    Tensor<float> t({2}, MemoryLocation::DEVICE);
+    std::vector<float> vals = {std::numeric_limits<float>::infinity(), 1.0f};
+    t = vals;
+
+    EXPECT_THROW(t.mean(-1), std::runtime_error);
+}
+
+/**
+ * @test TENSOR.mean_view_flatten
+ * @brief Mean on a view (flattened).
+ */
+TEST(TENSOR, mean_view_flatten)
+{
+    Tensor<float> owner({2,3}, MemoryLocation::DEVICE);
+    std::vector<float> vals = {1.0f, 2.0f, 3.0f,
+                               4.0f, 5.0f, 6.0f};
+    owner = vals;
+
+    std::vector<uint64_t> start = {0ull, 1ull};
+    std::vector<uint64_t> view_shape = {2ull, 2ull};
+    Tensor<float> view(owner, start, view_shape);
+
+    Tensor<float> res = view.mean(-1);
+    std::vector<float> host(1);
+    g_sycl_queue.memcpy(host.data(), res.m_p_data.get(), sizeof(float)).wait();
+
+    EXPECT_FLOAT_EQ(host[0], 4.0f);
+}
+
+/**
+ * @test TENSOR.mean_alias_view_strided
+ * @brief Mean on an alias view formed from a 1D array with stride.
+ */
+TEST(TENSOR, mean_alias_view_strided)
+{
+    Tensor<float> t({6}, MemoryLocation::DEVICE);
+    std::vector<float> vals = {1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f};
+    t = vals;
+    std::vector<uint64_t> start = {0ull};
+    std::vector<uint64_t> dims  = {3ull};
+    std::vector<uint64_t> strides = {2ull};
+    Tensor<float> alias_view(t, start, dims, strides);
+
+    Tensor<float> res = alias_view.mean(-1);
+
+    std::vector<float> host(1);
+    g_sycl_queue.memcpy(host.data(), res.m_p_data.get(), sizeof(float)).wait();
+
+    EXPECT_FLOAT_EQ(host[0], 3.0f);
+}
+
+/**
+ * @test TENSOR.var_all_elements
+ * @brief Variance of all elements (axis = -1) returns scalar.
+ */
+TEST(TENSOR, var_all_elements)
+{
+    Tensor<float> t({3}, MemoryLocation::DEVICE);
+    t = std::vector<float>{1.0f, 2.0f, 3.0f};
+
+    Tensor<float> res = t.var(-1, 0);
+    std::vector<float> host(1);
+    g_sycl_queue.memcpy(host.data(), res.m_p_data.get(), sizeof(float)).wait();
+
+    EXPECT_FLOAT_EQ(host[0], 2.0f/3.0f);
+}
+
+/**
+ * @test TENSOR.var_ddof_1_sample
+ * @brief Variance with ddof=1 (sample variance).
+ */
+TEST(TENSOR, var_ddof_1_sample)
+{
+    Tensor<float> t({3}, MemoryLocation::DEVICE);
+    t = std::vector<float>{1.0f, 2.0f, 3.0f};
+
+    Tensor<float> res = t.var(-1, 1);
+    std::vector<float> host(1);
+    g_sycl_queue.memcpy(host.data(), res.m_p_data.get(), sizeof(float)).wait();
+
+    // sample variance = 1.0
+    EXPECT_FLOAT_EQ(host[0], 1.0f);
+}
+
+/**
+ * @test TENSOR.var_axis0
+ * @brief Variance along axis 0 for a 2x3 tensor (per-column).
+ */
+TEST(TENSOR, var_axis0)
+{
+    Tensor<float> t({2,3}, MemoryLocation::DEVICE);
+    t = std::vector<float>{1.0f, 2.0f, 3.0f,
+                           4.0f, 5.0f, 6.0f};
+
+    Tensor<float> res = t.var(0, 0);
+    std::vector<float> host(3);
+    g_sycl_queue.memcpy(host.data(),
+        res.m_p_data.get(), 3 * sizeof(float)).wait();
+
+    EXPECT_FLOAT_EQ(host[0], 2.25f);
+    EXPECT_FLOAT_EQ(host[1], 2.25f);
+    EXPECT_FLOAT_EQ(host[2], 2.25f);
+}
+
+/**
+ * @test TENSOR.var_view_and_alias
+ * @brief Variance on view and alias view (flattened).
+ */
+TEST(TENSOR, var_view_and_alias)
+{
+    Tensor<float> owner({2,3}, MemoryLocation::DEVICE);
+    owner = std::vector<float>{1,2,3,4,5,6};
+
+    Tensor<float> view(owner,
+                       std::vector<uint64_t>{0ull, 0ull},
+                       std::vector<uint64_t>{3ull},
+                       std::vector<uint64_t>{1ull});
+    Tensor<float> v1 = view.var(-1, 0);
+    std::vector<float> h1(1);
+    g_sycl_queue.memcpy(h1.data(), v1.m_p_data.get(), sizeof(float)).wait();
+    EXPECT_FLOAT_EQ(h1[0], 2.0f/3.0f);
+
+    std::vector<uint64_t> start = {0ull, 0ull};
+    std::vector<uint64_t> dims = {3ull};
+    std::vector<uint64_t> strides = {2ull};
+    Tensor<float> alias(owner, start, dims, strides);
+    Tensor<float> v2 = alias.var(-1, 0);
+    std::vector<float> h2(1);
+    g_sycl_queue.memcpy(h2.data(), v2.m_p_data.get(), sizeof(float)).wait();
+    EXPECT_FLOAT_EQ(h2[0], 8.0f/3.0f);
+}
+
+/**
+ * @test TENSOR.var_nan_throws
+ * @brief var() throws when tensor contains NaN values.
+ */
+TEST(TENSOR, var_nan_throws)
+{
+    Tensor<float> t({3}, MemoryLocation::DEVICE);
+    t = std::vector<float>{1.0f, std::numeric_limits<float>::quiet_NaN(), 3.0f};
+
+    EXPECT_THROW(t.var(-1, 0), std::runtime_error);
+}
+
+/**
+ * @test TENSOR.var_non_finite_throws
+ * @brief var() throws when tensor contains non-finite values (Inf).
+ */
+TEST(TENSOR, var_non_finite_throws)
+{
+    Tensor<float> t({2}, MemoryLocation::DEVICE);
+    t = std::vector<float>{std::numeric_limits<float>::infinity(), 1.0f};
+
+    EXPECT_THROW(t.var(-1, 0), std::runtime_error);
+}
+
+/**
+ * @test TENSOR.var_empty
+ * @brief var() on an empty tensor throws std::invalid_argument.
+ */
+TEST(TENSOR, var_empty)
+{
+    Tensor<float> t;
+    EXPECT_THROW(t.var(-1, 0), std::invalid_argument);
+}
+
+/**
+ * @test TENSOR.std_all_elements
+ * @brief Standard deviation of all elements (axis = -1) returns scalar.
+ */
+TEST(TENSOR, std_all_elements)
+{
+    Tensor<float> t({3}, MemoryLocation::DEVICE);
+    t = std::vector<float>{1.0f, 2.0f, 3.0f};
+
+    Tensor<float> res = t.std(-1, 0);
+    std::vector<float> host(1);
+    g_sycl_queue.memcpy(host.data(), res.m_p_data.get(), sizeof(float)).wait();
+
+    // population var = 2/3 -> std = sqrt(2/3)
+    EXPECT_FLOAT_EQ(host[0], std::sqrt(2.0f/3.0f));
+}
+
+/**
+ * @test TENSOR.std_ddof_1_sample
+ * @brief Standard deviation with ddof=1 (sample std).
+ */
+TEST(TENSOR, std_ddof_1_sample)
+{
+    Tensor<float> t({3}, MemoryLocation::DEVICE);
+    t = std::vector<float>{1.0f, 2.0f, 3.0f};
+
+    Tensor<float> res = t.std(-1, 1);
+    std::vector<float> host(1);
+    g_sycl_queue.memcpy(host.data(), res.m_p_data.get(), sizeof(float)).wait();
+
+    EXPECT_FLOAT_EQ(host[0], 1.0f);
+}
+
+/**
+ * @test TENSOR.std_axis0
+ * @brief Standard deviation along axis 0 for a 2x3 tensor (per-column).
+ */
+TEST(TENSOR, std_axis0)
+{
+    Tensor<float> t({2,3}, MemoryLocation::DEVICE);
+    t = std::vector<float>{1.0f, 2.0f, 3.0f,
+                           4.0f, 5.0f, 6.0f};
+
+    Tensor<float> res = t.std(0, 0);
+    std::vector<float> host(3);
+    g_sycl_queue.memcpy(host.data(), res.m_p_data.get(), 3 * sizeof(float)).wait();
+
+    EXPECT_FLOAT_EQ(host[0], 1.5f);
+    EXPECT_FLOAT_EQ(host[1], 1.5f);
+    EXPECT_FLOAT_EQ(host[2], 1.5f);
+}
+
+/**
+ * @test TENSOR.std_axis1_2D
+ * @brief Standard deviation along axis 1 for a 2x3 tensor (per-row).
+ */
+TEST(TENSOR, std_axis1_2D)
+{
+    Tensor<float> t({2,3}, MemoryLocation::DEVICE);
+    t = std::vector<float>{1.0f, 2.0f, 3.0f,
+                           4.0f, 5.0f, 6.0f};
+
+    Tensor<float> res = t.std(1, 0);
+    std::vector<float> host(2);
+    g_sycl_queue.memcpy(host.data(), res.m_p_data.get(), 2 * sizeof(float)).wait();
+
+    EXPECT_FLOAT_EQ(host[0], std::sqrt(2.0f/3.0f));
+    EXPECT_FLOAT_EQ(host[1], std::sqrt(2.0f/3.0f));
+}
+
+/**
+ * @test TENSOR.std_axis0_3D
+ * @brief Standard deviation along axis 0 for a 2x2x2 tensor.
+ */
+TEST(TENSOR, std_axis0_3D)
+{
+    Tensor<float> t({2,2,2}, MemoryLocation::DEVICE);
+    t = std::vector<float>{
+        1.0f, 2.0f, 3.0f, 4.0f,
+        5.0f, 6.0f, 7.0f, 8.0f
+    };
+
+    Tensor<float> res = t.std(0, 0);
+    std::vector<float> host(4);
+    g_sycl_queue.memcpy
+        (host.data(), res.m_p_data.get(), 4 * sizeof(float)).wait();
+
+    EXPECT_FLOAT_EQ(host[0], 2.0f);
+    EXPECT_FLOAT_EQ(host[1], 2.0f);
+    EXPECT_FLOAT_EQ(host[2], 2.0f);
+    EXPECT_FLOAT_EQ(host[3], 2.0f);
+}
+
+/**
+ * @test TENSOR.std_view_and_alias
+ * @brief Standard deviation on view and alias view (flattened).
+ */
+TEST(TENSOR, std_view_and_alias)
+{
+    Tensor<float> owner({2,3}, MemoryLocation::DEVICE);
+    owner = std::vector<float>{1,2,3,4,5,6};
+
+    Tensor<float> view(owner,
+                       std::vector<uint64_t>{0ull, 0ull},
+                       std::vector<uint64_t>{3ull},
+                       std::vector<uint64_t>{1ull});
+    Tensor<float> v1 = view.std(-1, 0);
+    std::vector<float> h1(1);
+    g_sycl_queue.memcpy(h1.data(), v1.m_p_data.get(), sizeof(float)).wait();
+    EXPECT_FLOAT_EQ(h1[0], std::sqrt(2.0f/3.0f));
+
+    std::vector<uint64_t> start = {0ull, 0ull};
+    std::vector<uint64_t> dims = {3ull};
+    std::vector<uint64_t> strides = {2ull};
+    Tensor<float> alias(owner, start, dims, strides);
+    Tensor<float> v2 = alias.std(-1, 0);
+    std::vector<float> h2(1);
+    g_sycl_queue.memcpy(h2.data(), v2.m_p_data.get(), sizeof(float)).wait();
+    EXPECT_FLOAT_EQ(h2[0], std::sqrt(8.0f/3.0f));
+}
+
+/**
+ * @test TENSOR.std_nan_throws
+ * @brief std() throws when tensor contains NaN values.
+ */
+TEST(TENSOR, std_nan_throws)
+{
+    Tensor<float> t({3}, MemoryLocation::DEVICE);
+    t = std::vector<float>{1.0f, std::numeric_limits<float>::quiet_NaN(), 3.0f};
+
+    EXPECT_THROW(t.std(-1, 0), std::runtime_error);
+}
+
+/**
+ * @test TENSOR.std_non_finite_throws
+ * @brief std() throws when tensor contains non-finite values (Inf).
+ */
+TEST(TENSOR, std_non_finite_throws)
+{
+    Tensor<float> t({2}, MemoryLocation::DEVICE);
+    t = std::vector<float>{std::numeric_limits<float>::infinity(), 1.0f};
+
+    EXPECT_THROW(t.std(-1, 0), std::runtime_error);
+}
+
+/**
+ * @test TENSOR.std_empty
+ * @brief std() on an empty tensor throws std::invalid_argument.
+ */
+TEST(TENSOR, std_empty)
+{
+    Tensor<float> t;
+    EXPECT_THROW(t.std(-1, 0), std::invalid_argument);
+}
+
+/**
+ * @test TENSOR.std_ddof_invalid_throws
+ * @brief std() throws when ddof >= axis length (invalid denominator).
+ */
+TEST(TENSOR, std_ddof_invalid_throws)
+{
+    Tensor<float> t({3}, MemoryLocation::DEVICE);
+    t = std::vector<float>{1.0f, 2.0f, 3.0f};
+
+    EXPECT_THROW(t.std(-1, 3), std::invalid_argument);
+    EXPECT_THROW(t.std(-1, 4), std::invalid_argument);
+}
+
+
+/**
  * @test TENSOR.transpose_noargs_reverse_axes
  * @brief Tests that transpose() with no arguments reverses all axes.
  */

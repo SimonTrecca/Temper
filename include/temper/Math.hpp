@@ -429,10 +429,104 @@ Tensor<float_t> log(const Tensor<float_t> & tensor);
 /// Explicit instantiation of log for float
 extern template Tensor<float> log<float>(const Tensor<float>&);
 
+/**
+ * @brief Compute the mean of tensor elements (free function wrapper).
+ *
+ * Returns a new tensor containing the arithmetic means of @p tensor along the
+ * specified axis. Delegates to `Tensor::mean`.
+ *
+ * @param tensor Input tensor.
+ * @param axis Axis to mean along, -1 = flatten (mean all elements),
+ * otherwise 0..rank-1.
+ * @return Tensor<float_t> A new tensor containing the means.
+ *
+ * @throws std::invalid_argument If the tensor is empty or if @p axis
+ * is out of range.
+ * @throws std::bad_alloc If required device memory cannot be allocated.
+ * @throws std::runtime_error If NaN or non-finite values are encountered.
+ */
+template <typename float_t>
+Tensor<float_t> mean(const Tensor<float_t> & tensor, int64_t axis = -1);
+/// Explicit instantiation of mean for float
+extern template Tensor<float> mean<float>
+    (const Tensor<float>&, int64_t);
+
+/**
+ * @brief Compute the variance of tensor elements (free function wrapper).
+ *
+ * Functional wrapper around `Tensor::var()`. Reduces the input tensor by
+ * computing the arithmetic variance either over all elements (axis = -1)
+ * or independently along a single axis. The divisor uses (N - ddof),
+ * where N is the number of elements being reduced.
+ *
+ * @param tensor Input tensor.
+ * @param axis Axis to reduce (-1 = flatten / all elements).
+ * @param ddof Delta degrees of freedom (0 => population variance).
+ * @return Tensor<float_t> Tensor with the specified axis reduced.
+ *
+ * @throws std::invalid_argument If the input tensor has no elements,
+ * if @p axis is not -1 and out of range, if the selected axis has zero length,
+ * or if (N - ddof) <= 0.
+ * @throws std::bad_alloc If required memory cannot be allocated.
+ * @throws std::runtime_error If NaN or non-finite values are encountered
+ * in the inputs or in computed results.
+ */
+template <typename float_t>
+Tensor<float_t> var(const Tensor<float_t> & tensor,
+    int64_t axis = -1,
+    int64_t ddof = 0);
+/// Explicit instantiation of var for float
+extern template Tensor<float> var<float>
+    (const Tensor<float>&, int64_t, int64_t);
+
+/**
+ * @brief Compute the standard deviation of
+ * tensor elements (free function wrapper).
+ *
+ * Functional wrapper around `Tensor::std()`. Reduces the input tensor by
+ * computing the square root of its variance, either across all elements
+ * (axis = -1) or independently along a single axis.
+ *
+ * @param input Input tensor.
+ * @param axis Axis to reduce (-1 = flatten / all elements).
+ * @param ddof Delta degrees of freedom (0 => population std).
+ * @return Tensor<float_t> Tensor with the specified axis reduced.
+ *
+ * @throws std::invalid_argument If the input tensor has no elements,
+ * if @p axis is not -1 and out of range, if the selected axis has zero length,
+ * or if (N - ddof) <= 0.
+ * @throws std::bad_alloc If required memory cannot be allocated.
+ * @throws std::runtime_error If NaN or non-finite values are encountered
+ * in the inputs or during the sqrt computation.
+ */
+template<typename float_t>
+Tensor<float_t> std(const Tensor<float_t>& input,
+    int64_t axis = -1,
+    int64_t ddof = 0);
+/// Explicit instantiation of std for float
+extern template Tensor<float> std<float>
+    (const Tensor<float>&, int64_t, int64_t);
+
+/**
+ * @brief Elementwise square root.
+ *
+ * Returns a new tensor with each element equal to the square root of the
+ * corresponding input element. The input tensor is not modified.
+ *
+ * @param tensor Input tensor.
+ * @return Tensor<float_t> New tensor with elementwise sqrt applied.
+ *
+ * @throws std::invalid_argument If the tensor has no elements.
+ * @throws std::bad_alloc If device memory allocation fails.
+ * @throws std::runtime_error If NaN values are found in inputs or
+ *         non-finite results are produced.
+ */
+template <typename float_t>
+Tensor<float_t> sqrt(const Tensor<float_t>& tensor);
+/// Explicit instantiation of sqrt for float
+extern template Tensor<float> sqrt<float>(const Tensor<float>& tensor);
+
 /* todo
-    mean
-    var
-    std
     cov
     eigen
     */

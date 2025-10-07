@@ -2382,6 +2382,196 @@ Tensor<float_t> Tensor<float_t>::cumsum(int64_t axis) const
 }
 
 template<typename float_t>
+Tensor<float_t> Tensor<float_t>::mean(int64_t axis) const
+{
+    const uint64_t total_elems = this->get_num_elements();
+    if (total_elems == 0)
+    {
+        throw std::invalid_argument(R"(Tensor(mean):
+            input tensor has no elements.)");
+    }
+
+    uint64_t denom_u = 1;
+    if (axis == -1)
+    {
+        denom_u = total_elems;
+    }
+    else
+    {
+        const uint64_t rank = this->get_rank();
+        if (axis < 0 || static_cast<uint64_t>(axis) >= rank)
+        {
+            throw std::invalid_argument(R"(Tensor(mean): axis out of range.)");
+        }
+        denom_u = this->get_dimensions()[static_cast<uint64_t>(axis)];
+    }
+
+    Tensor<float_t> s = this->sum(axis);
+
+    float_t denom_val = static_cast<float_t>(denom_u);
+    MemoryLocation loc = this->get_memory_location();
+    Tensor<float_t> denom_t({1}, loc);
+    denom_t = denom_val;
+
+    Tensor<float_t> result = s / denom_t;
+    return result;
+}
+
+template<typename float_t>
+Tensor<float_t> Tensor<float_t>::var(int64_t axis, int64_t ddof) const
+{
+    const uint64_t total_elems = this->get_num_elements();
+    if (total_elems == 0)
+    {
+        throw std::invalid_argument(R"(Tensor(var):
+            input tensor has no elements.)");
+    }
+
+    if (ddof < 0)
+    {
+        throw std::invalid_argument(R"(Tensor(var):
+            ddof must be non-negative.)");
+    }
+
+    uint64_t N = 0;
+    if (axis == -1)
+    {
+        if (static_cast<uint64_t>(ddof) >= total_elems)
+        {
+            throw std::invalid_argument
+                (R"(Tensor(var): ddof >= number of elements.)");
+        }
+        N = total_elems;
+    }
+    else
+    {
+        const uint64_t rank = this->get_rank();
+        if (axis < 0 || static_cast<uint64_t>(axis) >= rank)
+        {
+            throw std::invalid_argument(R"(Tensor(var): axis out of range.)");
+        }
+        const uint64_t axis_u = static_cast<uint64_t>(axis);
+        const uint64_t axis_len = this->get_dimensions()[axis_u];
+        if (axis_len == 0)
+        {
+            throw std::invalid_argument(R"(Tensor(var):
+                selected axis has zero length.)");
+        }
+        if (static_cast<uint64_t>(ddof) >= axis_len)
+        {
+            throw std::invalid_argument(R"(Tensor(var):
+                ddof >= axis length.)");
+        }
+        N = axis_len;
+    }
+
+    uint64_t denom_u = N - static_cast<uint64_t>(ddof);
+    Tensor<float_t> m = this->mean(axis);
+
+    Tensor<float_t> diff = (*this) - m;
+    Tensor<float_t> sq = diff * diff;
+    Tensor<float_t> sumsq = sq.sum(axis);
+
+    float_t denom_val = static_cast<float_t>(denom_u);
+    MemoryLocation loc = this->get_memory_location();
+    Tensor<float_t> denom_t({1}, loc);
+    denom_t = denom_val;
+
+    Tensor<float_t> result = sumsq / denom_t;
+    return result;
+}
+
+template<typename float_t>
+Tensor<float_t> Tensor<float_t>::std(int64_t axis, int64_t ddof) const
+{
+    Tensor<float_t> v = this->var(axis, ddof);
+
+    const std::vector<uint64_t> & in_shape = v.get_dimensions();
+    if (in_shape.empty())
+    {
+        throw std::invalid_argument(R"(Tensor(std):
+            input tensor has no elements.)");
+    }
+
+    const uint64_t arr_len = static_cast<uint64_t>(in_shape.size());
+    const uint64_t total_output_elems = v.get_num_elements();
+    MemoryLocation res_loc = v.get_memory_location();
+    Tensor<float_t> result(in_shape, res_loc);
+
+    const std::vector<uint64_t> in_divs =
+        temper::utils::compute_divisors(in_shape);
+    const std::vector<uint64_t> in_strides = v.get_strides();
+
+    uint64_t* p_in_divs = static_cast<uint64_t*>(
+        sycl::malloc_device(sizeof(uint64_t) * static_cast<size_t>(arr_len),
+                            g_sycl_queue));
+    uint64_t* p_in_strides = static_cast<uint64_t*>(
+        sycl::malloc_device(sizeof(uint64_t) * static_cast<size_t>(arr_len),
+                            g_sycl_queue));
+    int32_t* p_error_flag = static_cast<int32_t*>(
+        sycl::malloc_shared(sizeof(int32_t), g_sycl_queue));
+
+    bool alloc_ok = (p_in_divs && p_in_strides && p_error_flag);
+    if (!alloc_ok)
+    {
+        sycl::free(p_in_divs, g_sycl_queue);
+        sycl::free(p_in_strides, g_sycl_queue);
+        sycl::free(p_error_flag, g_sycl_queue);
+        throw std::bad_alloc();
+    }
+
+    g_sycl_queue.memcpy(p_in_divs, in_divs.data(),
+        sizeof(uint64_t) * arr_len).wait();
+    g_sycl_queue.memcpy(p_in_strides, in_strides.data(),
+        sizeof(uint64_t) * arr_len).wait();
+    *p_error_flag = 0;
+
+    const float_t* p_in_data = v.get_data();
+    float_t* p_out = result.get_data();
+
+    g_sycl_queue.submit([&](sycl::handler& cgh) {
+        cgh.parallel_for(sycl::range<1>(static_cast<size_t>(total_output_elems)),
+            [=](sycl::id<1> id)
+        {
+            const uint64_t flat = static_cast<uint64_t>(id[0]);
+            uint64_t in_idx = temper::sycl_utils::idx_of(flat,
+                                                    p_in_divs,
+                                                    p_in_strides,
+                                                    arr_len);
+            float_t val = p_in_data[in_idx];
+            temper::sycl_utils::device_check_nan_and_set<float_t>
+                (val, p_error_flag);
+            float_t outv = sycl::sqrt(val);
+            temper::sycl_utils::device_check_finite_and_set<float_t>
+                (outv, p_error_flag);
+            p_out[flat] = outv;
+        });
+    }).wait();
+
+    int32_t err = *p_error_flag;
+    sycl::free(p_error_flag, g_sycl_queue);
+    sycl::free(p_in_divs, g_sycl_queue);
+    sycl::free(p_in_strides, g_sycl_queue);
+
+    if (err != 0)
+    {
+        if (err == 1)
+        {
+            throw std::runtime_error(R"(Tensor(std): NaN detected in inputs.)");
+        }
+        if (err == 2)
+        {
+            throw std::runtime_error(R"(Tensor(std):
+                non-finite result (Inf/overflow/NaN) produced.)");
+        }
+        throw std::runtime_error(R"(Tensor(std):
+            numeric error during sqrt computation.)");
+    }
+
+    return result;
+}
+
+template<typename float_t>
 Tensor<float_t> Tensor<float_t>::transpose() const
 {
     const uint64_t rank = m_dimensions.size();

@@ -482,6 +482,67 @@ public:
     Tensor<float_t> cumsum(int64_t axis = -1) const;
 
     /**
+     * @brief Compute the mean (average) of tensor elements.
+     *
+     * Reduces the tensor by computing the arithmetic mean either over all
+     * elements (axis = -1) or independently along a single axis.
+     *
+     * @param axis Axis to reduce (-1 = flatten / all elements).
+     * @return Tensor<float_t> Tensor with the specified axis reduced (result
+     * uses the same memory location as the input).
+     *
+     * @throws std::invalid_argument If the input tensor has no elements,
+     * if @p axis is not -1 and out of range, or if the selected axis
+     * has zero length.
+     * @throws std::bad_alloc If required device/host memory cannot be allocated.
+     * @throws std::runtime_error If NaN or non-finite values are encountered
+     * in inputs or produced by the reduction/division.
+     */
+    Tensor<float_t> mean(int64_t axis = -1) const;
+
+    /**
+     * @brief Compute the variance of tensor elements.
+     *
+     * Reduces the tensor by computing the arithmetic variance either over all
+     * elements (axis = -1) or independently along a single axis.
+     *
+     * @param axis Axis to reduce (-1 = flatten / all elements).
+     * @param ddof Delta degrees of freedom (0 => population variance).
+     * @return Tensor<float_t> Tensor with the specified axis reduced.
+     *
+     * @throws std::invalid_argument If the input tensor has no elements,
+     * if @p axis is not -1 and out of range, if the selected axis
+     * has zero length, or if (N - ddof) <= 0.
+     * @throws std::bad_alloc If required memory cannot be allocated.
+     * @throws std::runtime_error If NaN or non-finite values are encountered.
+     */
+    Tensor<float_t> var(int64_t axis = -1, int64_t ddof = 0) const;
+
+    /**
+     * @brief Compute the standard deviation of tensor elements.
+     *
+     * Reduces the tensor by computing the square root of the variance,
+     * either over all elements (axis = -1) or independently along a single axis.
+     *
+     * The computation follows the same semantics as `var()`, using the given
+     * delta degrees of freedom (ddof) to adjust the divisor (N - ddof). When
+     * ddof = 0, the result is the population standard deviation; when ddof = 1,
+     * the result is the sample standard deviation.
+     *
+     * @param axis Axis to reduce (-1 = flatten / all elements).
+     * @param ddof Delta degrees of freedom (0 => population std).
+     * @return Tensor<float_t> Tensor with the specified axis reduced.
+     *
+     * @throws std::invalid_argument If the input tensor has no elements,
+     * if @p axis is not -1 and out of range, if the selected axis has
+     * zero length, or if (N - ddof) <= 0.
+     * @throws std::bad_alloc If required memory cannot be allocated.
+     * @throws std::runtime_error If NaN or non-finite values are encountered
+     * in the inputs or produced during the sqrt computation.
+     */
+    Tensor<float_t> std(int64_t axis = -1, int64_t ddof = 0) const;
+
+    /**
      * @brief Returns a new tensor with axes reversed (full transpose).
      *
      * This function returns a view of the tensor with its axes reversed.

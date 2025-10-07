@@ -1465,5 +1465,115 @@ Tensor<float_t> log(const Tensor<float_t> & tensor)
 }
 template Tensor<float> log<float>(const Tensor<float>&);
 
+template <typename float_t>
+Tensor<float_t> mean(const Tensor<float_t> & tensor, int64_t axis)
+{
+    Tensor<float_t> t = tensor.mean(axis);
+    return t;
+}
+template Tensor<float> mean<float>
+    (const Tensor<float>&, int64_t);
+
+template <typename float_t>
+Tensor<float_t> var(const Tensor<float_t> & tensor,
+    int64_t axis,
+    int64_t ddof)
+{
+    Tensor<float_t> t = tensor.var(axis, ddof);
+    return t;
+}
+template Tensor<float> var<float>
+    (const Tensor<float>&, int64_t, int64_t);
+
+template <typename float_t>
+Tensor<float_t> std(const Tensor<float_t> & tensor, int64_t axis, int64_t ddof)
+{
+    return tensor.std(axis, ddof);
+}
+template Tensor<float> std<float>
+    (const Tensor<float>&, int64_t, int64_t);
+
+template <typename float_t>
+Tensor<float_t> sqrt(const Tensor<float_t>& tensor)
+{
+    const std::vector<uint64_t>& dims = tensor.get_dimensions();
+    if (dims.empty())
+    {
+        throw std::invalid_argument("sqrt: input tensor has no elements.");
+    }
+
+    const uint64_t rank = static_cast<uint64_t>(dims.size());
+    const uint64_t total_elems = tensor.get_num_elements();
+    MemoryLocation mem_loc = tensor.get_memory_location();
+    Tensor<float_t> result(dims, mem_loc);
+
+    const std::vector<uint64_t> divisors =
+        temper::utils::compute_divisors(dims);
+    const std::vector<uint64_t> strides = tensor.get_strides();
+
+    uint64_t* p_divs = static_cast<uint64_t*>(
+        sycl::malloc_device(sizeof(uint64_t) * rank, g_sycl_queue));
+    uint64_t* p_strides = static_cast<uint64_t*>(
+        sycl::malloc_device(sizeof(uint64_t) * rank, g_sycl_queue));
+    int32_t* p_error_flag = static_cast<int32_t*>(
+        sycl::malloc_shared(sizeof(int32_t), g_sycl_queue));
+
+    if (!p_divs || !p_strides || !p_error_flag)
+    {
+        sycl::free(p_divs, g_sycl_queue);
+        sycl::free(p_strides, g_sycl_queue);
+        sycl::free(p_error_flag, g_sycl_queue);
+        throw std::bad_alloc();
+    }
+
+    g_sycl_queue.memcpy(p_divs, divisors.data(),
+                        sizeof(uint64_t) * rank).wait();
+    g_sycl_queue.memcpy(p_strides, strides.data(),
+                        sizeof(uint64_t) * rank).wait();
+    *p_error_flag = 0;
+
+    const float_t* p_in = tensor.get_data();
+    float_t* p_out = result.get_data();
+
+    g_sycl_queue.submit([&](sycl::handler& cgh) {
+        cgh.parallel_for(sycl::range<1>(static_cast<size_t>(total_elems)),
+            [=](sycl::id<1> id)
+        {
+            const uint64_t flat = static_cast<uint64_t>(id[0]);
+            uint64_t idx = temper::sycl_utils::idx_of(
+                flat, p_divs, p_strides, rank);
+
+            float_t val = p_in[idx];
+            temper::sycl_utils::device_check_nan_and_set<float_t>
+                (val, p_error_flag);
+
+            float_t outv = sycl::sqrt(val);
+            temper::sycl_utils::device_check_finite_and_set<float_t>
+                (outv, p_error_flag);
+            p_out[flat] = outv;
+        });
+    }).wait();
+
+    int32_t err = *p_error_flag;
+    sycl::free(p_error_flag, g_sycl_queue);
+    sycl::free(p_divs, g_sycl_queue);
+    sycl::free(p_strides, g_sycl_queue);
+
+    if (err != 0)
+    {
+        if (err == 1)
+        {
+            throw std::runtime_error("sqrt: NaN detected in inputs.");
+        }
+        if (err == 2)
+        {
+            throw std::runtime_error("sqrt: non-finite result produced.");
+        }
+        throw std::runtime_error("sqrt: numeric error during computation.");
+    }
+
+    return result;
+}
+template Tensor<float> sqrt<float>(const Tensor<float>& tensor);
 
 } // namespace temper::math
