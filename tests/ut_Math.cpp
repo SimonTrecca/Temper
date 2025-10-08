@@ -1674,10 +1674,10 @@ TEST(ARGMAX, argmax_flattened)
     Tensor<float> t({5}, MemoryLocation::DEVICE);
     std::vector<float> vals = {1.0f, 5.0f, 3.0f, 5.0f, 2.0f};
     t = vals;
-
     std::vector<uint64_t> res = math::argmax(t, -1);
 
     ASSERT_EQ(res.size(), 1u);
+
     EXPECT_EQ(t.at(res[0]), 5.0f);
 }
 

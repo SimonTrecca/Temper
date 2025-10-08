@@ -248,17 +248,19 @@ public:
     Tensor operator[](uint64_t idx);
 
     /**
-     * @brief Const version of operator[] returning a non-owning view.
+     * @brief Returns a const non-owning view into a sub-tensor at
+     * the given index, if the Tensor it's called on is also constant.
      *
-     * Same behavior as the non-const version. Uses const_cast internally
-     * but does not modify the original tensor.
+     * Applies the index to the first dimension:
+     * - Rank 1: view of a single element (shape {1})
+     * - Rank > 1: view of the remaining dimensions (axis 0 dropped)
      *
      * @param idx Index along the first dimension.
      * @return Tensor view (non-owning) into the selected region.
      * @throws std::out_of_range If index is out of bounds or tensor
      * has no dimensions.
      */
-    Tensor operator[](uint64_t idx) const;
+    const Tensor operator[](uint64_t idx) const;
 
     /**
      * @brief Converts a scalar tensor to its underlying value.
@@ -745,9 +747,9 @@ public:
         (const std::vector<uint64_t>& coords) const;
 
     /**
-     * @brief Access element at the given flat (row-major) index.
+     * @brief Access element at the given flat index.
      *
-     * - Returns a reference to the underlying element.
+     * - Returns a view of the underlying element.
      * - Flat index must be in [0, total_elements).
      * - Works for both host and device tensors.
      *
@@ -755,12 +757,20 @@ public:
      * @return Reference to element at flat index.
      * @throws std::out_of_range if flat >= total elements.
      */
-    float_t & at(uint64_t flat);
+    Tensor<float_t> at(uint64_t flat);
 
     /**
-     * @brief Const version of at().
+     * @brief Access element at the given flat index (const version).
+     *
+     * - Returns a const view of the underlying element.
+     * - Flat index must be in [0, total_elements).
+     * - Works for both host and device tensors.
+     *
+     * @param flat Flattened row-major index.
+     * @return Reference to element at flat index.
+     * @throws std::out_of_range if flat >= total elements.
      */
-    const float_t& at(uint64_t flat) const;
+    const Tensor<float_t> at(uint64_t flat) const;
 
 };
 

@@ -573,7 +573,7 @@ Tensor<float_t> Tensor<float_t>::operator[](uint64_t idx)
 }
 
 template<typename float_t>
-Tensor<float_t> Tensor<float_t>::operator[](uint64_t idx) const
+const Tensor<float_t> Tensor<float_t>::operator[](uint64_t idx) const
 {
     const uint64_t rank = static_cast<uint64_t>(m_dimensions.size());
     if (rank == 0)
@@ -591,7 +591,7 @@ Tensor<float_t> Tensor<float_t>::operator[](uint64_t idx) const
     {
         std::vector<uint64_t> start_indices{ idx };
         std::vector<uint64_t> view_shape{ 1 };
-        return Tensor(const_cast<Tensor&>(*this), start_indices, view_shape);
+        return Tensor(*this, start_indices, view_shape);
     }
     else
     {
@@ -599,7 +599,7 @@ Tensor<float_t> Tensor<float_t>::operator[](uint64_t idx) const
         start_indices[0] = idx;
         std::vector<uint64_t> view_shape
             (m_dimensions.begin() + 1, m_dimensions.end());
-        return Tensor(const_cast<Tensor&>(*this), start_indices, view_shape);
+        return Tensor(*this, start_indices, view_shape);
     }
 }
 
@@ -2828,7 +2828,7 @@ uint64_t Tensor<float_t>::coords_to_index
 }
 
 template<typename float_t>
-float_t & Tensor<float_t>::at(uint64_t flat)
+Tensor<float_t> Tensor<float_t>::at(uint64_t flat)
 {
     const size_t rank = m_dimensions.size();
     if (rank == 0)
@@ -2843,18 +2843,11 @@ float_t & Tensor<float_t>::at(uint64_t flat)
     }
 
     std::vector<uint64_t> coords = index_to_coords(flat);
-
-    uint64_t offset = 0;
-    for (size_t d = 0; d < rank; ++d)
-    {
-        offset += coords[d] * m_strides[d];
-    }
-
-    return m_p_data.get()[offset];
+    return Tensor(*this, coords, std::vector<uint64_t>{1});
 }
 
 template<typename float_t>
-const float_t& Tensor<float_t>::at(uint64_t flat) const
+const Tensor<float_t> Tensor<float_t>::at(uint64_t flat) const
 {
     const size_t rank = m_dimensions.size();
     if (rank == 0)
@@ -2869,14 +2862,7 @@ const float_t& Tensor<float_t>::at(uint64_t flat) const
     }
 
     std::vector<uint64_t> coords = index_to_coords(flat);
-
-    uint64_t offset = 0;
-    for (size_t d = 0; d < rank; ++d)
-    {
-        offset += coords[d] * m_strides[d];
-    }
-
-    return m_p_data.get()[offset];
+    return Tensor(*this, coords, std::vector<uint64_t>{1});
 }
 
 template class Tensor<float>;

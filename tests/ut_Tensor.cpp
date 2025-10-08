@@ -6387,6 +6387,33 @@ TEST(TENSOR, at_basic)
 }
 
 /**
+ * @test TENSOR.at_basic_device
+ * @brief Test reading and writing elements using at() with flat indices
+ * on a device tensor.
+ */
+TEST(TENSOR, at_basic_device)
+{
+    Tensor<float> t({2,3}, MemoryLocation::DEVICE);
+    std::vector<float> vals = {1,2,3,4,5,6};
+    t = vals;
+
+    EXPECT_FLOAT_EQ(t.at(0), 1.0f);
+    EXPECT_FLOAT_EQ(t.at(5), 6.0f);
+
+    t.at(2) = 42.0f;
+    EXPECT_FLOAT_EQ(t.at(2), 42.0f);
+
+    t.at(5) = -3.5f;
+    EXPECT_FLOAT_EQ(t.at(5), -3.5f);
+
+    std::vector<float> expected = {1,2,42,4,5,-3.5f};
+    for (uint64_t i = 0; i < 6; ++i)
+    {
+        EXPECT_FLOAT_EQ(t.at(i), expected[i]);
+    }
+}
+
+/**
  * @test TENSOR.at_out_of_range
  * @brief Verify that at() throws std::out_of_range for invalid flat indices.
  */
