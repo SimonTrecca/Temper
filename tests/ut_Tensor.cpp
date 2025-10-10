@@ -5602,6 +5602,600 @@ TEST(TENSOR, var_empty)
 }
 
 /**
+ * @test TENSOR.cov_empty
+ * @brief Verify cov() throws when called on an empty tensor.
+ */
+TEST(TENSOR, cov_empty)
+{
+    Tensor<float> t;
+    EXPECT_THROW(t.cov({1}, {1}), std::invalid_argument);
+}
+
+/**
+ * @test TENSOR.cov_axis_empty
+ * @brief Verify cov() rejects empty axis vectors.
+ */
+TEST(TENSOR, cov_axis_empty)
+{
+    Tensor<float> t({2, 3});
+    EXPECT_THROW(t.cov({}, {}), std::invalid_argument);
+}
+
+/**
+ * @test TENSOR.cov_ddof_negative
+ * @brief Verify cov() rejects negative ddof.
+ */
+TEST(TENSOR, cov_ddof_negative)
+{
+    Tensor<float> t({1});
+    EXPECT_THROW(t.cov({1}, {1}, -45), std::invalid_argument);
+}
+
+
+/**
+ * @test TENSOR.cov_axis_out_of_range
+ * @brief Verify cov() rejects out-of-range axis indices.
+ */
+TEST(TENSOR, cov_axis_out_of_range)
+{
+    Tensor<float> t({2, 3});
+    EXPECT_THROW(t.cov({15, 16, 17}, {2, 18}), std::invalid_argument);
+}
+
+/**
+ * @test TENSOR.cov_rank_lower_than_2
+ * @brief Verify cov() requires tensor rank >= 2.
+ */
+TEST(TENSOR, cov_rank_lower_than_2)
+{
+    Tensor<float> t({2});
+    EXPECT_THROW(t.cov({1}, {0}), std::invalid_argument);
+}
+
+/**
+ * @test TENSOR.cov_duplicate_axes
+ * @brief Verify cov() rejects duplicate axes.
+ */
+TEST(TENSOR, cov_duplicate_axes)
+{
+    Tensor<float> t({2, 3});
+    EXPECT_THROW(t.cov({0}, {0}), std::invalid_argument);
+}
+
+/**
+ * @test TENSOR.cov_ddof_too_high
+ * @brief Verify cov() rejects ddof >= sample count.
+ */
+TEST(TENSOR, cov_ddof_too_high)
+{
+    Tensor<float> t({2, 3});
+    EXPECT_THROW(t.cov({0}, {1}, 2), std::invalid_argument);
+}
+
+/**
+ * @test TENSOR.cov_basic
+ * @brief Basic 2D covariance computation (non-view).
+ *
+ * Creates a 3×2 tensor, computes sample covariance (ddof=1)
+ * and verifies matrix entries against precomputed values.
+ */
+TEST(TENSOR, cov_basic)
+{
+    Tensor<float> t({3, 2});
+    std::vector<float> values = { 2.1f, 8.0f,
+                                2.5f, 12.0f,
+                                4.0f, 14.0f};
+    t = values;
+
+    Tensor<float> t_cov = t.cov({0}, {1}, 1);
+
+    std::vector<float> expected = { 1.0033f, 2.6665f,
+                                    2.6665f, 9.333f};
+    const float tol = 1e-3;
+
+    for (uint64_t i = 0; i < 2; ++i)
+    {
+        for (uint64_t j = 0; j < 2; ++j)
+        {
+            EXPECT_NEAR(t_cov[i][j], expected[i*2 + j], tol);
+        }
+    }
+}
+
+/**
+ * @test TENSOR.cov_basic_view
+ * @brief Basic covariance on a contiguous sub-tensor view.
+ *
+ * Constructs a non-owning view (contiguous layout) and verifies
+ * cov(sample_axes={0}, event_axes={1}, ddof=1) values.
+ */
+TEST(TENSOR, cov_basic_view)
+{
+    Tensor<float> t({3, 3});
+    std::vector<float> values = { 0.4f, 2.1f, 8.0f,
+                                1.1f, 2.5f, 12.0f,
+                                15.0f, 4.0f, 14.0f};
+    t = values;
+
+    Tensor<float> t_view(t, {0, 1}, {3, 2});
+
+    Tensor<float> t_cov = t_view.cov({0}, {1}, 1);
+
+    std::vector<float> expected = { 1.0033f, 2.6665f,
+                                    2.6665f, 9.333f};
+    const float tol = 1e-3;
+
+    for (uint64_t i = 0; i < 2; ++i)
+    {
+        for (uint64_t j = 0; j < 2; ++j)
+        {
+            EXPECT_NEAR(t_cov[i][j], expected[i*2 + j], tol);
+        }
+    }
+}
+
+/**
+ * @test TENSOR.cov_basic_alias_view
+ * @brief Covariance on a non-contiguous alias view (custom strides).
+ *
+ * Uses the alias-view constructor with non-trivial strides and
+ * verifies covariance results against precomputed constants.
+ */
+TEST(TENSOR, cov_basic_alias_view)
+{
+    Tensor<float> t({3, 3});
+    std::vector<float> values =
+    {
+        0.4f, 2.1f, 8.0f,
+        1.1f, 2.5f, 12.0f,
+        15.0f, 4.0f, 14.0f
+    };
+    t = values;
+
+    Tensor<float> t_alias(t, {0, 0}, {3, 2}, {1, 3});
+
+    Tensor<float> t_cov = t_alias.cov({0}, {1}, 1);
+
+    std::vector<float> expected =
+    {
+        15.91f,
+        23.545f,
+        23.545f,
+        35.17f
+    };
+
+    const float tol = 1e-3;
+
+    for (uint64_t i = 0; i < 2; ++i)
+    {
+        for (uint64_t j = 0; j < 2; ++j)
+        {
+            EXPECT_NEAR(t_cov[i][j], expected[i*2 + j], tol);
+        }
+    }
+}
+
+/**
+ * @test TENSOR.cov_higherdim_batch
+ * @brief Batched covariance on a 3D tensor (one batch axis).
+ *
+ * Tests cov on shape {2,3,2} producing one 2×2 covariance per batch
+ * and verifies expected (scaled) results for both batches.
+ */
+TEST(TENSOR, cov_higherdim_batch)
+{
+    Tensor<float> t({2, 3, 2});
+
+    std::vector<float> values =
+    {
+        1.0f, 2.0f,
+        2.0f, 1.0f,
+        3.0f, 4.0f,
+
+        10.0f, 20.0f,
+        20.0f, 10.0f,
+        30.0f, 40.0f
+    };
+    t = values;
+
+    Tensor<float> t_cov = t.cov({1}, {2}, 1);
+
+    const double tol = 1e-3;
+
+    std::vector<double> expected_b0 =
+    {
+        1.0, 1.0,
+        1.0, 2.333333333333333
+    };
+
+    std::vector<double> expected_b1 =
+    {
+        100.0, 100.0,
+        100.0, 233.33333333333331
+    };
+
+    for (uint64_t b = 0; b < 2; ++b)
+    {
+        for (uint64_t i = 0; i < 2; ++i)
+        {
+            for (uint64_t j = 0; j < 2; ++j)
+            {
+                double got = static_cast<double>(t_cov[b][i][j]);
+                double exp;
+                if (b == 0)
+                {
+                    exp = expected_b0[i*2 + j];
+                }
+                else
+                {
+                    exp = expected_b1[i*2 + j];
+                }
+                EXPECT_NEAR(got, exp, tol);
+            }
+        }
+    }
+}
+
+/**
+ * @test TENSOR.cov_4d_batched
+ * @brief Covariance on a 4D tensor with two batch axes.
+ *
+ * Exercises shape {2,2,3,2} with sample axis 2 and event axis 3,
+ * verifying one 2×2 covariance per batch element.
+ */
+
+TEST(TENSOR, cov_4d_batched)
+{
+    Tensor<float> t({2, 2, 3, 2});
+    std::vector<float> values;
+    values.reserve(2 * 2 * 3 * 2);
+
+    std::vector<std::vector<float>> base_samples =
+    {
+        {1.0f, 2.0f},
+        {2.0f, 1.0f},
+        {3.0f, 4.0f}
+    };
+
+    for (uint64_t i0 = 0; i0 < 2; ++i0)
+    {
+        for (uint64_t i1 = 0; i1 < 2; ++i1)
+        {
+            uint64_t batch_index = i0 * 2 + i1;
+            float k = static_cast<float>(batch_index + 1);
+            for (const auto &s : base_samples)
+            {
+                values.push_back(k * s[0]);
+                values.push_back(k * s[1]);
+            }
+        }
+    }
+
+    ASSERT_EQ(values.size(), 2 * 2 * 3 * 2);
+    t = values;
+
+    Tensor<float> t_cov = t.cov({2}, {3}, 1);
+
+    const double tol = 1e-3;
+    std::vector<std::vector<double>> expected_for_k =
+    {
+        {1.0, 1.0, 1.0, 2.333333333333333},
+        {4.0, 4.0, 4.0, 9.333333333333334},
+        {9.0, 9.0, 9.0, 21.0},
+        {16.0, 16.0, 16.0, 37.333333333333336}
+    };
+
+    for (uint64_t i0 = 0; i0 < 2; ++i0)
+    {
+        for (uint64_t i1 = 0; i1 < 2; ++i1)
+        {
+            uint64_t b = i0 * 2 + i1;
+            for (uint64_t i = 0; i < 2; ++i)
+            {
+                for (uint64_t j = 0; j < 2; ++j)
+                {
+                    double got = static_cast<double>(t_cov[i0][i1][i][j]);
+                    double exp = expected_for_k[b][i*2 + j];
+                    EXPECT_NEAR(got, exp, tol);
+                }
+            }
+        }
+    }
+}
+
+/**
+ * @test TENSOR.cov_alias_view_higherdim
+ * @brief Covariance on a higher-dim alias view with strides.
+ *
+ * Builds a 3×3×3 owner, creates an alias view with non-trivial
+ * strides, and verifies the resulting 4×4 covariance.
+ */
+TEST(TENSOR, cov_alias_view_higherdim)
+{
+    Tensor<float> owner({3, 3, 3});
+    {
+        std::vector<float> vals;
+        vals.reserve(27);
+        for (int i = 0; i < 27; ++i)
+        {
+            vals.push_back(static_cast<float>(i));
+        }
+        owner = vals;
+    }
+
+    Tensor<float> talias(owner, {0, 0, 0}, {3, 2, 2}, {1, 3, 9});
+
+    Tensor<float> t_cov = talias.cov({0}, {1, 2}, 1);
+
+    const double tol = 1e-6;
+    for (uint64_t i = 0; i < 4; ++i)
+    {
+        for (uint64_t j = 0; j < 4; ++j)
+        {
+            double got = static_cast<double>(t_cov[i][j]);
+            double exp = 1.0;
+            EXPECT_NEAR(got, exp, tol);
+        }
+    }
+}
+
+
+/**
+ * @test TENSOR.cov_scattered_no_batch
+ * @brief Covariance with scattered sample/event axes (no batch).
+ *
+ * Tests cov on a 4D tensor using sample_axes={0,2} and
+ * event_axes={1,3} (resulting 6×6 covariance) and checks values.
+ */
+TEST(TENSOR, cov_scattered_no_batch)
+{
+    Tensor<float> t({2, 3, 2, 2});
+    const std::size_t N = 2ull * 3ull * 2ull * 2ull;
+    std::vector<float> vals;
+    vals.reserve(N);
+    for (std::size_t i = 0; i < N; ++i) vals.push_back(static_cast<float>(i));
+    t = vals;
+
+    Tensor<float> cov = t.cov({0, 2}, {1, 3}, 1);
+
+    const double expected = 49.33333333333333;
+    const double tol = 1e-4;
+
+    for (uint64_t i = 0; i < 6; ++i)
+    {
+        for (uint64_t j = 0; j < 6; ++j)
+        {
+            EXPECT_NEAR(static_cast<double>(cov[i][j]), expected, tol);
+        }
+    }
+}
+
+/**
+ * @test TENSOR.cov_scattered_batched
+ * @brief Covariance with scattered axes producing a batch axis.
+ *
+ * Verifies cov on a 5D tensor with sample_axes and event_axes in
+ * non-contiguous positions producing per-batch 4×4 covariances.
+ */
+TEST(TENSOR, cov_scattered_batched)
+{
+    Tensor<float> t({2, 2, 3, 2, 2});
+    const std::size_t N = 2ull * 2ull * 3ull * 2ull * 2ull;
+    std::vector<float> vals;
+    vals.reserve(N);
+    for (std::size_t i = 0; i < N; ++i)
+    {
+        vals.push_back(static_cast<float>(i));
+    }
+    t = vals;
+
+    Tensor<float> cov = t.cov({1, 3}, {0, 4}, 1);
+
+    const double expected = 49.33333333333333;
+    const double tol = 1e-4;
+
+    for (uint64_t b = 0; b < 3; ++b)
+    {
+        for (uint64_t i = 0; i < 4; ++i)
+        {
+            for (uint64_t j = 0; j < 4; ++j)
+            {
+                EXPECT_NEAR(static_cast<double>(cov[b][i][j]), expected, tol);
+            }
+        }
+    }
+}
+
+
+/**
+ * @test TENSOR.cov_alias_view_scattered
+ * @brief Covariance on an alias view with scattered axes.
+ *
+ * Constructs a non-contiguous alias view on a 4×3×2 owner and
+ * verifies cov(sample_axes={0,2}, event_axes={1}, ddof=1).
+ */
+TEST(TENSOR, cov_alias_view_scattered)
+{
+    Tensor<float> owner({4, 3, 2});
+    std::vector<float> owner_vals;
+    owner_vals.reserve(4 * 3 * 2);
+    for (std::size_t i = 0; i < 4 * 3 * 2; ++i)
+    {
+        owner_vals.push_back(static_cast<float>(i));
+    }
+    owner = owner_vals;
+
+    Tensor<float> talias(owner, {0, 0, 1},
+                         {2, 2, 2},
+                         {1, 6, 2});
+    Tensor<float> cov = talias.cov({0, 2}, {1}, 1);
+
+    const double expected = 1.6666666666666665;
+    const double tol = 1e-6;
+
+    ASSERT_EQ(cov.get_rank(), 2u);
+    for (uint64_t i = 0; i < 2; ++i)
+    {
+        for (uint64_t j = 0; j < 2; ++j)
+        {
+            EXPECT_NEAR(static_cast<double>(cov[i][j]), expected, tol);
+        }
+    }
+}
+
+/**
+ * @test TENSOR.cov_scattered_highdim
+ * @brief High-dim scattered axes covariance (6D tensor).
+ *
+ * Exercises cov with multiple scattered sample and event axes on a
+ * 6D tensor and verifies per-batch 4×4 covariance values.
+ */
+TEST(TENSOR, cov_scattered_highdim)
+{
+    Tensor<float> t({2,2,2,2,2,2});
+    const std::size_t N = 64;
+    std::vector<float> vals;
+    vals.reserve(N);
+    for (std::size_t i = 0; i < N; ++i)
+    {
+        vals.push_back(static_cast<float>(i));
+    }
+    t = vals;
+
+    Tensor<float> cov = t.cov({0, 3, 5}, {1, 4}, 1);
+
+    const double expected = 297.4285714285714;
+    const double tol = 1e-4;
+
+    for (uint64_t b = 0; b < 2; ++b)
+    {
+        for (uint64_t i = 0; i < 4; ++i)
+        {
+            for (uint64_t j = 0; j < 4; ++j)
+            {
+                EXPECT_NEAR(static_cast<double>(cov[b][i][j]), expected, tol);
+            }
+        }
+    }
+}
+
+/**
+ * @test TENSOR.cov_ddof_default_2d
+ * @brief Test shorthand cov(ddof) for a 2D tensor.
+ *
+ * Verifies cov(ddof) equals cov({rank-2},{rank-1},ddof) and checks
+ * numeric correctness on a small 2D example.
+ */
+TEST(TENSOR, cov_ddof_default_2d)
+{
+    Tensor<float> t({3, 2});
+    std::vector<float> vals = {
+        1.0f, 2.0f,
+        2.0f, 1.0f,
+        3.0f, 4.0f
+    };
+    t = vals;
+
+    Tensor<float> cov_shorthand = t.cov(1);
+
+    Tensor<float> cov_explicit = t.cov({0}, {1}, 1);
+
+    const double tol = 1e-4;
+
+    for (uint64_t i = 0; i < 2; ++i)
+    {
+        for (uint64_t j = 0; j < 2; ++j)
+        {
+            double a = static_cast<double>(cov_shorthand[i][j]);
+            double b = static_cast<double>(cov_explicit[i][j]);
+            EXPECT_NEAR(a, b, tol);
+            double expected;
+            if (i == 0 && j == 0)
+            {
+                expected = 1.0;
+            }
+            else if ((i == 0 && j == 1) || (i == 1 && j == 0))
+            {
+                expected = 1.0;
+            }
+            else
+            {
+                expected = 2.333333333333333;
+            }
+            EXPECT_NEAR(a, expected, tol);
+        }
+    }
+}
+
+/**
+ * @test TENSOR.cov_ddof_default_batched3d
+ * @brief Test shorthand cov(ddof) for a batched 3D tensor.
+ *
+ * Ensures cov(ddof) behaves like explicit axes selection on a
+ * {batch, samples, events} tensor and matches expected results.
+ */
+TEST(TENSOR, cov_ddof_default_batched3d)
+{
+    Tensor<float> t({2, 3, 2});
+    std::vector<float> vals;
+    vals.reserve(2 * 3 * 2);
+
+    vals.push_back(1.0f); vals.push_back(2.0f);
+    vals.push_back(2.0f); vals.push_back(1.0f);
+    vals.push_back(3.0f); vals.push_back(4.0f);
+
+    vals.push_back(10.0f); vals.push_back(20.0f);
+    vals.push_back(20.0f); vals.push_back(10.0f);
+    vals.push_back(30.0f); vals.push_back(40.0f);
+
+    t = vals;
+
+    Tensor<float> cov_shorthand = t.cov(1);
+
+    Tensor<float> cov_explicit = t.cov({1}, {2}, 1);
+
+    const double tol = 1e-4;
+
+    for (uint64_t b = 0; b < 2; ++b)
+    {
+        for (uint64_t i = 0; i < 2; ++i)
+        {
+            for (uint64_t j = 0; j < 2; ++j)
+            {
+                double a = static_cast<double>(cov_shorthand[b][i][j]);
+                double bval = static_cast<double>(cov_explicit[b][i][j]);
+                EXPECT_NEAR(a, bval, tol);
+
+                double expected_base;
+                if (i == 0 && j == 0)
+                {
+                    expected_base = 1.0;
+                }
+                else if ((i == 0 && j == 1) || (i == 1 && j == 0))
+                {
+                    expected_base = 1.0;
+                }
+                else
+                {
+                    expected_base = 2.333333333333333;
+                }
+
+                double expected;
+                if (b == 0)
+                {
+                    expected = expected_base;
+                }
+                else
+                {
+                    expected = expected_base * 100.0;
+                }
+                EXPECT_NEAR(a, expected, tol);
+            }
+        }
+    }
+}
+
+/**
  * @test TENSOR.std_all_elements
  * @brief Standard deviation of all elements (axis = -1) returns scalar.
  */

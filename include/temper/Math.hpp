@@ -480,6 +480,84 @@ extern template Tensor<float> var<float>
     (const Tensor<float>&, int64_t, int64_t);
 
 /**
+ * @brief Compute covariance (free function wrapper).
+ *
+ * Functional wrapper that delegates to `Tensor::cov(sample_axes,
+ * event_axes, ddof)`. Treats @p sample_axes as sample dimensions and
+ * @p event_axes as event (feature) dimensions; remaining axes are batch
+ * axes. Result shape is `{ <batch dims...>, event_total, event_total }`.
+ *
+ * @param tensor      Input tensor.
+ * @param sample_axes Non-empty vector of axis indices to flatten as
+ *                    samples. Order matters; entries must be distinct and
+ *                    in [0, rank-1].
+ * @param event_axes  Non-empty vector of axis indices to flatten as
+ *                    events. Order matters; entries must be distinct,
+ *                    disjoint from @p sample_axes, and in [0, rank-1].
+ * @param ddof        Delta degrees of freedom (>= 0). Divisor is
+ *                    (N - ddof) where N is product(lengths of sample axes).
+ *
+ * @return Tensor<float_t> Covariance matrices with shape
+ *         `{ <batch dims...>, event_total, event_total }`.
+ *
+ * @throws std::invalid_argument
+ * - input tensor has no elements.
+ * - @p sample_axes or @p event_axes is empty.
+ * - @p ddof is negative.
+ * - tensor rank < 2.
+ * - any axis index is out of range.
+ * - the same axis appears more than once (within or across vectors).
+ * - ddof >= number of samples (N).
+ *
+ * @throws std::out_of_range
+ * - internal view/alias construction would exceed the owner's bounds.
+ *
+ * @throws std::bad_alloc
+ * - required host/device memory allocation failed.
+ *
+ * @throws std::runtime_error
+ * - NaN or non-finite values encountered, or device/kernel errors during
+ *   reduction or matrix multiplication.
+ */
+template <typename float_t>
+Tensor<float_t> cov(const Tensor<float_t> & tensor,
+                    std::vector<uint64_t> sample_axes,
+                    std::vector<uint64_t> event_axes,
+                    int64_t ddof = 0);
+/// Explicit instantiation of cov for float
+extern template Tensor<float> cov<float> (const Tensor<float>&,
+    std::vector<uint64_t>, std::vector<uint64_t>, int64_t);
+
+/**
+ * @brief Convenience covariance wrapper using last two axes.
+ *
+ * Delegates to `Tensor::cov(ddof)` which is equivalent to
+ * `cov(tensor, {rank-2}, {rank-1}, ddof)`. For shape {N, M} returns the
+ * M×M covariance of the N samples; for {B1,...,N,M} returns {B1,...,M,M}.
+ *
+ * @param tensor Input tensor.
+ * @param ddof   Delta degrees of freedom (>= 0). Must satisfy ddof < N,
+ *               where N is the length of axis `rank-2`.
+ *
+ * @return Tensor<float_t> Covariance matrices for the last two axes.
+ *
+ * @throws std::invalid_argument
+ * - tensor rank < 2.
+ * - @p ddof is negative.
+ * - ddof is invalid for the sample count (ddof >= N).
+ *
+ * @throws std::bad_alloc
+ * - required memory allocation failed.
+ *
+ * @throws std::runtime_error
+ * - NaN or non-finite values encountered, or device/kernel errors.
+ */
+template <typename float_t>
+Tensor<float_t> cov(const Tensor<float_t> & tensor, int64_t ddof = 0);
+/// Explicit instantiation of cov(no axes) for float
+extern template Tensor<float> cov<float> (const Tensor<float>&, int64_t);
+
+/**
  * @brief Compute the standard deviation of
  * tensor elements (free function wrapper).
  *
@@ -527,8 +605,8 @@ Tensor<float_t> sqrt(const Tensor<float_t>& tensor);
 extern template Tensor<float> sqrt<float>(const Tensor<float>& tensor);
 
 /* todo
-    cov
     eigen
+    diag
     */
 } // namespace temper::math
 

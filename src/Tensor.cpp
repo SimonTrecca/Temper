@@ -6,6 +6,8 @@
 #include "temper/Tensor.hpp"
 #include "temper/SYCLUtils.hpp"
 #include "temper/Utils.hpp"
+#include "temper/Math.hpp"
+
 #include <iostream>
 
 namespace temper
@@ -346,17 +348,33 @@ Tensor<float_t>::Tensor(const Tensor & owner,
         }
     }
 
+    // Compute offset from owner's base pointer (with basic overflow safety)
+    constexpr uint64_t U64_MAX = std::numeric_limits<uint64_t>::max();
     uint64_t offset = 0;
     for (uint64_t i = 0; i < owner_rank; ++i)
     {
-        offset += owner.m_strides[i] * start_indices[i];
+        uint64_t si = start_indices[i];
+        uint64_t ostride = owner.m_strides[i];
+
+        if (si != 0 && ostride != 0)
+        {
+            if (ostride > U64_MAX / si)
+            {
+                throw std::overflow_error(R"(Tensor(alias view constructor):
+                    stride * start_index overflow while computing offset.)");
+            }
+            uint64_t add = ostride * si;
+            if (offset > U64_MAX - add)
+            {
+                throw std::overflow_error(R"(Tensor(alias view constructor):
+                    offset computation overflow.)");
+            }
+            offset += add;
+        }
     }
 
-    uint64_t owner_total = owner.get_num_elements();
-
-    constexpr uint64_t U64_MAX = std::numeric_limits<uint64_t>::max();
-
-
+    // Compute the maximum linear index that the new view may access
+    // (relative to owner.m_p_data).
     uint64_t max_index = offset;
     for (uint64_t j = 0; j < view_rank; ++j)
     {
@@ -380,7 +398,33 @@ Tensor<float_t>::Tensor(const Tensor & owner,
         }
     }
 
-    if (max_index >= owner_total)
+    // Compute the owner's maximum reachable linear index
+    // (relative to owner.m_p_data).
+    uint64_t owner_max_index = 0;
+    for (uint64_t j = 0; j < owner_rank; ++j)
+    {
+        uint64_t odimm1 = owner.m_dimensions[j] - 1;
+        uint64_t ostride = owner.m_strides[j];
+
+        if (ostride != 0 && odimm1 > 0)
+        {
+            if (ostride > U64_MAX / odimm1)
+            {
+                throw std::overflow_error(R"(Tensor(alias view constructor):
+                    stride * (dim-1) overflow while computing owner bounds.)");
+            }
+            uint64_t add = ostride * odimm1;
+            if (owner_max_index > U64_MAX - add)
+            {
+                throw std::overflow_error(R"(Tensor(alias view constructor):
+                    owner max index computation overflow.)");
+            }
+            owner_max_index += add;
+        }
+    }
+
+    // The view's maximum index must be within the owner's reachable range.
+    if (max_index > owner_max_index)
     {
         throw std::out_of_range(R"(Tensor(alias view constructor):
             view exceeds owner's bounds.)");
@@ -2479,6 +2523,162 @@ Tensor<float_t> Tensor<float_t>::var(int64_t axis, int64_t ddof) const
 
     Tensor<float_t> result = sumsq / denom_t;
     return result;
+}
+
+template<typename float_t>
+Tensor<float_t> Tensor<float_t>::cov(std::vector<uint64_t> sample_axes,
+                        std::vector<uint64_t> event_axes,
+                        int64_t ddof) const
+{
+    const uint64_t total_elems = this->get_num_elements();
+    const std::vector<uint64_t> & original_shape = this->get_dimensions();
+    const uint64_t rank = this->get_rank();
+    if (total_elems == 0)
+    {
+        throw std::invalid_argument(R"(Tensor(cov):
+            input tensor has no elements.)");
+    }
+
+    if(sample_axes.empty() || event_axes.empty())
+    {
+        throw std::invalid_argument(R"(Tensor(cov):
+            axes arguments cannot be empty.)");
+    }
+
+    if (ddof < 0)
+    {
+        throw std::invalid_argument(R"(Tensor(cov):
+            ddof must be non-negative.)");
+    }
+
+    if (rank < 2)
+    {
+        throw std::invalid_argument(R"(Tensor(cov):
+            rank must be >= 2.)");
+    }
+
+    // Check if the sample axes are regular
+    // (within tensor range, not replicated).
+    std::vector<bool> seen(rank, false);
+    for (uint64_t axis : sample_axes)
+    {
+        if (axis >= rank)
+        {
+            throw std::invalid_argument(R"(Tensor(cov):
+                sample axis out of range)");
+        }
+        if (seen[axis])
+        {
+            throw std::invalid_argument(R"(Tensor(cov):
+                the same axis cannot be used twice)");
+        }
+        seen[axis] = true;
+    }
+
+    // We do the same for event axes.
+    for (uint64_t axis : event_axes)
+    {
+        if (axis >= rank)
+        {
+            throw std::invalid_argument(R"(Tensor(cov):
+                event axis out of range)");
+        }
+        if (seen[axis])
+        {
+            throw std::invalid_argument(R"(Tensor(cov):
+                the same axis cannot be used twice)");
+        }
+        seen[axis] = true;
+    }
+
+    // Build the tensor shape: batch axes -> sample axes -> event axes.
+    std::vector<uint64_t> t_shape;
+    t_shape.reserve(rank);
+    for (size_t i = 0; i < rank; ++i)
+    {
+        if (seen[i])
+        {
+            continue;
+        }
+        t_shape.push_back(i);
+    }
+    t_shape.insert(t_shape.end(), sample_axes.begin(), sample_axes.end());
+    t_shape.insert(t_shape.end(), event_axes.begin(), event_axes.end());
+
+    Tensor<float_t> t_tensor = this->transpose(t_shape);
+
+    // We clone the transposed tensor because reshape does not work on views.
+    Tensor<float_t> t_tensor_clone = t_tensor.clone();
+
+    uint64_t sample_total = 1, event_total = 1;
+    // Compute the final shape of the tensor we need to operate on.
+    for (uint64_t axis : sample_axes)
+    {
+        sample_total *= original_shape[axis];
+    }
+    if (static_cast<uint64_t>(ddof) >= sample_total)
+    {
+        throw std::invalid_argument(R"(Tensor(cov):
+                not enough samples for ddof.)");
+    }
+    for (uint64_t axis : event_axes)
+    {
+        event_total *= original_shape[axis];
+    }
+
+    const std::vector<uint64_t> & transposed_shape =
+        t_tensor_clone.get_dimensions();
+
+    const size_t num_sample_axes = sample_axes.size();
+    const size_t num_event_axes  = event_axes.size();
+    const size_t batch_len = rank - (num_sample_axes + num_event_axes);
+
+    std::vector<uint64_t> final_shape;
+    final_shape.reserve(batch_len + 2);
+    for (size_t i = 0; i < batch_len; ++i)
+    {
+        final_shape.push_back(transposed_shape[i]);
+    }
+    final_shape.push_back(sample_total);
+    final_shape.push_back(event_total);
+
+    t_tensor_clone.reshape(final_shape);
+
+    uint64_t sample_axis_idx = static_cast<uint64_t>(batch_len);
+
+    Tensor<float_t> mu = t_tensor_clone.mean(sample_axis_idx);
+    Tensor<float_t> centered = t_tensor_clone - mu;
+
+    Tensor<float_t> denom({1}, m_mem_loc);
+    denom = 1.0f / (sample_total - ddof);
+
+    std::vector<uint64_t> transpose_order;
+    transpose_order.reserve(centered.get_rank());
+    for (uint64_t i = 0; i < batch_len; ++i)
+    {
+        transpose_order.push_back(i);
+    }
+    transpose_order.push_back(batch_len + 1);
+    transpose_order.push_back(batch_len);
+
+    Tensor<float_t> centered_t = centered.transpose(transpose_order);
+
+    Tensor<float> result = denom * math::matmul(centered_t, centered);
+
+    return result;
+}
+
+template<typename float_t>
+Tensor<float_t> Tensor<float_t>::cov(int64_t ddof) const
+{
+    const uint64_t rank = this->get_rank();
+    if (rank < 2)
+    {
+        throw std::invalid_argument(R"(Tensor(cov):
+            rank must be >= 2.)");
+    }
+
+    return this->cov({rank - 2}, {rank - 1}, ddof);
 }
 
 template<typename float_t>

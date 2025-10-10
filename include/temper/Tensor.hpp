@@ -521,6 +521,71 @@ public:
     Tensor<float_t> var(int64_t axis = -1, int64_t ddof = 0) const;
 
     /**
+     * @brief Compute covariance matrices over specified sample and event axes.
+     *
+     * Treats axes in @p sample_axes as sample dimensions and axes in
+     * @p event_axes as event (feature) dimensions. Remaining axes are batch
+     * axes. Result shape is:
+     *   { <batch dims...>, event_total, event_total }
+     * where event_total = product(lengths of @p event_axes).
+     *
+     * @param sample_axes Non-empty vector of axis indices to flatten as samples.
+     *                    Order matters. Entries must be distinct and in
+     *                    [0, rank-1].
+     * @param event_axes  Non-empty vector of axis indices to flatten as events.
+     *                    Order matters. Entries must be distinct, disjoint from
+     *                    @p sample_axes, and in [0, rank-1].
+     * @param ddof        Delta degrees of freedom (>= 0). Divisor is
+     *                    (N - ddof) where N = product(lengths of sample axes).
+     * @return Tensor<float_t> Covariance matrices with shape
+     *         `{ <batch dims...>, event_total, event_total }`. Allocated in the
+     *         same memory location (host/device) as the input where possible.
+     *
+     * @throws std::invalid_argument if:
+     * - input tensor has no elements.
+     * - @p sample_axes or @p event_axes is empty.
+     * - @p ddof is negative.
+     * - tensor rank < 2.
+     * - any axis index is out of range.
+     * - the same axis appears more than once (within or across vectors).
+     * - ddof >= number of samples (N).
+     * @throws std::out_of_range if:
+     * - internal view/alias construction would exceed the owner's bounds.
+     * @throws std::bad_alloc if:
+     * - required host/device memory allocation failed.
+     * @throws std::runtime_error if:
+     * - NaN or non-finite values encountered, or device/kernel errors during
+     *   reduction or matrix multiplication.
+     */
+    Tensor<float_t> cov(std::vector<uint64_t> sample_axes,
+                        std::vector<uint64_t> event_axes,
+                        int64_t ddof = 0) const;
+
+    /**
+     * @brief Convenience overload — covariance for the last two axes.
+     *
+     * Equivalent to:
+     *   cov({ rank-2 }, { rank-1 }, ddof)
+     *
+     * For a 2-D tensor of shape {N, M} this returns the M×M covariance of the
+     * N samples. For shape {B1,..., N, M} it returns {B1,..., M, M}.
+     *
+     * @param ddof Delta degrees of freedom (>= 0). Must satisfy ddof < N,
+     *             where N is the length of axis `rank-2`.
+     * @return Tensor<float_t> Covariance matrices for the last two axes.
+     *
+     * @throws std::invalid_argument if:
+     * - tensor rank < 2.
+     * - @p ddof is negative.
+     * - ddof is invalid for the sample count (ddof >= N).
+     * @throws std::bad_alloc if:
+     * - required memory allocation failed.
+     * @throws std::runtime_error if:
+     * - NaN or non-finite values encountered, or device/kernel errors.
+     */
+    Tensor<float_t> cov(int64_t ddof = 0) const;
+
+    /**
      * @brief Compute the standard deviation of tensor elements.
      *
      * Reduces the tensor by computing the square root of the variance,

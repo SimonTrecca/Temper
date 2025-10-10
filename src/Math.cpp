@@ -1486,6 +1486,24 @@ template Tensor<float> var<float>
     (const Tensor<float>&, int64_t, int64_t);
 
 template <typename float_t>
+Tensor<float_t> cov(const Tensor<float_t> & tensor,
+                    std::vector<uint64_t> sample_axes,
+                    std::vector<uint64_t> event_axes,
+                    int64_t ddof)
+{
+    return tensor.cov(sample_axes, event_axes, ddof);
+}
+template Tensor<float> cov<float> (const Tensor<float>&,
+    std::vector<uint64_t>, std::vector<uint64_t>, int64_t);
+
+template <typename float_t>
+Tensor<float_t> cov(const Tensor<float_t> & tensor, int64_t ddof)
+{
+    return tensor.cov(ddof);
+}
+template Tensor<float> cov<float> (const Tensor<float>&, int64_t);
+
+template <typename float_t>
 Tensor<float_t> std(const Tensor<float_t> & tensor, int64_t axis, int64_t ddof)
 {
     return tensor.std(axis, ddof);
