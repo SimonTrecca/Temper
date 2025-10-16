@@ -229,8 +229,7 @@ TEST(TENSOR, main_constructor_zero_initializes_data)
  */
 TEST(TENSOR, main_constructor_memory_location_and_access)
 {
-    // DEVICE tensor test: write via kernel, then copy back to host and verify.
-    Tensor<float> t_device({1, 1}, MemoryLocation::DEVICE);
+    Tensor<float> t_device(std::vector<uint64_t>{1, 1}, MemoryLocation::DEVICE);
     EXPECT_EQ(t_device.m_mem_loc, MemoryLocation::DEVICE);
 
     // Launch kernel to set element to 42.0f.
@@ -326,7 +325,8 @@ TEST(TENSOR, main_constructor_exceeds_device_max_alloc)
     uint64_t dev_max_alloc =
         dev.get_info<sycl::info::device::max_mem_alloc_size>();
 
-    std::vector<uint64_t> dims = { (dev_max_alloc / sizeof(float)) + 1 };
+    std::vector<uint64_t> dims = std::vector<uint64_t>{
+        (dev_max_alloc / sizeof(float)) + 1 };
     EXPECT_THROW(
         Tensor<float> t(dims, MemoryLocation::DEVICE),
         std::runtime_error
@@ -344,7 +344,8 @@ TEST(TENSOR, main_constructor_exceeds_device_global_mem)
     uint64_t dev_global_mem =
         dev.get_info<sycl::info::device::global_mem_size>();
 
-    std::vector<uint64_t> dims = { (dev_global_mem / sizeof(float)) + 1 };
+    std::vector<uint64_t> dims = std::vector<uint64_t>{
+        (dev_global_mem / sizeof(float)) + 1 };
     EXPECT_THROW(
         Tensor<float> t(dims, MemoryLocation::DEVICE),
         std::runtime_error
@@ -420,7 +421,7 @@ TEST(TENSOR, copy_constructor_host)
  */
 TEST(TENSOR, copy_constructor_view)
 {
-    Tensor<float> t1({4}, MemoryLocation::DEVICE);
+    Tensor<float> t1(std::vector<uint64_t>{4}, MemoryLocation::DEVICE);
     std::vector<float> values = {1, 2, 3, 4};
     t1 = values;
 
@@ -452,6 +453,59 @@ TEST(TENSOR, move_constructor)
     EXPECT_EQ(t2.m_p_data.get(), original_ptr);
     EXPECT_EQ(t2.m_mem_loc, original_loc);
     EXPECT_EQ(t1.m_p_data.get(), nullptr);
+}
+
+/**
+ * @test TENSOR.scalar_constructor_implicit_host
+ * @brief Construction from a scalar (default HOST).
+ */
+TEST(TENSOR, scalar_constructor_host)
+{
+    Tensor<float> t(3.14f, MemoryLocation::HOST);
+
+    EXPECT_EQ(t.m_dimensions, std::vector<uint64_t>({1}));
+    EXPECT_EQ(t.m_strides, std::vector<uint64_t>({1}));
+    EXPECT_EQ(t.m_mem_loc, MemoryLocation::HOST);
+    EXPECT_TRUE(t.m_own_data);
+
+    float host_val = t.m_p_data.get()[0];
+    EXPECT_FLOAT_EQ(host_val, 3.14f);
+}
+
+/**
+ * @test TENSOR.scalar_constructor_device
+ * @brief Construction from a scalar into DEVICE memory.
+ */
+TEST(TENSOR, scalar_constructor_device)
+{
+    Tensor<float> t(2.718f, MemoryLocation::DEVICE);
+
+    EXPECT_EQ(t.m_dimensions, std::vector<uint64_t>({1}));
+    EXPECT_EQ(t.m_strides, std::vector<uint64_t>({1}));
+    EXPECT_EQ(t.m_mem_loc, MemoryLocation::DEVICE);
+    EXPECT_TRUE(t.m_own_data);
+
+    float host_val = 0.0f;
+    g_sycl_queue.memcpy(&host_val, t.m_p_data.get(), sizeof(float)).wait();
+    EXPECT_FLOAT_EQ(host_val, 2.718f);
+}
+
+/**
+ * @test TENSOR.scalar_constructor_used_for_parameter_passing
+ * @brief Ensure implicit conversion allows passing a float
+ * where Tensor is expected.
+ */
+TEST(TENSOR, scalar_constructor_used_for_parameter_passing)
+{
+    auto read_scalar = [](Tensor<float> x) -> float
+    {
+        float host_val = 0.0f;
+        g_sycl_queue.memcpy(&host_val, x.m_p_data.get(), sizeof(float)).wait();
+        return host_val;
+    };
+
+    float got = read_scalar(9.81f);
+    EXPECT_FLOAT_EQ(got, 9.81f);
 }
 
 /**
@@ -1507,6 +1561,108 @@ TEST(TENSOR, operator_equals_vector_assign_to_default_throws)
 }
 
 /**
+ * @test TENSOR.operator_equals_vector_assignment_to_view_column
+ * @brief Assigning a std::vector to a column view writes
+ * into the owner's memory.
+ */
+TEST(TENSOR, operator_equals_vector_assignment_to_view_column)
+{
+    // Owner 2x3
+    Tensor<float> owner({2,3}, MemoryLocation::HOST);
+    std::vector<float> base_vals = { 0.f, 1.f, 2.f, 3.f, 4.f, 5.f };
+    owner = base_vals;
+
+    Tensor<float> col_view(owner, {0,1}, {2}, { owner.m_strides[0] });
+
+    std::vector<float> new_col = { 100.f, 200.f };
+    col_view = new_col;
+
+    EXPECT_FALSE(col_view.m_own_data);
+
+    std::vector<float> out(6);
+    g_sycl_queue.memcpy(out.data(),
+        owner.m_p_data.get(), sizeof(float) * 6).wait();
+
+    EXPECT_FLOAT_EQ(out[1], 100.f);
+    EXPECT_FLOAT_EQ(out[4], 200.f);
+
+    EXPECT_FLOAT_EQ(out[0], 0.f);
+    EXPECT_FLOAT_EQ(out[2], 2.f);
+}
+
+/**
+ * @test TENSOR.operator_equals_vector_assignment_to_view_patch
+ * @brief Assigning a std::vector to a strided patch view writes into the
+ * owner's memory correctly.
+ */
+TEST(TENSOR, operator_equals_vector_assignment_to_view_patch)
+{
+    Tensor<float> owner({3,3}, MemoryLocation::HOST);
+    owner = std::vector<float>(9, 0.f);
+
+    Tensor<float> patch(owner, {1,1}, {2,2},
+        { owner.m_strides[0], owner.m_strides[1] });
+
+    std::vector<float> vals = { 1.f, 2.f, 3.f, 4.f };
+    patch = vals;
+
+    std::vector<float> out(9);
+    g_sycl_queue.memcpy(out.data(),
+        owner.m_p_data.get(), sizeof(float) * 9).wait();
+
+    EXPECT_FLOAT_EQ(out[1 * 3 + 1], 1.f);
+    EXPECT_FLOAT_EQ(out[1 * 3 + 2], 2.f);
+    EXPECT_FLOAT_EQ(out[2 * 3 + 1], 3.f);
+    EXPECT_FLOAT_EQ(out[2 * 3 + 2], 4.f);
+
+    EXPECT_FLOAT_EQ(out[0], 0.f);
+    EXPECT_FLOAT_EQ(out[3], 0.f);
+}
+
+/**
+ * @test TENSOR.operator_equals_vector_assignment_to_weird_strides
+ * @brief Assigns to a view with irregular strides (e.g. 3,14)
+ * and verifies placement.
+ */
+TEST(TENSOR, operator_equals_vector_assignment_to_weird_strides)
+{
+    Tensor<float> owner({10,10}, MemoryLocation::HOST);
+    owner = std::vector<float>(100, 0.f);
+
+    Tensor<float> view(owner, {1,1}, {2,3}, {3,14});
+
+    std::vector<float> vals = {1.f, 2.f, 3.f, 4.f, 5.f, 6.f};
+    view = vals;
+
+    std::vector<float> host(100);
+    g_sycl_queue.memcpy(host.data(),
+        owner.m_p_data.get(), sizeof(float)*100).wait();
+
+    EXPECT_FLOAT_EQ(host[1*10+1], 1.f);
+    EXPECT_FLOAT_EQ(host[1*10+15], 2.f);
+}
+
+
+/**
+ * @test TENSOR.operator_equals_vector_assignment_view_size_mismatch_throws
+ * @brief Assigning a vector with the wrong size to a view
+ * should throw std::invalid_argument.
+ */
+TEST(TENSOR, operator_equals_vector_assignment_view_size_mismatch_throws)
+{
+    Tensor<float> owner({2,2}, MemoryLocation::HOST);
+    owner = std::vector<float>{ 1.f, 2.f, 3.f, 4.f };
+
+    Tensor<float> col(owner, {0,1}, {2}, { owner.m_strides[0] });
+
+    std::vector<float> wrong = { 9.f };
+
+    EXPECT_THROW({
+        col = wrong;
+    }, std::invalid_argument);
+}
+
+/**
  * @test TENSOR.operator_equals_scalar_assignment_and_conversion
  * @brief Tests operator=(float_t)
  * and operator float_t() on 1-element tensors / views.
@@ -1536,7 +1692,8 @@ TEST(TENSOR, operator_equals_scalar_assignment_and_conversion)
  * Also verifies that assigning a scalar to a tensor with more than one element
  * throws std::invalid_argument.
  */
-TEST(TENSOR, operator_equals_scalar_assignment_to_default_constructed_tensor) {
+TEST(TENSOR, operator_equals_scalar_assignment_to_default_constructed_tensor)
+{
     Tensor<float> t;
     t = 42.5f;
 
@@ -3787,7 +3944,6 @@ TEST(TENSOR, clone_alias_view)
     EXPECT_NE(static_cast<float>(clone[0][0]), 999.0f);
 }
 
-
 /**
  * @test TENSOR.clone_const
  * @brief Ensure clone() can be called on const Tensor.
@@ -3809,6 +3965,176 @@ TEST(TENSOR, clone_const)
     }
 
     EXPECT_NE(c.m_p_data, t.m_p_data);
+}
+
+/**
+ * @test TENSOR.copy_from_identical_contiguous
+ * @brief copy_from fast-path for identical contiguous shapes (memcpy path).
+ */
+TEST(TENSOR, copy_from_identical_contiguous)
+{
+    Tensor<float> src({2,3}, MemoryLocation::HOST);
+    Tensor<float> dst({2,3}, MemoryLocation::HOST);
+
+    std::vector<float> vals = { 1.f, 2.f, 3.f, 4.f, 5.f, 6.f };
+    src = vals;
+    dst = std::vector<float>{0,0,0,0,0,0};
+
+    dst.copy_from(src);
+
+    std::vector<float> out(6);
+    g_sycl_queue.memcpy(out.data(), dst.m_p_data.get(), sizeof(float)*6).wait();
+
+    for (size_t i = 0; i < out.size(); ++i)
+    {
+        EXPECT_FLOAT_EQ(out[i], vals[i]);
+    }
+}
+
+/**
+ * @test TENSOR.copy_from_scalar_to_owner_and_view
+ * @brief copy_from with scalar source writes the scalar
+ * to owner and to a view (stride-aware).
+ */
+TEST(TENSOR, copy_from_scalar_to_owner_and_view)
+{
+    // scalar -> owner
+    Tensor<float> scalar({1}, MemoryLocation::HOST);
+    scalar = 7.5f;
+
+    Tensor<float> owner({2,2}, MemoryLocation::HOST);
+    owner = std::vector<float>{0.f,0.f,0.f,0.f};
+
+    owner.copy_from(scalar);
+
+    std::vector<float> out_owner(4);
+    g_sycl_queue.memcpy(out_owner.data(),
+        owner.m_p_data.get(), sizeof(float)*4).wait();
+    for (float v : out_owner) EXPECT_FLOAT_EQ(v, 7.5f);
+
+    Tensor<float> base({3,3}, MemoryLocation::HOST);
+    std::vector<float> base_vals(9);
+    for (uint64_t i = 0; i < 9; ++i)
+    {
+        base_vals[i] = static_cast<float>(i + 1);
+    }
+    base = base_vals;
+
+    Tensor<float> col_view(base, {0,1}, {3}, {base.m_strides[0]});
+
+    col_view.copy_from(scalar);
+
+    // read back base
+    std::vector<float> base_out(9);
+    g_sycl_queue.memcpy(base_out.data(),
+        base.m_p_data.get(), sizeof(float)*9).wait();
+
+    EXPECT_FLOAT_EQ(base_out[1], 7.5f);
+    EXPECT_FLOAT_EQ(base_out[4], 7.5f);
+    EXPECT_FLOAT_EQ(base_out[7], 7.5f);
+
+    EXPECT_FLOAT_EQ(base_out[0], 1.f);
+    EXPECT_FLOAT_EQ(base_out[2], 3.f);
+}
+
+/**
+ * @test TENSOR.copy_from_broadcast_1d_to_2d
+ * @brief copy_from broadcasting from 1-D into 2-D destination.
+ */
+TEST(TENSOR, copy_from_broadcast_1d_to_2d)
+{
+    Tensor<float> src({3}, MemoryLocation::HOST);
+    src = std::vector<float>{1.f, 2.f, 3.f};
+
+    Tensor<float> dst({2,3}, MemoryLocation::HOST);
+    dst = std::vector<float>{0,0,0,0,0,0};
+
+    dst.copy_from(src);
+
+    std::vector<float> out(6);
+    g_sycl_queue.memcpy(out.data(), dst.m_p_data.get(), sizeof(float)*6).wait();
+
+    EXPECT_FLOAT_EQ(out[0], 1.f);
+    EXPECT_FLOAT_EQ(out[1], 2.f);
+    EXPECT_FLOAT_EQ(out[2], 3.f);
+    EXPECT_FLOAT_EQ(out[3], 1.f);
+    EXPECT_FLOAT_EQ(out[4], 2.f);
+    EXPECT_FLOAT_EQ(out[5], 3.f);
+}
+
+/**
+ * @test TENSOR.copy_from_from_view_into_owner
+ * @brief copy_from where the source is a non-owning view.
+ */
+TEST(TENSOR, copy_from_from_view_into_owner)
+{
+    Tensor<float> owner_src({2,3}, MemoryLocation::HOST);
+    std::vector<float> vals = { 10.f, 11.f, 12.f, 20.f, 21.f, 22.f };
+    owner_src = vals;
+
+    Tensor<float> src_view(owner_src, {1,0}, {3});
+
+    Tensor<float> dst({2,3}, MemoryLocation::HOST);
+    dst = std::vector<float>{0,0,0,0,0,0};
+
+    dst.copy_from(src_view);
+
+    std::vector<float> out(6);
+    g_sycl_queue.memcpy(out.data(), dst.m_p_data.get(), sizeof(float)*6).wait();
+
+    EXPECT_FLOAT_EQ(out[0], 20.f);
+    EXPECT_FLOAT_EQ(out[1], 21.f);
+    EXPECT_FLOAT_EQ(out[2], 22.f);
+    EXPECT_FLOAT_EQ(out[3], 20.f);
+    EXPECT_FLOAT_EQ(out[4], 21.f);
+    EXPECT_FLOAT_EQ(out[5], 22.f);
+}
+
+/**
+ * @test TENSOR.copy_from_to_noncontiguous_dst
+ * @brief copy_from into a non-contiguous (strided) destination.
+ */
+TEST(TENSOR, copy_from_to_noncontiguous_dst)
+{
+    Tensor<float> src({2,2}, MemoryLocation::HOST);
+    src = std::vector<float>{1.f, 2.f, 3.f, 4.f};
+
+    Tensor<float> base({3,3}, MemoryLocation::HOST);
+    base = std::vector<float>(9, 0.f);
+
+    Tensor<float> patch(base, {1,1}, {2,2},
+        {base.m_strides[0], base.m_strides[1]});
+
+    patch.copy_from(src);
+
+    std::vector<float> base_out(9);
+    g_sycl_queue.memcpy(base_out.data(),
+        base.m_p_data.get(), sizeof(float)*9).wait();
+
+    EXPECT_FLOAT_EQ(base_out[1 * 3 + 1], 1.f);
+    EXPECT_FLOAT_EQ(base_out[1 * 3 + 2], 2.f);
+    EXPECT_FLOAT_EQ(base_out[2 * 3 + 1], 3.f);
+    EXPECT_FLOAT_EQ(base_out[2 * 3 + 2], 4.f);
+
+    EXPECT_FLOAT_EQ(base_out[0], 0.f);
+    EXPECT_FLOAT_EQ(base_out[3], 0.f);
+}
+
+/**
+ * @test TENSOR.copy_from_incompatible_shapes_throws
+ * @brief copy_from should throw when source cannot be broadcast to destination.
+ */
+TEST(TENSOR, copy_from_incompatible_shapes_throws)
+{
+    Tensor<float> src({3}, MemoryLocation::HOST);
+    src = std::vector<float>{1.f, 2.f, 3.f};
+
+    Tensor<float> dst({2,2}, MemoryLocation::HOST);
+    dst = std::vector<float>{0.f, 0.f, 0.f, 0.f};
+
+    EXPECT_THROW({
+        dst.copy_from(src);
+    }, std::invalid_argument);
 }
 
 /**
@@ -6006,7 +6332,6 @@ TEST(TENSOR, cov_scattered_batched)
     }
 }
 
-
 /**
  * @test TENSOR.cov_alias_view_scattered
  * @brief Covariance on an alias view with scattered axes.
@@ -6363,6 +6688,374 @@ TEST(TENSOR, std_ddof_invalid_throws)
     EXPECT_THROW(t.std(-1, 4), std::invalid_argument);
 }
 
+/**
+ * @test TENSOR.eig_empty
+ * @brief Verify eig() throws when called on an empty tensor.
+ */
+TEST(TENSOR, eig_empty)
+{
+    Tensor<float> t;
+    EXPECT_THROW(t.eig(100, 1e-6f), std::invalid_argument);
+}
+
+/**
+ * @test TENSOR.eig_rank_lower_than_2
+ * @brief Verify eig() requires tensor rank >= 2.
+ */
+TEST(TENSOR, eig_rank_lower_than_2)
+{
+    Tensor<float> t({2});
+    EXPECT_THROW(t.eig(100, 1e-6f), std::invalid_argument);
+}
+
+/**
+ * @test TENSOR.eig_last_two_not_square
+ * @brief Verify eig() rejects tensors whose last two dims are not square.
+ */
+TEST(TENSOR, eig_last_two_not_square)
+{
+    Tensor<float> t({2, 3, 4}); // last two dims 3x4 -> not square
+    EXPECT_THROW(t.eig(100, 1e-6f), std::invalid_argument);
+}
+
+/**
+ * @test TENSOR.eig_diagonal
+ * @brief eig() returns expected eigenvalues for a diagonal device matrix.
+ *
+ * Creates a 4×4 diagonal matrix allocated on device, runs eig(), reads back
+ * eigenvalues and checks they match the diagonal entries (within tolerance).
+ */
+TEST(TENSOR, eig_diagonal)
+{
+    const uint64_t n = 4;
+    Tensor<float> A({n, n}, MemoryLocation::DEVICE);
+    std::vector<float> flat(n * n, 0.0f);
+    for (uint64_t i = 0; i < n; ++i)
+    {
+        flat[i * n + i] = static_cast<float>(i + 1);
+    }
+    A = flat;
+
+    auto result = A.eig(80, 1e-6f);
+    Tensor<float> vals = result.first;
+
+    std::vector<double> got;
+    for (uint64_t i = 0; i < n; ++i)
+    {
+        Tensor<float> v_view(vals, std::vector<uint64_t>{i},
+            std::vector<uint64_t>{1});
+        got.push_back(static_cast<double>(static_cast<float>(v_view)));
+    }
+    std::sort(got.begin(), got.end());
+
+    std::vector<double> expected = {1.0, 2.0, 3.0, 4.0};
+    std::sort(expected.begin(), expected.end());
+
+    const double tol = 5e-4;
+    for (size_t i = 0; i < expected.size(); ++i)
+    {
+        EXPECT_NEAR(got[i], expected[i], tol);
+    }
+}
+
+/**
+ * @test TENSOR.eig_batched
+ * @brief eig() on a small batched tensor yields per-batch eigenvalues.
+ *
+ * Builds a 2×3×3 device tensor containing two diagonal batches, runs eig()
+ * with increased iterations, and checks each batch's computed eigenvalues
+ * against expected diagonals (sorted, with loose tolerance for device runs).
+ */
+TEST(TENSOR, eig_batched)
+{
+    Tensor<float> T({2,3,3}, MemoryLocation::DEVICE);
+    std::vector<float> data(2 * 3 * 3, 0.0f);
+
+    data[0*9 + 0*3 + 0] = 1.0f;
+    data[0*9 + 1*3 + 1] = 2.0f;
+    data[0*9 + 2*3 + 2] = 3.0f;
+
+    data[1*9 + 0*3 + 0] = 4.0f;
+    data[1*9 + 1*3 + 1] = 5.0f;
+    data[1*9 + 2*3 + 2] = 6.0f;
+
+    T = data;
+
+    auto result = T.eig(200, 1e-6f);
+    Tensor<float> vals = result.first;
+
+    std::vector<std::vector<double>> expected =
+    {
+        {1.0, 2.0, 3.0},
+        {4.0, 5.0, 6.0}
+    };
+
+    const double tol = 5e-3;
+
+    for (uint64_t b = 0; b < 2; ++b)
+    {
+        std::vector<double> got;
+        got.reserve(3);
+        for (uint64_t j = 0; j < 3; ++j)
+        {
+            Tensor<float> v_view(vals, std::vector<uint64_t>{b, j},
+                std::vector<uint64_t>{1});
+            got.push_back(static_cast<double>(static_cast<float>(v_view)));
+        }
+        std::sort(got.begin(), got.end());
+        std::sort(expected[b].begin(), expected[b].end());
+
+        for (size_t i = 0; i < 3; ++i)
+        {
+            EXPECT_NEAR(got[i], expected[b][i], tol);
+        }
+    }
+}
+
+/**
+ * @test TENSOR.eig_alias_view_strided
+ * @brief eig() works on a strided alias/view and preserves owner memory.
+ *
+ * Creates a 10×10 owner matrix on device, builds a non-contiguous view that
+ * selects every-other row/column (5×5) with a diagonal, computes eig() on the
+ * view and verifies eigenvalues match the diagonal. Also verifies the owner
+ * buffer is unmodified after the operation by copying back to host.
+ */
+TEST(TENSOR, eig_alias_view_strided)
+{
+    const uint64_t N = 10;
+    const uint64_t n = 5;
+    std::vector<float> owner_flat(N * N, 0.0f);
+
+    uint64_t start_row = 0;
+    uint64_t start_col = 1;
+    for (uint64_t i = 0; i < n; ++i)
+    {
+        for (uint64_t j = 0; j < n; ++j)
+        {
+            size_t owner_index = static_cast<size_t>
+                ((start_row + i * 2) * N + (start_col + j * 2));
+            if (i == j)
+            {
+                owner_flat[owner_index] = static_cast<float>(10 * (i + 1));
+            }
+            else
+            {
+                owner_flat[owner_index] = 0.0f;
+            }
+
+        }
+    }
+
+    Tensor<float> owner({N, N}, MemoryLocation::DEVICE);
+    owner = owner_flat;
+
+    std::vector<uint64_t> start_indices = { start_row, start_col };
+    std::vector<uint64_t> view_dims = { n, n };
+    std::vector<uint64_t> view_strides = { N * 2, 2 };
+    Tensor<float> view(owner, start_indices, view_dims, view_strides);
+
+    EXPECT_NE(view.get_strides(), owner.get_strides());
+    auto result = view.eig(250, 1e-6f);
+    Tensor<float> vals = result.first;
+
+    std::vector<double> expected = {10.0, 20.0, 30.0, 40.0, 50.0};
+    std::sort(expected.begin(), expected.end());
+
+    std::vector<double> got;
+    for (uint64_t i = 0; i < n; ++i)
+    {
+        Tensor<float> v_view(vals, std::vector<uint64_t>{i},
+            std::vector<uint64_t>{1});
+        got.push_back(static_cast<double>(static_cast<float>(v_view)));
+    }
+    std::sort(got.begin(), got.end());
+
+    const double tol = 1e-4;
+    for (size_t i = 0; i < expected.size(); ++i)
+    {
+        EXPECT_NEAR(got[i], expected[i], tol);
+    }
+
+    Tensor<float> host_copy({N, N}, MemoryLocation::HOST);
+    host_copy = owner;
+    const float* host_ptr = host_copy.get_data();
+    for (size_t idx = 0; idx < owner_flat.size(); ++idx)
+    {
+        EXPECT_FLOAT_EQ(owner_flat[idx], host_ptr[idx]);
+    }
+}
+
+/**
+ * @test TENSOR.eig_noncontig_batch_strides_device
+ * @brief eig() on a non-contiguous batched view selects the correct batches.
+ *
+ * Constructs a 4-batch owner but creates a view that picks batches {0,2}
+ * via nonstandard batch stride. Runs eig() on the view and compares per-batch
+ * eigenvalues with expected values. Also ensures owner memory is unchanged.
+ */
+TEST(TENSOR, eig_noncontig_batch_strides_device)
+{
+    const uint64_t owner_batches = 4;
+    const uint64_t batch_n = 3;
+    const uint64_t owner_elems_per_batch = batch_n * batch_n;
+    const uint64_t owner_total = owner_batches * owner_elems_per_batch;
+
+    std::vector<float> owner_flat(owner_total, 0.0f);
+
+    owner_flat[0 * owner_elems_per_batch + 0 * batch_n + 0] = 1.0f;
+    owner_flat[0 * owner_elems_per_batch + 1 * batch_n + 1] = 2.0f;
+    owner_flat[0 * owner_elems_per_batch + 2 * batch_n + 2] = 3.0f;
+
+    owner_flat[2 * owner_elems_per_batch + 0 * batch_n + 0] = 7.0f;
+    owner_flat[2 * owner_elems_per_batch + 1 * batch_n + 1] = 8.0f;
+    owner_flat[2 * owner_elems_per_batch + 2 * batch_n + 2] = 9.0f;
+
+    Tensor<float> owner({owner_batches, batch_n, batch_n}, MemoryLocation::DEVICE);
+    owner = owner_flat;
+
+    std::vector<uint64_t> start_indices = { 0, 0, 0 };
+    std::vector<uint64_t> view_dims = { 2, batch_n, batch_n };
+    std::vector<uint64_t> view_strides =
+        { owner_elems_per_batch * 2, batch_n, 1 };
+
+    Tensor<float> view(owner, start_indices, view_dims, view_strides);
+
+    EXPECT_NE(view.get_strides(), owner.get_strides());
+
+    auto result = view.eig(200, 1e-6f);
+    Tensor<float> vals = result.first;
+
+    std::vector<std::vector<double>> expected = {
+        {1.0, 2.0, 3.0},
+        {7.0, 8.0, 9.0}
+    };
+
+    const double tol = 5e-3;
+
+    for (uint64_t b = 0; b < 2; ++b)
+    {
+        std::vector<double> got;
+        got.reserve(batch_n);
+        for (uint64_t j = 0; j < batch_n; ++j)
+        {
+            Tensor<float> v_view(vals, std::vector<uint64_t>{b, j},
+                std::vector<uint64_t>{1});
+            got.push_back(static_cast<double>(static_cast<float>(v_view)));
+        }
+        std::sort(got.begin(), got.end());
+        std::sort(expected[b].begin(), expected[b].end());
+
+        for (size_t i = 0; i < batch_n; ++i)
+        {
+            EXPECT_NEAR(got[i], expected[b][i], tol);
+        }
+    }
+
+    Tensor<float> host_copy({owner_batches, batch_n, batch_n},
+        MemoryLocation::HOST);
+    host_copy = owner;
+    const float* host_ptr = host_copy.get_data();
+    for (size_t idx = 0; idx < owner_flat.size(); ++idx)
+    {
+        EXPECT_FLOAT_EQ(owner_flat[idx], host_ptr[idx]);
+    }
+}
+
+/**
+ * @test TENSOR.eig_5d_noncontig_device
+ * @brief eig() handles higher-rank non-contiguous views with singleton dims.
+ *
+ * Uses a 5-D owner tensor `{4,1,1,3,3}`, selects two batches with custom
+ * strides producing a non-contiguous view, computes eig() on the view and
+ * checks per-batch eigenvalues match the expected diagonals (sorted, device
+ * tolerance). Finally verifies owner memory integrity by copying to host.
+ */
+TEST(TENSOR, eig_5d_noncontig_device)
+{
+    const std::vector<uint64_t> owner_dims = {4, 1, 1, 3, 3};
+    const uint64_t batch_count = owner_dims[0];
+    const uint64_t rows = owner_dims[3];
+    const uint64_t cols = owner_dims[4];
+    ASSERT_EQ(rows, cols);
+
+    const uint64_t elems_per_batch = rows * cols;
+    const uint64_t owner_total = batch_count * elems_per_batch;
+
+    std::vector<float> owner_flat(owner_total, 0.0f);
+
+    {
+        uint64_t batch_base = 0 * elems_per_batch;
+        for (uint64_t d = 0; d < rows; ++d)
+        {
+            owner_flat[batch_base + d * cols + d] = static_cast<float>(d + 1);
+        }
+    }
+
+    {
+        uint64_t batch_base = 2 * elems_per_batch;
+        for (uint64_t d = 0; d < rows; ++d)
+        {
+            owner_flat[batch_base + d * cols + d] = static_cast<float>(7 + d);
+        }
+    }
+
+    Tensor<float> owner(owner_dims, MemoryLocation::DEVICE);
+    owner = owner_flat;
+
+    std::vector<uint64_t> start_indices = { 0, 0, 0, 0, 0 };
+    std::vector<uint64_t> view_dims     = { 2, 1, 1, rows, cols };
+    std::vector<uint64_t> view_strides  = { elems_per_batch * 2,
+        elems_per_batch,
+        elems_per_batch,
+        static_cast<uint64_t>(cols),
+        1 };
+
+    Tensor<float> view(owner, start_indices, view_dims, view_strides);
+
+    EXPECT_NE(view.get_strides(), owner.get_strides());
+
+    auto result = view.eig(200, 1e-6f);
+    Tensor<float> vals = result.first;
+
+    std::vector<std::vector<double>> expected = {
+        {1.0, 2.0, 3.0},
+        {7.0, 8.0, 9.0}
+    };
+
+    const double tol = 5e-3;
+
+    for (uint64_t b = 0; b < 2; ++b)
+    {
+        std::vector<double> got;
+        got.reserve(rows);
+        for (uint64_t j = 0; j < rows; ++j)
+        {
+            const uint64_t vals_rank = vals.get_rank();
+            std::vector<uint64_t> start(vals_rank, 0);
+            start[0] = b;
+            start[vals_rank - 1] = j;
+
+            Tensor<float> v_view(vals, start, std::vector<uint64_t>{1});
+            got.push_back(static_cast<double>(static_cast<float>(v_view)));
+        }
+        std::sort(got.begin(), got.end());
+        std::sort(expected[b].begin(), expected[b].end());
+
+        for (size_t i = 0; i < rows; ++i)
+        {
+            EXPECT_NEAR(got[i], expected[b][i], tol);
+        }
+    }
+
+    Tensor<float> host_copy(owner_dims, MemoryLocation::HOST);
+    host_copy = owner;
+    const float* host_ptr = host_copy.get_data();
+    for (size_t idx = 0; idx < owner_flat.size(); ++idx)
+    {
+        EXPECT_FLOAT_EQ(owner_flat[idx], host_ptr[idx]);
+    }
+}
 
 /**
  * @test TENSOR.transpose_noargs_reverse_axes
@@ -6619,6 +7312,66 @@ TEST(TENSOR, print_empty_tensor)
     std::stringstream ss;
     t.print(ss);
     EXPECT_EQ(ss.str(), "[]\n");
+}
+
+/**
+ * @test TENSOR.print_shape_basic
+ * @brief Checks that print_shape outputs the dimensions for a 3D tensor.
+ *
+ * Tensor shape: {2, 3, 4} -> expected printed: "[2, 3, 4]\n"
+ */
+TEST(TENSOR, print_shape_basic)
+{
+    temper::Tensor<float> t({2, 3, 4}, MemoryLocation::HOST);
+
+    std::stringstream ss;
+    t.print_shape(ss);
+
+    std::string expected = "[2, 3, 4]\n";
+    EXPECT_EQ(ss.str(), expected);
+}
+
+/**
+ * @test TENSOR.print_shape_empty
+ * @brief Checks that print_shape correctly outputs an empty shape.
+ *
+ * Default-constructed tensor has no dimensions -> "[]\n".
+ */
+TEST(TENSOR, print_shape_empty)
+{
+    temper::Tensor<float> t;
+
+    std::stringstream ss;
+    t.print_shape(ss);
+
+    EXPECT_EQ(ss.str(), "[]\n");
+}
+
+/**
+ * @test TENSOR.print_shape_view
+ * @brief Checks that print_shape outputs the shape of a view tensor.
+ *
+ * Owner shape: {3,4}, view dims {2,2} -> expected printed: "[2, 2]\n"
+ */
+TEST(TENSOR, print_shape_view)
+{
+    temper::Tensor<float> owner({3, 4}, MemoryLocation::HOST);
+    std::vector<float> vals(12);
+    for (uint64_t i = 0; i < vals.size(); ++i)
+    {
+        vals[i] = static_cast<float>(i + 1);
+    }
+    owner = vals;
+
+    std::vector<uint64_t> start = {1ull, 1ull};
+    std::vector<uint64_t> view_shape = {2ull, 2ull};
+    temper::Tensor<float> view(owner, start, view_shape);
+
+    std::stringstream ss;
+    view.print_shape(ss);
+
+    std::string expected = "[2, 2]\n";
+    EXPECT_EQ(ss.str(), expected);
 }
 
 /**

@@ -4092,6 +4092,376 @@ TEST(SQRT, sqrt_basic_positive)
 }
 
 /**
+ * @test EIG.eig_empty
+ * @brief Verify eig() throws when called on an empty tensor.
+ */
+TEST(EIG, eig_empty)
+{
+    Tensor<float> t;
+    EXPECT_THROW(math::eig(t, 100, 1e-6f), std::invalid_argument);
+}
+
+/**
+ * @test EIG.eig_rank_lower_than_2
+ * @brief Verify eig() requires tensor rank >= 2.
+ */
+TEST(EIG, eig_rank_lower_than_2)
+{
+    Tensor<float> t({2});
+    EXPECT_THROW(math::eig(t, 100, 1e-6f), std::invalid_argument);
+}
+
+/**
+ * @test EIG.eig_last_two_not_square
+ * @brief Verify eig() rejects tensors whose last two dims are not square.
+ */
+TEST(EIG, eig_last_two_not_square)
+{
+    Tensor<float> t({2, 3, 4});
+    EXPECT_THROW(math::eig(t, 100, 1e-6f), std::invalid_argument);
+}
+
+/**
+ * @test EIG.eig_diagonal
+ * @brief eig() returns expected eigenvalues for a diagonal device matrix.
+ *
+ * Creates a 4×4 diagonal matrix allocated on device, runs eig(), reads back
+ * eigenvalues and checks they match the diagonal entries (within tolerance).
+ */
+TEST(EIG, eig_diagonal)
+{
+    const uint64_t n = 4;
+    Tensor<float> A({n, n}, MemoryLocation::DEVICE);
+    std::vector<float> flat(n * n, 0.0f);
+    for (uint64_t i = 0; i < n; ++i)
+    {
+        flat[i * n + i] = static_cast<float>(i + 1);
+    }
+    A = flat;
+
+    auto result = math::eig(A, 80, 1e-6f);
+    Tensor<float> vals = result.first;
+
+    std::vector<double> got;
+    for (uint64_t i = 0; i < n; ++i)
+    {
+        Tensor<float> v_view(vals, std::vector<uint64_t>{i},
+            std::vector<uint64_t>{1});
+        got.push_back(static_cast<double>(static_cast<float>(v_view)));
+    }
+    std::sort(got.begin(), got.end());
+
+    std::vector<double> expected = {1.0, 2.0, 3.0, 4.0};
+    std::sort(expected.begin(), expected.end());
+
+    const double tol = 5e-4;
+    for (size_t i = 0; i < expected.size(); ++i)
+    {
+        EXPECT_NEAR(got[i], expected[i], tol);
+    }
+}
+
+/**
+ * @test EIG.eig_batched
+ * @brief eig() on a small batched tensor yields per-batch eigenvalues.
+ *
+ * Builds a 2×3×3 device tensor containing two diagonal batches, runs eig()
+ * with increased iterations, and checks each batch's computed eigenvalues
+ * against expected diagonals (sorted, with loose tolerance for device runs).
+ */
+TEST(EIG, eig_batched)
+{
+    Tensor<float> T({2,3,3}, MemoryLocation::DEVICE);
+    std::vector<float> data(2 * 3 * 3, 0.0f);
+
+    data[0*9 + 0*3 + 0] = 1.0f;
+    data[0*9 + 1*3 + 1] = 2.0f;
+    data[0*9 + 2*3 + 2] = 3.0f;
+
+    data[1*9 + 0*3 + 0] = 4.0f;
+    data[1*9 + 1*3 + 1] = 5.0f;
+    data[1*9 + 2*3 + 2] = 6.0f;
+
+    T = data;
+
+    auto result = math::eig(T, 200, 1e-6f);
+    Tensor<float> vals = result.first;
+
+    std::vector<std::vector<double>> expected =
+    {
+        {1.0, 2.0, 3.0},
+        {4.0, 5.0, 6.0}
+    };
+
+    const double tol = 5e-3;
+
+    for (uint64_t b = 0; b < 2; ++b)
+    {
+        std::vector<double> got;
+        got.reserve(3);
+        for (uint64_t j = 0; j < 3; ++j)
+        {
+            Tensor<float> v_view(vals, std::vector<uint64_t>{b, j},
+                std::vector<uint64_t>{1});
+            got.push_back(static_cast<double>(static_cast<float>(v_view)));
+        }
+        std::sort(got.begin(), got.end());
+        std::sort(expected[b].begin(), expected[b].end());
+
+        for (size_t i = 0; i < 3; ++i)
+        {
+            EXPECT_NEAR(got[i], expected[b][i], tol);
+        }
+    }
+}
+
+/**
+ * @test EIG.eig_alias_view_strided
+ * @brief eig() works on a strided alias/view and preserves owner memory.
+ *
+ * Creates a 10×10 owner matrix on device, builds a non-contiguous view that
+ * selects every-other row/column (5×5) with a diagonal, computes eig() on the
+ * view and verifies eigenvalues match the diagonal. Also verifies the owner
+ * buffer is unmodified after the operation by copying back to host.
+ */
+TEST(EIG, eig_alias_view_strided)
+{
+    const uint64_t N = 10;
+    const uint64_t n = 5;
+    std::vector<float> owner_flat(N * N, 0.0f);
+
+    uint64_t start_row = 0;
+    uint64_t start_col = 1;
+    for (uint64_t i = 0; i < n; ++i)
+    {
+        for (uint64_t j = 0; j < n; ++j)
+        {
+            size_t owner_index = static_cast<size_t>
+                ((start_row + i * 2) * N + (start_col + j * 2));
+            if (i == j)
+            {
+                owner_flat[owner_index] = static_cast<float>(10 * (i + 1));
+            }
+            else
+            {
+                owner_flat[owner_index] = 0.0f;
+            }
+
+        }
+    }
+
+    Tensor<float> owner({N, N}, MemoryLocation::DEVICE);
+    owner = owner_flat;
+
+    std::vector<uint64_t> start_indices = { start_row, start_col };
+    std::vector<uint64_t> view_dims = { n, n };
+    std::vector<uint64_t> view_strides = { N * 2, 2 };
+    Tensor<float> view(owner, start_indices, view_dims, view_strides);
+
+    EXPECT_NE(view.get_strides(), owner.get_strides());
+    auto result = math::eig(view, 250, 1e-6f);
+    Tensor<float> vals = result.first;
+
+    std::vector<double> expected = {10.0, 20.0, 30.0, 40.0, 50.0};
+    std::sort(expected.begin(), expected.end());
+
+    std::vector<double> got;
+    for (uint64_t i = 0; i < n; ++i)
+    {
+        Tensor<float> v_view(vals, std::vector<uint64_t>{i},
+            std::vector<uint64_t>{1});
+        got.push_back(static_cast<double>(static_cast<float>(v_view)));
+    }
+    std::sort(got.begin(), got.end());
+
+    const double tol = 1e-4;
+    for (size_t i = 0; i < expected.size(); ++i)
+    {
+        EXPECT_NEAR(got[i], expected[i], tol);
+    }
+
+    Tensor<float> host_copy({N, N}, MemoryLocation::HOST);
+    host_copy = owner;
+    const float* host_ptr = host_copy.get_data();
+    for (size_t idx = 0; idx < owner_flat.size(); ++idx)
+    {
+        EXPECT_FLOAT_EQ(owner_flat[idx], host_ptr[idx]);
+    }
+}
+
+/**
+ * @test EIG.eig_noncontig_batch_strides_device
+ * @brief eig() on a non-contiguous batched view selects the correct batches.
+ *
+ * Constructs a 4-batch owner but creates a view that picks batches {0,2}
+ * via nonstandard batch stride. Runs eig() on the view and compares per-batch
+ * eigenvalues with expected values. Also ensures owner memory is unchanged.
+ */
+TEST(EIG, eig_noncontig_batch_strides_device)
+{
+    const uint64_t owner_batches = 4;
+    const uint64_t batch_n = 3;
+    const uint64_t owner_elems_per_batch = batch_n * batch_n;
+    const uint64_t owner_total = owner_batches * owner_elems_per_batch;
+
+    std::vector<float> owner_flat(owner_total, 0.0f);
+
+    owner_flat[0 * owner_elems_per_batch + 0 * batch_n + 0] = 1.0f;
+    owner_flat[0 * owner_elems_per_batch + 1 * batch_n + 1] = 2.0f;
+    owner_flat[0 * owner_elems_per_batch + 2 * batch_n + 2] = 3.0f;
+
+    owner_flat[2 * owner_elems_per_batch + 0 * batch_n + 0] = 7.0f;
+    owner_flat[2 * owner_elems_per_batch + 1 * batch_n + 1] = 8.0f;
+    owner_flat[2 * owner_elems_per_batch + 2 * batch_n + 2] = 9.0f;
+
+    Tensor<float> owner({owner_batches, batch_n, batch_n},
+        MemoryLocation::DEVICE);
+    owner = owner_flat;
+
+    std::vector<uint64_t> start_indices = { 0, 0, 0 };
+    std::vector<uint64_t> view_dims = { 2, batch_n, batch_n };
+    std::vector<uint64_t> view_strides =
+        { owner_elems_per_batch * 2, batch_n, 1 };
+
+    Tensor<float> view(owner, start_indices, view_dims, view_strides);
+
+    EXPECT_NE(view.get_strides(), owner.get_strides());
+
+    auto result = math::eig(view, 200, 1e-6f);
+    Tensor<float> vals = result.first;
+
+    std::vector<std::vector<double>> expected = {
+        {1.0, 2.0, 3.0},
+        {7.0, 8.0, 9.0}
+    };
+
+    const double tol = 5e-3;
+
+    for (uint64_t b = 0; b < 2; ++b)
+    {
+        std::vector<double> got;
+        got.reserve(batch_n);
+        for (uint64_t j = 0; j < batch_n; ++j)
+        {
+            Tensor<float> v_view(vals, std::vector<uint64_t>{b, j},
+                std::vector<uint64_t>{1});
+            got.push_back(static_cast<double>(static_cast<float>(v_view)));
+        }
+        std::sort(got.begin(), got.end());
+        std::sort(expected[b].begin(), expected[b].end());
+
+        for (size_t i = 0; i < batch_n; ++i)
+        {
+            EXPECT_NEAR(got[i], expected[b][i], tol);
+        }
+    }
+
+    Tensor<float> host_copy({owner_batches, batch_n, batch_n},
+        MemoryLocation::HOST);
+    host_copy = owner;
+    const float* host_ptr = host_copy.get_data();
+    for (size_t idx = 0; idx < owner_flat.size(); ++idx)
+    {
+        EXPECT_FLOAT_EQ(owner_flat[idx], host_ptr[idx]);
+    }
+}
+
+/**
+ * @test EIG.eig_5d_noncontig_device
+ * @brief eig() handles higher-rank non-contiguous views with singleton dims.
+ *
+ * Uses a 5-D owner tensor `{4,1,1,3,3}`, selects two batches with custom
+ * strides producing a non-contiguous view, computes eig() on the view and
+ * checks per-batch eigenvalues match the expected diagonals (sorted, device
+ * tolerance). Finally verifies owner memory integrity by copying to host.
+ */
+TEST(EIG, eig_5d_noncontig_device)
+{
+    const std::vector<uint64_t> owner_dims = {4, 1, 1, 3, 3};
+    const uint64_t batch_count = owner_dims[0];
+    const uint64_t rows = owner_dims[3];
+    const uint64_t cols = owner_dims[4];
+    ASSERT_EQ(rows, cols);
+
+    const uint64_t elems_per_batch = rows * cols;
+    const uint64_t owner_total = batch_count * elems_per_batch;
+
+    std::vector<float> owner_flat(owner_total, 0.0f);
+
+    {
+        uint64_t batch_base = 0 * elems_per_batch;
+        for (uint64_t d = 0; d < rows; ++d)
+        {
+            owner_flat[batch_base + d * cols + d] = static_cast<float>(d + 1);
+        }
+    }
+
+    {
+        uint64_t batch_base = 2 * elems_per_batch;
+        for (uint64_t d = 0; d < rows; ++d)
+        {
+            owner_flat[batch_base + d * cols + d] = static_cast<float>(7 + d);
+        }
+    }
+
+    Tensor<float> owner(owner_dims, MemoryLocation::DEVICE);
+    owner = owner_flat;
+
+    std::vector<uint64_t> start_indices = { 0, 0, 0, 0, 0 };
+    std::vector<uint64_t> view_dims     = { 2, 1, 1, rows, cols };
+    std::vector<uint64_t> view_strides  = { elems_per_batch * 2,
+        elems_per_batch,
+        elems_per_batch,
+        static_cast<uint64_t>(cols),
+        1 };
+
+    Tensor<float> view(owner, start_indices, view_dims, view_strides);
+
+    EXPECT_NE(view.get_strides(), owner.get_strides());
+
+    auto result = math::eig(view, 200, 1e-6f);
+    Tensor<float> vals = result.first;
+
+    std::vector<std::vector<double>> expected = {
+        {1.0, 2.0, 3.0},
+        {7.0, 8.0, 9.0}
+    };
+
+    const double tol = 5e-3;
+
+    for (uint64_t b = 0; b < 2; ++b)
+    {
+        std::vector<double> got;
+        got.reserve(rows);
+        for (uint64_t j = 0; j < rows; ++j)
+        {
+            const uint64_t vals_rank = vals.get_rank();
+            std::vector<uint64_t> start(vals_rank, 0);
+            start[0] = b;
+            start[vals_rank - 1] = j;
+
+            Tensor<float> v_view(vals, start, std::vector<uint64_t>{1});
+            got.push_back(static_cast<double>(static_cast<float>(v_view)));
+        }
+        std::sort(got.begin(), got.end());
+        std::sort(expected[b].begin(), expected[b].end());
+
+        for (size_t i = 0; i < rows; ++i)
+        {
+            EXPECT_NEAR(got[i], expected[b][i], tol);
+        }
+    }
+
+    Tensor<float> host_copy(owner_dims, MemoryLocation::HOST);
+    host_copy = owner; // device -> host
+    const float* host_ptr = host_copy.get_data();
+    for (size_t idx = 0; idx < owner_flat.size(); ++idx)
+    {
+        EXPECT_FLOAT_EQ(owner_flat[idx], host_ptr[idx]);
+    }
+}
+
+/**
  * @test SQRT.sqrt_zero_and_subnormal
  * @brief Sqrt handles zero and very small positive numbers (portable).
  */

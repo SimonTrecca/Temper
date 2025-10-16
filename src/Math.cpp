@@ -1512,6 +1512,16 @@ template Tensor<float> std<float>
     (const Tensor<float>&, int64_t, int64_t);
 
 template <typename float_t>
+std::pair<Tensor<float_t>, Tensor<float_t>> eig(const Tensor<float_t> & input,
+                                                uint64_t max_iters,
+                                                float_t tol)
+{
+    return input.eig(max_iters, tol);
+}
+template std::pair<Tensor<float>, Tensor<float>> eig<float>
+    (const Tensor<float>&, uint64_t, float);
+
+template <typename float_t>
 Tensor<float_t> sqrt(const Tensor<float_t>& tensor)
 {
     const std::vector<uint64_t>& dims = tensor.get_dimensions();

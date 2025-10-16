@@ -7,6 +7,7 @@
 #include "temper/SYCLUtils.hpp"
 #include "temper/Utils.hpp"
 #include "temper/Math.hpp"
+#include "temper/Stats.hpp"
 
 #include <iostream>
 
@@ -165,6 +166,14 @@ Tensor<float_t>::Tensor(const std::vector<uint64_t> & dimensions,
 }
 
 template<typename float_t>
+Tensor<float_t>::Tensor(const std::initializer_list<uint64_t> & dimensions,
+                        MemoryLocation loc)
+    : Tensor(std::vector<uint64_t>(dimensions), loc)
+{
+    // Constructor already delegated; no op.
+}
+
+template<typename float_t>
 Tensor<float_t>::Tensor(const Tensor & other)
     : m_dimensions(other.m_dimensions),
       m_strides(other.m_strides),
@@ -229,6 +238,54 @@ Tensor<float_t>::Tensor(Tensor && other) noexcept
     other.m_strides.clear();
     other.m_p_data.reset();
     other.m_own_data = true;
+}
+
+template<typename float_t>
+Tensor<float_t>::Tensor(float_t val, MemoryLocation loc)
+    : m_dimensions({1}),
+      m_strides(1),
+      m_own_data(true),
+      m_mem_loc(loc)
+{
+    compute_strides();
+
+    const size_t alloc_bytes = sizeof(float_t);
+
+    float_t* raw_ptr = nullptr;
+    if (m_mem_loc == MemoryLocation::HOST)
+    {
+        raw_ptr = static_cast<float_t*>
+            (sycl::malloc_shared(alloc_bytes, g_sycl_queue));
+    }
+    else
+    {
+        raw_ptr = static_cast<float_t*>
+            (sycl::malloc_device(alloc_bytes, g_sycl_queue));
+    }
+
+    if (!raw_ptr)
+    {
+        throw std::bad_alloc();
+    }
+
+    m_p_data = std::shared_ptr<float_t>(raw_ptr,
+        [](float_t* p)
+        {
+            if (p)
+            {
+                sycl::free(p, g_sycl_queue);
+            }
+        }
+    );
+
+    if (m_mem_loc == MemoryLocation::HOST)
+    {
+        *raw_ptr = val;
+    }
+    else
+    {
+        g_sycl_queue.memcpy(raw_ptr, &val, sizeof(float_t)).wait();
+    }
 }
 
 template<typename float_t>
@@ -513,7 +570,6 @@ Tensor<float_t>& Tensor<float_t>::operator=(Tensor && other) noexcept
     return *this;
 }
 
-
 template<typename float_t>
 Tensor<float_t> & Tensor<float_t>::operator=(const std::vector<float_t> & values)
 {
@@ -522,6 +578,7 @@ Tensor<float_t> & Tensor<float_t>::operator=(const std::vector<float_t> & values
         throw std::invalid_argument(R"(Tensor(values assignment):
             target tensor has no elements.)");
     }
+
     uint64_t total_size = get_num_elements();
 
     uint64_t values_size = static_cast<uint64_t>(values.size());
@@ -531,11 +588,82 @@ Tensor<float_t> & Tensor<float_t>::operator=(const std::vector<float_t> & values
             size mismatch in 1D vector assignment.)");
     }
 
-    const size_t alloc_bytes =
-                static_cast<size_t>(total_size) * sizeof(float_t);
+    const uint64_t rank = get_rank();
+    bool dst_contig = true;
+    if (rank > 0)
+    {
+        // Build canonical row-major strides for this shape
+        std::vector<uint64_t> canon(rank);
+        canon[rank - 1] = 1;
+        for (int64_t i = static_cast<int64_t>(rank) - 2; i >= 0; --i)
+        {
+            canon[i] = canon[i + 1] * m_dimensions[i + 1];
+        }
+        dst_contig = (m_strides == canon);
+    }
 
-    g_sycl_queue.memcpy
-        (m_p_data.get(), values.data(), alloc_bytes).wait();
+    if (dst_contig)
+    {
+        const size_t alloc_bytes =
+            static_cast<size_t>(total_size) * sizeof(float_t);
+        g_sycl_queue.memcpy(m_p_data.get(), values.data(), alloc_bytes).wait();
+        return *this;
+    }
+
+    std::vector<uint64_t> divisors(rank);
+    for (uint64_t i = 0; i < rank; ++i)
+    {
+        uint64_t d = 1;
+        for (uint64_t j = i + 1; j < rank; ++j)
+        {
+            d *= m_dimensions[j];
+        }
+        divisors[i] = d;
+    }
+
+    uint64_t* p_res_divs = static_cast<uint64_t*>(
+        sycl::malloc_device(sizeof(uint64_t) * rank, g_sycl_queue));
+    uint64_t* p_dst_strides = static_cast<uint64_t*>(
+        sycl::malloc_device(sizeof(uint64_t) * rank, g_sycl_queue));
+    float_t* p_vals_shared = static_cast<float_t*>(sycl::malloc_shared
+        (sizeof(float_t) * static_cast<size_t>(total_size), g_sycl_queue));
+
+    if (!p_res_divs || !p_dst_strides || !p_vals_shared)
+    {
+        if (p_res_divs) sycl::free(p_res_divs, g_sycl_queue);
+        if (p_dst_strides) sycl::free(p_dst_strides, g_sycl_queue);
+        if (p_vals_shared) sycl::free(p_vals_shared, g_sycl_queue);
+        throw std::bad_alloc();
+    }
+
+    g_sycl_queue.memcpy(p_res_divs,
+        divisors.data(), sizeof(uint64_t) * rank).wait();
+    g_sycl_queue.memcpy(p_dst_strides,
+        m_strides.data(), sizeof(uint64_t) * rank).wait();
+
+    std::memcpy(p_vals_shared,
+        values.data(), sizeof(float_t) * static_cast<size_t>(total_size));
+
+    const float_t* p_src_flat = p_vals_shared;
+    float_t* p_dst = get_data();
+
+    g_sycl_queue.submit([&](sycl::handler & cgh)
+    {
+        cgh.parallel_for(sycl::range<1>(static_cast<size_t>(total_size)),
+            [=](sycl::id<1> idx)
+        {
+            uint64_t flat_idx = static_cast<uint64_t>(idx[0]);
+
+            uint64_t off_dst = sycl_utils::idx_of
+                (flat_idx, p_res_divs, p_dst_strides, rank);
+
+            p_dst[off_dst] = p_src_flat[flat_idx];
+        });
+    }).wait();
+
+    sycl::free(p_res_divs, g_sycl_queue);
+    sycl::free(p_dst_strides, g_sycl_queue);
+    sycl::free(p_vals_shared, g_sycl_queue);
 
     return *this;
 }
@@ -1327,6 +1455,143 @@ Tensor<float_t> Tensor<float_t>::clone() const
     sycl::free(p_shape_divs, g_sycl_queue);
 
     return result;
+}
+
+template<typename float_t>
+void Tensor<float_t>::copy_from(const Tensor & src)
+{
+    if (!m_p_data)
+    {
+        throw std::runtime_error(R"(Tensor(copy_from):
+            target tensor has no storage (uninitialized view?).)");
+    }
+
+    if (!src.m_p_data)
+    {
+        throw std::runtime_error(R"(Tensor(copy_from):
+            source tensor has no storage.)");
+    }
+
+    const uint64_t total_dst = get_num_elements();
+    if (total_dst == 0)
+    {
+        throw std::invalid_argument(R"(Tensor(copy_from):
+            target has zero elements.)");
+    }
+
+    const uint64_t rank_dst = get_rank();
+    const uint64_t rank_src = src.get_rank();
+
+    if (rank_src > rank_dst)
+    {
+        throw std::invalid_argument(R"(Tensor(copy_from):
+            source rank > destination rank.)");
+    }
+
+    bool same_shape = (m_dimensions == src.m_dimensions);
+    if (same_shape)
+    {
+        std::vector<uint64_t> canon(rank_dst);
+        if (rank_dst > 0)
+        {
+            canon[rank_dst - 1] = 1;
+            for (int64_t i = static_cast<int64_t>(rank_dst) - 2; i >= 0; --i)
+            {
+                canon[i] = canon[i + 1] * m_dimensions[i + 1];
+            }
+        }
+
+        bool dst_contig = (m_strides == canon);
+        bool src_contig = (src.m_strides == canon);
+
+        if (dst_contig && src_contig)
+        {
+            const size_t bytes =
+                static_cast<size_t>(total_dst) * sizeof(float_t);
+            g_sycl_queue.memcpy(get_data(), src.get_data(), bytes).wait();
+            return;
+        }
+    }
+
+    const uint64_t pad = rank_dst - rank_src;
+    const uint64_t max_rank = rank_dst;
+
+    std::vector<uint64_t> src_aligned_dims(max_rank);
+    std::vector<uint64_t> src_aligned_strides(max_rank);
+
+    for (uint64_t i = 0; i < pad; ++i)
+    {
+        src_aligned_dims[i] = 1;
+        src_aligned_strides[i] = 0;
+    }
+
+    for (uint64_t i = 0; i < rank_src; ++i)
+    {
+        src_aligned_dims[pad + i] = src.m_dimensions[i];
+        src_aligned_strides[pad + i] = src.m_strides[i];
+    }
+
+    std::vector<uint64_t> dst_aligned_dims = m_dimensions;
+    std::vector<uint64_t> dst_aligned_strides = m_strides;
+
+    utils::TensorDesc a_desc{src_aligned_dims, src_aligned_strides, {}};
+    utils::TensorDesc b_desc{dst_aligned_dims, dst_aligned_strides, {}};
+
+    utils::BroadcastResult br = utils::compute_broadcast(a_desc, b_desc);
+
+    if (br.out.shape != dst_aligned_dims)
+    {
+        throw std::invalid_argument(R"(Tensor(copy_from):
+            source cannot be broadcast to destination shape.)");
+    }
+
+    // Prepare device arrays for divisors and strides (length = max_rank)
+    uint64_t* p_res_divs = static_cast<uint64_t*>(
+        sycl::malloc_device(sizeof(uint64_t) * max_rank, g_sycl_queue));
+    uint64_t* p_a_strides = static_cast<uint64_t*>(
+        sycl::malloc_device(sizeof(uint64_t) * max_rank, g_sycl_queue));
+    uint64_t* p_b_strides = static_cast<uint64_t*>(
+        sycl::malloc_device(sizeof(uint64_t) * max_rank, g_sycl_queue));
+
+    if (!p_res_divs || !p_a_strides || !p_b_strides)
+    {
+        sycl::free(p_res_divs, g_sycl_queue);
+        sycl::free(p_a_strides, g_sycl_queue);
+        sycl::free(p_b_strides, g_sycl_queue);
+        throw std::bad_alloc();
+    }
+
+    g_sycl_queue.memcpy(p_res_divs, br.out.divisors.data(),
+                        sizeof(uint64_t) * max_rank).wait();
+    g_sycl_queue.memcpy(p_a_strides, br.a_strides.data(),
+                        sizeof(uint64_t) * max_rank).wait();
+    g_sycl_queue.memcpy(p_b_strides, br.b_strides.data(),
+                        sizeof(uint64_t) * max_rank).wait();
+
+    const float_t* p_src_data = src.get_data();
+    float_t* p_dst_data = get_data();
+
+    g_sycl_queue.submit([&](sycl::handler & cgh)
+    {
+        cgh.parallel_for(sycl::range<1>(static_cast<size_t>(total_dst)),
+            [=](sycl::id<1> idx)
+        {
+            uint64_t flat_idx = static_cast<uint64_t>(idx[0]);
+
+            uint64_t off_src = sycl_utils::idx_of
+                (flat_idx, p_res_divs, p_a_strides, max_rank);
+            uint64_t off_dst = sycl_utils::idx_of
+                (flat_idx, p_res_divs, p_b_strides, max_rank);
+
+            float_t val = p_src_data[off_src];
+
+            p_dst_data[off_dst] = val;
+        });
+    }).wait();
+
+    sycl::free(p_res_divs, g_sycl_queue);
+    sycl::free(p_a_strides, g_sycl_queue);
+    sycl::free(p_b_strides, g_sycl_queue);
 }
 
 template<typename float_t>
@@ -2772,6 +3037,214 @@ Tensor<float_t> Tensor<float_t>::std(int64_t axis, int64_t ddof) const
 }
 
 template<typename float_t>
+std::pair<Tensor<float_t>, Tensor<float_t>> Tensor<float_t>::eig
+    (uint64_t max_iters, float_t tol) const
+{
+    const uint64_t rank = this->get_rank();
+    if (rank < 2)
+    {
+        throw std::invalid_argument("Tensor(eig): rank must be >= 2.");
+    }
+
+    const std::vector<uint64_t> shape = this->get_dimensions();
+    if (shape[rank - 1] != shape[rank - 2])
+    {
+        throw std::invalid_argument(R"(Tensor(eig):
+            last two dims must be square.)");
+    }
+    const uint64_t n = shape[rank - 1];
+
+    std::vector<uint64_t> batch_shape;
+    for (uint64_t i = 0; i + 2 < rank; ++i)
+    {
+        batch_shape.push_back(shape[i]);
+    }
+
+    std::vector<uint64_t> eigvals_shape = batch_shape;
+    eigvals_shape.push_back(n);
+    std::vector<uint64_t> eigvecs_shape = batch_shape;
+    eigvecs_shape.push_back(n);
+    eigvecs_shape.push_back(n);
+
+    MemoryLocation res_loc = this->get_memory_location();
+    Tensor<float_t> eigvals_tensor(eigvals_shape, res_loc);
+    Tensor<float_t> eigvecs_tensor(eigvecs_shape, res_loc);
+
+    uint64_t batch_count = 1;
+    for (uint64_t d : batch_shape)
+    {
+        batch_count *= d;
+    }
+
+    std::vector<uint64_t> batch_strides(batch_shape.size(), 1);
+    if (!batch_shape.empty())
+    {
+        for (int i = static_cast<int>(batch_shape.size()) - 2; i >= 0; --i)
+        {
+            batch_strides[i] = batch_strides[i + 1] * batch_shape[i + 1];
+        }
+    }
+
+    for (uint64_t b = 0; b < batch_count; ++b)
+    {
+        std::vector<uint64_t> start_indices(rank, 0);
+        uint64_t rem = b;
+        for (size_t k = 0; k < batch_shape.size(); ++k)
+        {
+            uint64_t idx = rem / batch_strides[k];
+            rem = rem % batch_strides[k];
+            start_indices[k] = idx;
+        }
+        start_indices[rank - 2] = 0;
+        start_indices[rank - 1] = 0;
+
+        Tensor<float_t> A = Tensor<float_t>
+            (*this, start_indices, std::vector<uint64_t>({ n, n }));
+
+        std::vector<float_t> eigvals; eigvals.reserve(n);
+        std::vector<Tensor<float_t>> eigvecs; eigvecs.reserve(n);
+
+        Tensor<float_t> eigvecs_mat({n, n}, res_loc);
+        Tensor<float_t> eigvals_vec({n}, res_loc);
+
+        // Iterate to find n eigenpairs by deflation.
+        for (uint64_t j = 0; j < n; ++j)
+        {
+            Tensor<float_t> v = stats::randn<float_t>({n});
+
+            float_t nv2 = (v * v).sum();
+            if (nv2 == static_cast<float_t>(0))
+            {
+                throw std::runtime_error(R"(Tensor(eig):
+                    initial vector is zero.)");
+            }
+            v = v / Tensor<float_t>(std::sqrt(nv2));
+
+            for (uint64_t iter = 0; iter < max_iters; ++iter)
+            {
+                Tensor<float_t> w = math::matmul(A, v);
+
+                float_t nw2 = (w * w).sum();
+                if (nw2 == static_cast<float_t>(0))
+                {
+                    break;
+                }
+                Tensor<float_t> v_next = w / Tensor<float_t>(std::sqrt(nw2));
+
+                Tensor<float_t> diff = v_next - v;
+                float_t diff2 = (diff * diff).sum();
+                if (std::sqrt(diff2) < tol)
+                {
+                    v = v_next;
+                    break;
+                }
+                v = v_next;
+            }
+
+            Tensor<float_t> AT = A.transpose();
+            Tensor<float_t> u = stats::randn<float_t>({n});
+            float_t nu2 = (u * u).sum();
+            if (nu2 == static_cast<float_t>(0))
+            {
+                throw std::runtime_error(R"(Tensor(eig):
+                    initial left vector is zero.)");
+            }
+            u = u / Tensor<float_t>(std::sqrt(nu2));
+
+            for (uint64_t iter = 0; iter < max_iters; ++iter)
+            {
+                Tensor<float_t> w = math::matmul(AT, u);
+
+                float_t nw2 = (w * w).sum();
+                if (nw2 == static_cast<float_t>(0))
+                {
+                    break;
+                }
+                Tensor<float_t> u_next = w / Tensor<float_t>(std::sqrt(nw2));
+
+                Tensor<float_t> diff = u_next - u;
+                float_t diff2 = (diff * diff).sum();
+                if (std::sqrt(diff2) < tol)
+                {
+                    u = u_next;
+                    break;
+                }
+                u = u_next;
+            }
+
+            float_t uv = (u * v).sum();
+            if (uv == static_cast<float_t>(0))
+            {
+                throw std::runtime_error(R"(Tensor(eig):
+                    left/right inner product is zero; cannot deflate.)");
+            }
+            u = u / Tensor<float_t>(uv);
+
+            Tensor<float_t> Av = math::matmul(A, v);
+            float_t lambda = (u * Av).sum();
+
+            eigvecs.push_back(v);
+            eigvals.push_back(lambda);
+
+            std::vector<uint64_t> start_col_idx(2);
+            start_col_idx[0] = 0;
+            start_col_idx[1] = j;
+            std::vector<uint64_t> view_shape = { n, 1 };
+            Tensor<float_t> dst_col_view(eigvecs_mat, start_col_idx, view_shape);
+            Tensor<float_t> src_col = v;
+            src_col.reshape({ n, 1 });
+            dst_col_view.copy_from(src_col);
+
+            Tensor<float_t> v_col = v; v_col.reshape({ n, 1 });
+            Tensor<float_t> u_row = u; u_row.reshape({ 1, n });
+            Tensor<float_t> outer = math::matmul(v_col, u_row);
+            Tensor<float_t> scaled = outer * Tensor<float_t>(lambda);
+            A = A - scaled;
+        }
+
+        eigvals_vec = eigvals;
+
+        // Write eigvals_vec into eigvals_tensor at the batch location.
+        {
+            std::vector<uint64_t> out_start;
+            out_start.reserve(batch_shape.size() + 1);
+            for (size_t i = 0; i < batch_shape.size(); ++i)
+            {
+                out_start.push_back(start_indices[i]);
+            }
+            out_start.push_back(0);
+            std::vector<uint64_t> view_shape(out_start.size(), 1);
+            view_shape.back() = n;
+            Tensor<float_t> dst_vals_view(eigvals_tensor, out_start, view_shape);
+            Tensor<float_t> src_vals = eigvals_vec;
+            src_vals.reshape(view_shape);
+            dst_vals_view.copy_from(src_vals);
+        }
+
+        // Write eigvecs_mat into eigvecs_tensor at the batch location.
+        {
+            std::vector<uint64_t> out_start;
+            out_start.reserve(batch_shape.size() + 2);
+            for (size_t i = 0; i < batch_shape.size(); ++i)
+            {
+                out_start.push_back(start_indices[i]);
+            }
+            out_start.push_back(0);
+            out_start.push_back(0);
+            std::vector<uint64_t> view_shape(out_start.size(), 1);
+            view_shape[out_start.size() - 2] = n;
+            view_shape[out_start.size() - 1] = n;
+            Tensor<float_t> dst_vecs_view(eigvecs_tensor, out_start, view_shape);
+            Tensor<float_t> src_vecs = eigvecs_mat;
+            src_vecs.reshape(view_shape);
+            dst_vecs_view.copy_from(src_vecs);
+        }
+    }
+
+    return std::make_pair(eigvals_tensor, eigvecs_tensor);
+}
+
+template<typename float_t>
 Tensor<float_t> Tensor<float_t>::transpose() const
 {
     const uint64_t rank = m_dimensions.size();
@@ -2875,6 +3348,18 @@ void Tensor<float_t>::print(std::ostream& os) const
 
     recurse(0, 0);
     os << "\n";
+}
+
+template<typename float_t>
+void Tensor<float_t>::print_shape(std::ostream& os) const
+{
+    os << "[";
+    for (size_t i = 0; i < m_dimensions.size(); ++i)
+    {
+        if (i > 0) os << ", ";
+        os << m_dimensions[i];
+    }
+    os << "]\n";
 }
 
 template<typename float_t>

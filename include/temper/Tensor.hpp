@@ -95,8 +95,28 @@ public:
      * - the requested allocation exceeds device @c global_mem_size
      * @throws std::bad_alloc if memory allocation fails.
      */
-    Tensor(const std::vector<uint64_t>& dimensions,
+    explicit Tensor(const std::vector<uint64_t>& dimensions,
         MemoryLocation loc = MemoryLocation::DEVICE);
+
+    /**
+     * @brief Construct a tensor from an initializer list of dimensions.
+     *
+     * Equivalent to the vector-based constructor:
+     * `Tensor(std::vector<uint64_t>(dimensions), loc)`.
+     * Allocates zero-initialized memory on the specified location.
+     *
+     * @param dimensions Shape of the tensor (each entry must be > 0).
+     * @param loc Memory location for data (HOST or DEVICE). Defaults to DEVICE.
+     *
+     * @throws std::invalid_argument if @p dimensions is empty or contains zeros.
+     * @throws std::overflow_error if the total element count or byte size
+     *         would overflow uint64_t or size_t.
+     * @throws std::runtime_error if the requested allocation exceeds device
+     *         limits.
+     * @throws std::bad_alloc if memory allocation fails.
+     */
+    explicit Tensor(const std::initializer_list<uint64_t> & dimensions,
+       MemoryLocation loc = MemoryLocation::DEVICE);
 
     /**
      * @brief Copy constructor.
@@ -115,6 +135,21 @@ public:
      * @param other The tensor to move from.
      */
     Tensor(Tensor && other) noexcept;
+
+    /**
+     * @brief Construct a scalar tensor from a single value.
+     *
+     * Creates a rank-1 tensor of shape `{1}` containing the given scalar @p val.
+     * The tensor is allocated either on host or device memory depending on
+     * @p loc.
+     *
+     * @param val Scalar value to initialize the tensor with.
+     * @param loc Memory location where the tensor should be allocated
+     *            (default: MemoryLocation::DEVICE).
+     *
+     * @throws std::bad_alloc if memory allocation fails.
+     */
+    Tensor(float_t val, MemoryLocation loc = MemoryLocation::DEVICE);
 
     /**
      * @brief View constructor.
@@ -398,6 +433,27 @@ public:
     Tensor<float_t> clone() const;
 
     /**
+     * @brief Copy elements from another tensor into this tensor
+     * (supports broadcasting).
+     *
+     * Copies data from @p src into this tensor. If both tensors have identical
+     * shapes and canonical (contiguous) strides a fast device memcpy is used.
+     * Otherwise @p src is broadcast to the destination shape (prepended with
+     * singleton dims as required) and copied element-wise on device using SYCL
+     * kernels that respect strides.
+     *
+     * @param src Source tensor to copy from.
+     *
+     * @throws std::runtime_error if this tensor or @p src has no storage.
+     * @throws std::invalid_argument if the destination has zero elements, if
+     *         src.rank() > dst.rank(), or if src cannot be broadcast to the
+     *         destination shape.
+     * @throws std::bad_alloc if temporary device memory for divisors/strides
+     *         cannot be allocated.
+     */
+    void copy_from(const Tensor & src);
+
+    /**
      * @brief Moves tensor data between host (shared) and device memory.
      *
      * Transfers owned data to the specified memory location.
@@ -610,6 +666,27 @@ public:
     Tensor<float_t> std(int64_t axis = -1, int64_t ddof = 0) const;
 
     /**
+     * @brief Compute eigenvalues and right eigenvectors for the last two axes.
+     *
+     * For each square matrix in the input shaped `{B..., N, N}` this routine
+     * computes up to `N` eigenpairs using power-iteration + rank-1 deflation.
+     *
+     * @param max_iters Maximum iterations per power iteration (default 100).
+     * @param tol       Convergence tolerance on the L2 iterate difference
+     *                  (default 1e-4).
+     * @return std::pair<Tensor<float_t>,Tensor<float_t>>
+     *         First: eigenvalues tensor of shape `{B..., N}`.
+     *         Second: right eigenvectors tensor of shape `{B..., N, N}`
+     *         (vectors stored as columns).
+     *
+     * @throws std::invalid_argument if rank < 2 or last two dims are not equal.
+     * @throws std::runtime_error if random init vectors are zero, left/right
+     *         inner product is zero, or numerical/device errors occur.
+     */
+    std::pair<Tensor<float_t>, Tensor<float_t>> eig(uint64_t max_iters = 100,
+        float_t tol = static_cast<float_t>(1e-4)) const;
+
+    /**
      * @brief Returns a new tensor with axes reversed (full transpose).
      *
      * This function returns a view of the tensor with its axes reversed.
@@ -659,6 +736,8 @@ public:
      * @param os The output stream to print to. Defaults to std::cout.
      */
     void print(std::ostream & os = std::cout) const;
+
+    void print_shape(std::ostream& os = std::cout) const;
 
 	/**
      * @brief Tensor class destructor.

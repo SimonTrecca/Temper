@@ -586,6 +586,33 @@ extern template Tensor<float> std<float>
     (const Tensor<float>&, int64_t, int64_t);
 
 /**
+ * @brief Compute eigenvalues and right eigenvectors for the last two axes.
+ *
+ * For each square matrix in `input` shaped `{B..., N, N}` this routine
+ * computes up to `N` eigenpairs using power-iteration + rank-1 deflation.
+ *
+ * @param input     Input tensor containing one or more square matrices in
+ *                  the last two axes.
+ * @param max_iters Maximum iterations per power iteration (default 100).
+ * @param tol       Convergence tolerance for the L2 iterate difference
+ *                  (default 1e-4).
+ * @return std::pair<Tensor<float_t>, Tensor<float_t>>
+ *         First: eigenvalues tensor of shape `{B..., N}`.
+ *         Second: right eigenvectors tensor of shape `{B..., N, N}` (columns).
+ *
+ * @throws std::invalid_argument if input rank < 2 or last two dims are not equal.
+ * @throws std::runtime_error if random init vectors are zero, left/right inner
+ *         product is zero, or device/kernel errors occur.
+ */
+template <typename float_t>
+std::pair<Tensor<float_t>, Tensor<float_t>> eig(const Tensor<float_t> & input,
+    uint64_t max_iters = 100,
+    float_t tol = static_cast<float_t>(1e-4));
+/// Explicit instantiation of eig for float
+extern template std::pair<Tensor<float>, Tensor<float>> eig<float>
+    (const Tensor<float>&, uint64_t, float);
+
+/**
  * @brief Elementwise square root.
  *
  * Returns a new tensor with each element equal to the square root of the
