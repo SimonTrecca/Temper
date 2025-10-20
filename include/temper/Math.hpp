@@ -632,9 +632,8 @@ Tensor<float_t> sqrt(const Tensor<float_t>& tensor);
 extern template Tensor<float> sqrt<float>(const Tensor<float>& tensor);
 
 /* todo
-    eigen
     diag
-    */
+*/
 } // namespace temper::math
 
 #endif // TEMPER_MATH_HPP

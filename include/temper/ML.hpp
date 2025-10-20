@@ -13,8 +13,52 @@
 
 namespace temper::ml
 {
+
+/**
+ * @brief Replace the slice at `axis:axis_index` with a one-hot
+ * expansion.
+ *
+ * For an input shape dims = {D0,...,Daxis,...,Dlast}, the returned
+ * tensor has the same rank and the size of `axis` becomes
+ * (Daxis - 1 + depth).
+ *
+ * Semantics:
+ *  - If coord[axis] != axis_index: values are copied unchanged into
+ *    the output (possibly shifted along that axis).
+ *  - If coord[axis] == axis_index: the scalar is read as an integer
+ *    label and replaced by `depth` values. Only the label position
+ *    is set to `on_value`. All other positions take `off_value`.
+ *
+ * Note: `axis` is an unsigned axis index in [0, rank-1]. Negative
+ * indexing is not supported.
+ *
+ * @param tensor Input tensor.
+ * @param axis Axis to target (unsigned, must be < rank).
+ * @param axis_index Index along `axis` to read labels from
+ *        (0..Daxis-1).
+ * @param depth Number of classes to expand into (must be > 0).
+ * @param on_value Value for the hot entry (default 1).
+ * @param off_value Value for all other entries (default 0).
+ *
+ * @throws std::invalid_argument If depth == 0 or tensor rank == 0
+ *         or axis invalid.
+ * @throws std::out_of_range If axis_index is outside the axis
+ *         extent or a label is out of range.
+ * @throws std::runtime_error For non-integer or non-finite label
+ *         values.
+ * @throws std::bad_alloc On allocation failure.
+ */
+template <typename float_t>
+Tensor<float_t> one_hot_expand_at(const temper::Tensor<float_t>& tensor,
+    uint64_t axis,
+    uint64_t axis_index,
+    uint64_t depth,
+    float_t on_value = static_cast<float_t>(1),
+    float_t off_value = static_cast<float_t>(0));
+extern template Tensor<float> one_hot_expand_at<float>
+    (const Tensor<float>&, uint64_t, uint64_t, uint64_t, float, float);
+
 /* todo
-    one hot encode
     cross entropy loss
     mse loss
     regularization penalties

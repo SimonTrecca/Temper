@@ -44,7 +44,35 @@ add_executable(temper_ut
   ${CMAKE_SOURCE_DIR}/src/Stats.cpp
 )
 
+add_executable(tensor_ut
+  ut_Tensor.cpp
+  ${CMAKE_SOURCE_DIR}/src/Tensor.cpp
+  ${CMAKE_SOURCE_DIR}/src/SYCLQueue.cpp
+  ${CMAKE_SOURCE_DIR}/src/Math.cpp
+  ${CMAKE_SOURCE_DIR}/src/Stats.cpp
+)
+
+add_executable(ml_ut
+  ut_ML.cpp
+  ${CMAKE_SOURCE_DIR}/src/Tensor.cpp
+  ${CMAKE_SOURCE_DIR}/src/SYCLQueue.cpp
+  ${CMAKE_SOURCE_DIR}/src/Math.cpp
+  ${CMAKE_SOURCE_DIR}/src/ML.cpp
+  ${CMAKE_SOURCE_DIR}/src/Stats.cpp
+)
+
+add_executable(stats_ut
+  ut_Stats.cpp
+  ${CMAKE_SOURCE_DIR}/src/Tensor.cpp
+  ${CMAKE_SOURCE_DIR}/src/SYCLQueue.cpp
+  ${CMAKE_SOURCE_DIR}/src/Math.cpp
+  ${CMAKE_SOURCE_DIR}/src/Stats.cpp
+)
+
 target_compile_definitions(temper_ut PRIVATE UNIT_TEST)
+target_compile_definitions(tensor_ut PRIVATE UNIT_TEST)
+target_compile_definitions(ml_ut PRIVATE UNIT_TEST)
+target_compile_definitions(stats_ut PRIVATE UNIT_TEST)
 
 target_link_libraries(
   temper_ut
@@ -54,4 +82,31 @@ target_link_libraries(
     GTest::gtest_main
 )
 
+target_link_libraries(
+  tensor_ut
+  PRIVATE
+    Common
+    GTest::gtest
+    GTest::gtest_main
+)
+
+target_link_libraries(
+  ml_ut
+  PRIVATE
+    Common
+    GTest::gtest
+    GTest::gtest_main
+)
+
+target_link_libraries(
+  stats_ut
+  PRIVATE
+    Common
+    GTest::gtest
+    GTest::gtest_main
+)
+
 gtest_discover_tests(temper_ut)
+gtest_discover_tests(tensor_ut)
+gtest_discover_tests(ml_ut)
+gtest_discover_tests(stats_ut)
