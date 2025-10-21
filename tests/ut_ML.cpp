@@ -398,4 +398,189 @@ TEST(ONEHOT, alias_view_2d_column_axis)
     }
 }
 
+/**
+ * @test SOFTMAX.empty_tensor_throws
+ * @brief Softmax on an empty/default tensor should throw std::invalid_argument.
+ */
+TEST(SOFTMAX, empty_tensor_throws)
+{
+    Tensor<float> t;
+    EXPECT_THROW(ml::softmax<float>(t, /*axis=*/0), std::invalid_argument);
+}
+
+/**
+ * @test SOFTMAX.axis_out_of_range_throws
+ * @brief Passing axis >= rank should throw std::invalid_argument.
+ */
+TEST(SOFTMAX, axis_out_of_range_throws)
+{
+    Tensor<float> t({2,2}, MemoryLocation::DEVICE);
+    t = std::vector<float>{1.0f, 2.0f, 3.0f, 4.0f};
+    EXPECT_THROW(ml::softmax<float>(t, /*axis=*/2), std::invalid_argument);
+}
+
+/**
+ * @test SOFTMAX.nan_input_throws
+ * @brief NaN in input should produce a runtime_error (propagated from exp).
+ */
+TEST(SOFTMAX, nan_input_throws)
+{
+    Tensor<float> t({3}, MemoryLocation::DEVICE);
+    std::vector<float> vals = {1.0f,
+        std::numeric_limits<float>::quiet_NaN(), 2.0f};
+    t = vals;
+    EXPECT_THROW(ml::softmax<float>(t, /*axis=*/0), std::runtime_error);
+}
+
+/**
+ * @test SOFTMAX.inf_input_throws
+ * @brief Inf in input should produce a runtime_error (non-finite result from exp).
+ */
+TEST(SOFTMAX, inf_input_throws)
+{
+    Tensor<float> t({2}, MemoryLocation::DEVICE);
+    std::vector<float> vals = {1.0f, std::numeric_limits<float>::infinity()};
+    t = vals;
+    EXPECT_THROW(ml::softmax<float>(t, /*axis=*/0), std::runtime_error);
+}
+
+/**
+ * @test SOFTMAX.softmax_basic_1d
+ * @brief Basic softmax 1D.
+ */
+TEST(SOFTMAX, softmax_basic_1d)
+{
+    Tensor<float> t({3}, MemoryLocation::DEVICE);
+    std::vector<float> vals = {1.0f, 2.0f, 3.0f};
+    t = vals;
+
+    Tensor<float> out = ml::softmax<float>(t, /*axis=*/0);
+
+    ASSERT_EQ(out.get_dimensions(), t.get_dimensions());
+    const uint64_t N = out.get_num_elements();
+    ASSERT_EQ(N, 3u);
+
+    std::vector<float> host(N);
+    g_sycl_queue.memcpy(host.data(),
+        out.m_p_data.get(), sizeof(float) * N).wait();
+
+    const double e1 = 2.71828182845904523536;
+    const double e2 = 7.38905609893065022723;
+    const double e3 = 20.08553692318766774092;
+    const double S  = e1 + e2 + e3;
+    const double ref0 = e1 / S;
+    const double ref1 = e2 / S;
+    const double ref2 = e3 / S;
+
+    EXPECT_NEAR(static_cast<double>(host[0]), ref0, 1e-6);
+    EXPECT_NEAR(static_cast<double>(host[1]), ref1, 1e-6);
+    EXPECT_NEAR(static_cast<double>(host[2]), ref2, 1e-6);
+}
+
+/**
+ * @test SOFTMAX.softmax_2d_axis1
+ * @brief Softmax per-row (axis=1).
+ */
+TEST(SOFTMAX, softmax_2d_axis1)
+{
+    Tensor<float> t({2,3}, MemoryLocation::DEVICE);
+    std::vector<float> vals = {
+        1.0f, 2.0f, 3.0f,
+        3.0f, 2.0f, 1.0f
+    };
+    t = vals;
+
+    Tensor<float> out = ml::softmax<float>(t, /*axis=*/1);
+
+    ASSERT_EQ(out.get_dimensions(), t.get_dimensions());
+    const uint64_t N = out.get_num_elements();
+    ASSERT_EQ(N, 6u);
+
+    std::vector<float> host(N);
+    g_sycl_queue.memcpy(host.data(),
+        out.m_p_data.get(), sizeof(float) * N).wait();
+
+    const double e1 = 2.71828182845904523536;
+    const double e2 = 7.38905609893065022723;
+    const double e3 = 20.08553692318766774092;
+    const double S  = e1 + e2 + e3;
+
+    EXPECT_NEAR(static_cast<double>(host[0]), e1 / S, 1e-6);
+    EXPECT_NEAR(static_cast<double>(host[1]), e2 / S, 1e-6);
+    EXPECT_NEAR(static_cast<double>(host[2]), e3 / S, 1e-6);
+
+    EXPECT_NEAR(static_cast<double>(host[3]), e3 / S, 1e-6);
+    EXPECT_NEAR(static_cast<double>(host[4]), e2 / S, 1e-6);
+    EXPECT_NEAR(static_cast<double>(host[5]), e1 / S, 1e-6);
+}
+
+/**
+ * @test SOFTMAX.softmax_2d_axis0
+ * @brief Softmax along axis 0 (per-column) for identical rows -> 0.5 each.
+ */
+TEST(SOFTMAX, softmax_2d_axis0)
+{
+    Tensor<float> t({2,3}, MemoryLocation::DEVICE);
+    std::vector<float> vals = {
+        1.0f, 2.0f, 3.0f,
+        1.0f, 2.0f, 3.0f
+    };
+    t = vals;
+
+    Tensor<float> out = ml::softmax<float>(t, /*axis=*/0);
+
+    ASSERT_EQ(out.get_dimensions(), t.get_dimensions());
+    const uint64_t N = out.get_num_elements();
+    ASSERT_EQ(N, 6u);
+
+    std::vector<float> host(N);
+    g_sycl_queue.memcpy(host.data(), out.m_p_data.get(), sizeof(float) * N).wait();
+
+    for (uint64_t r = 0; r < 2; ++r)
+    {
+        for (uint64_t c = 0; c < 3; ++c)
+        {
+            const double got = static_cast<double>(host[r * 3 + c]);
+            EXPECT_NEAR(got, 0.5, 1e-6);
+        }
+    }
+}
+
+/**
+ * @test SOFTMAX.alias_view_weird_strides
+ * @brief Softmax on an alias view with non-standard strides.
+ */
+TEST(SOFTMAX, alias_view_weird_strides)
+{
+    Tensor<float> owner({2, 3}, MemoryLocation::DEVICE);
+    std::vector<float> owner_vals = {
+        1.0f, 2.0f, 3.0f,
+        4.0f, 5.0f, 6.0f
+    };
+    owner = owner_vals;
+
+    std::vector<uint64_t> start = {0ull, 0ull};
+    std::vector<uint64_t> dims  = {2ull, 2ull};
+    std::vector<uint64_t> strides = {3ull, 2ull};
+    Tensor<float> alias(owner, start, dims, strides);
+
+    Tensor<float> out = ml::softmax<float>(alias, /*axis=*/1);
+
+    ASSERT_EQ(out.get_rank(), alias.get_rank());
+    ASSERT_EQ(out.get_dimensions(), alias.get_dimensions());
+    ASSERT_EQ(out.get_num_elements(), 4u);
+
+    std::vector<float> host(4);
+    g_sycl_queue.memcpy(host.data(),
+        out.m_p_data.get(), sizeof(float) * 4).wait();
+
+    const double r0_c0 = 0.11920292202211755;
+    const double r0_c1 = 0.88079707797788245;
+
+    EXPECT_NEAR(static_cast<double>(host[0]), r0_c0, 1e-6);
+    EXPECT_NEAR(static_cast<double>(host[1]), r0_c1, 1e-6);
+    EXPECT_NEAR(static_cast<double>(host[2]), r0_c0, 1e-6);
+    EXPECT_NEAR(static_cast<double>(host[3]), r0_c1, 1e-6);
+}
+
 } // namespace Test

@@ -6,11 +6,12 @@
 #include "temper/ML.hpp"
 #include "temper/SYCLUtils.hpp"
 #include "temper/Utils.hpp"
+#include "temper/Math.hpp"
 
 namespace temper::ml
 {
 template <typename float_t>
-Tensor<float_t> one_hot_expand_at(const temper::Tensor<float_t>& tensor,
+Tensor<float_t> one_hot_expand_at(const Tensor<float_t>& tensor,
 	uint64_t axis,
 	uint64_t axis_index,
 	uint64_t depth,
@@ -234,7 +235,32 @@ Tensor<float_t> one_hot_expand_at(const temper::Tensor<float_t>& tensor,
 
     return result;
 }
-template temper::Tensor<float> one_hot_expand_at<float>
-    (const temper::Tensor<float>&, uint64_t, uint64_t, uint64_t, float, float);
+template Tensor<float> one_hot_expand_at<float>
+    (const Tensor<float>&, uint64_t, uint64_t, uint64_t, float, float);
+
+template<typename float_t>
+Tensor<float_t> softmax(const Tensor<float_t> & tensor, int64_t axis)
+{
+    const std::vector<uint64_t> & dims = tensor.get_dimensions();
+    if (dims.empty())
+    {
+        throw std::invalid_argument(R"(softmax:
+            input tensor has no elements.)");
+    }
+
+    const uint64_t rank = tensor.get_rank();
+
+    if (axis < 0 || static_cast<uint64_t>(axis) >= rank)
+    {
+        throw std::invalid_argument(R"(softmax: axis out of range.)");
+    }
+
+    Tensor<float_t> ex = math::exp(tensor);
+    Tensor<float_t> denom = math::sum(ex, axis);
+    Tensor<float_t> out = ex / denom;
+
+    return out;
+}
+template Tensor<float> softmax<float>(const Tensor<float>&, int64_t);
 
 } // namespace temper::ml

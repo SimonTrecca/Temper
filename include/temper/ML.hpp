@@ -55,8 +55,32 @@ Tensor<float_t> one_hot_expand_at(const Tensor<float_t>& tensor,
     uint64_t depth,
     float_t on_value = static_cast<float_t>(1),
     float_t off_value = static_cast<float_t>(0));
+/// Explicit instantiation of one_hot_expand_at for float
 extern template Tensor<float> one_hot_expand_at<float>
     (const Tensor<float>&, uint64_t, uint64_t, uint64_t, float, float);
+
+/**
+ * @brief Compute the softmax along a single axis.
+ *
+ * Produces a tensor where each slice along the given @p axis is
+ * exponentiated and normalized so that the values along that axis sum to 1.
+ *
+ * @param tensor   Input tensor. Must contain at least one element.
+ * @param axis     Axis along which softmax is applied (0 .. rank-1).
+ *
+ * @return A new tensor with the same shape as @p tensor containing
+ *         the normalized values.
+ *
+ * @throws std::invalid_argument If the tensor is empty or @p axis is
+ *         outside the valid range.
+ * @throws std::bad_alloc If memory allocation fails.
+ * @throws std::runtime_error If NaN or non-finite values are encountered
+ *         during computation.
+ */
+template<typename float_t>
+Tensor<float_t> softmax(const Tensor<float_t> & tensor, int64_t axis);
+/// Explicit instantiation of softmax for float
+extern template Tensor<float> softmax<float>(const Tensor<float>&, int64_t);
 
 /* todo
     cross entropy loss
