@@ -1604,4 +1604,96 @@ Tensor<float_t> sqrt(const Tensor<float_t>& tensor)
 }
 template Tensor<float> sqrt<float>(const Tensor<float>& tensor);
 
+template<typename float_t>
+Tensor<float_t> exp(const Tensor<float_t> & tensor)
+{
+    const std::vector<uint64_t> & in_shape = tensor.get_dimensions();
+    if (in_shape.empty())
+    {
+        throw std::invalid_argument(R"(exp: input tensor has no elements.)");
+    }
+
+    const uint64_t arr_len = static_cast<uint64_t>(in_shape.size());
+    const uint64_t total_output_elems = tensor.get_num_elements();
+    MemoryLocation res_loc = tensor.get_memory_location();
+    Tensor<float_t> result(in_shape, res_loc);
+
+    const std::vector<uint64_t> in_divs =
+        temper::utils::compute_divisors(in_shape);
+    const std::vector<uint64_t> in_strides = tensor.get_strides();
+
+    uint64_t* p_in_divs = static_cast<uint64_t*>(
+        sycl::malloc_device(sizeof(uint64_t) * static_cast<size_t>(arr_len),
+                            g_sycl_queue));
+    uint64_t* p_in_strides = static_cast<uint64_t*>(
+        sycl::malloc_device(sizeof(uint64_t) * static_cast<size_t>(arr_len),
+                            g_sycl_queue));
+    int32_t* p_error_flag = static_cast<int32_t*>(
+        sycl::malloc_shared(sizeof(int32_t), g_sycl_queue));
+
+    bool alloc_ok = (p_in_divs && p_in_strides && p_error_flag);
+    if (!alloc_ok)
+    {
+        sycl::free(p_in_divs, g_sycl_queue);
+        sycl::free(p_in_strides, g_sycl_queue);
+        sycl::free(p_error_flag, g_sycl_queue);
+        throw std::bad_alloc();
+    }
+
+    g_sycl_queue.memcpy(p_in_divs, in_divs.data(),
+        sizeof(uint64_t) * arr_len).wait();
+    g_sycl_queue.memcpy(p_in_strides, in_strides.data(),
+        sizeof(uint64_t) * arr_len).wait();
+    *p_error_flag = 0;
+
+    const float_t* p_in_data = tensor.get_data();
+    float_t* p_out = result.get_data();
+
+    g_sycl_queue.submit([&](sycl::handler& cgh) {
+        cgh.parallel_for(sycl::range<1>(static_cast<size_t>(total_output_elems)),
+            [=](sycl::id<1> id)
+        {
+            const uint64_t flat = static_cast<uint64_t>(id[0]);
+
+            uint64_t in_idx = temper::sycl_utils::idx_of(flat,
+                                                    p_in_divs,
+                                                    p_in_strides,
+                                                    arr_len);
+            float_t v = p_in_data[in_idx];
+
+            temper::sycl_utils::device_check_nan_and_set<float_t>
+                (v, p_error_flag);
+
+            float_t outv = sycl::exp(v);
+
+            temper::sycl_utils::device_check_finite_and_set<float_t>
+                (outv, p_error_flag);
+            p_out[flat] = outv;
+        });
+    }).wait();
+
+    int32_t err = *p_error_flag;
+
+    sycl::free(p_error_flag, g_sycl_queue);
+    sycl::free(p_in_divs, g_sycl_queue);
+    sycl::free(p_in_strides, g_sycl_queue);
+
+    if (err != 0)
+    {
+        if (err == 1)
+        {
+            throw std::runtime_error(R"(exp: NaN detected in inputs.)");
+        }
+        if (err == 2)
+        {
+            throw std::runtime_error(R"(exp:
+                non-finite result (Inf/overflow/NaN) produced.)");
+        }
+        throw std::runtime_error(R"(exp: numeric error during exp computation.)");
+    }
+
+    return result;
+}
+template Tensor<float> exp<float>(const Tensor<float>&);
+
 } // namespace temper::math

@@ -52,6 +52,14 @@ add_executable(tensor_ut
   ${CMAKE_SOURCE_DIR}/src/Stats.cpp
 )
 
+add_executable(math_ut
+  ut_Math.cpp
+  ${CMAKE_SOURCE_DIR}/src/Tensor.cpp
+  ${CMAKE_SOURCE_DIR}/src/SYCLQueue.cpp
+  ${CMAKE_SOURCE_DIR}/src/Math.cpp
+  ${CMAKE_SOURCE_DIR}/src/Stats.cpp
+)
+
 add_executable(ml_ut
   ut_ML.cpp
   ${CMAKE_SOURCE_DIR}/src/Tensor.cpp
@@ -91,6 +99,15 @@ target_link_libraries(
 )
 
 target_link_libraries(
+  math_ut
+  PRIVATE
+    Common
+    GTest::gtest
+    GTest::gtest_main
+)
+
+
+target_link_libraries(
   ml_ut
   PRIVATE
     Common
@@ -108,5 +125,6 @@ target_link_libraries(
 
 gtest_discover_tests(temper_ut)
 gtest_discover_tests(tensor_ut)
+gtest_discover_tests(math_ut)
 gtest_discover_tests(ml_ut)
 gtest_discover_tests(stats_ut)

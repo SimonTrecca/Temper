@@ -49,7 +49,7 @@ namespace temper::ml
  * @throws std::bad_alloc On allocation failure.
  */
 template <typename float_t>
-Tensor<float_t> one_hot_expand_at(const temper::Tensor<float_t>& tensor,
+Tensor<float_t> one_hot_expand_at(const Tensor<float_t>& tensor,
     uint64_t axis,
     uint64_t axis_index,
     uint64_t depth,

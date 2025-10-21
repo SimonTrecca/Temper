@@ -631,6 +631,27 @@ Tensor<float_t> sqrt(const Tensor<float_t>& tensor);
 /// Explicit instantiation of sqrt for float
 extern template Tensor<float> sqrt<float>(const Tensor<float>& tensor);
 
+/**
+ * @brief Elementwise natural exponential.
+ *
+ * Computes `exp(x)` for every element of @p tensor and returns a tensor
+ * with the same shape and memory location.
+ *
+ * @param tensor Input tensor.
+ * @return Tensor<float_t> Tensor containing elementwise natural exponentials.
+ *
+ * @throws std::invalid_argument If @p tensor is empty.
+ * @throws std::bad_alloc If required device helper memory cannot be allocated.
+ * @throws std::runtime_error If:
+ * - Inputs contain NaN, or
+ * - A computed output is non-finite (Inf / -Inf / NaN), or
+ * - A numeric error occurs during device/kernel execution.
+ */
+template<typename float_t>
+Tensor<float_t> exp(const Tensor<float_t> & tensor);
+/// Explicit instantiation of exp for float
+extern template Tensor<float> exp<float>(const Tensor<float>&);
+
 /* todo
     diag
 */

@@ -4587,4 +4587,113 @@ TEST(SQRT, sqrt_view_and_alias)
     EXPECT_FLOAT_EQ(h2[2], 5.0f);
 }
 
+/**
+ * @test EXP.exp_basic
+ * @brief Elementwise exp on simple values (0, 1, -1) on device.
+ */
+TEST(EXP, exp_basic)
+{
+    Tensor<float> t({3}, MemoryLocation::DEVICE);
+    t = std::vector<float>{0.0f, 1.0f, -1.0f};
+
+    Tensor<float> res = math::exp(t);
+
+    std::vector<float> host(3);
+    g_sycl_queue.memcpy(host.data(),
+        res.m_p_data.get(), 3 * sizeof(float)).wait();
+
+    const double tol = 1e-6;
+    EXPECT_NEAR(static_cast<double>(host[0]),
+        static_cast<double>(std::exp(0.0f)), tol);
+    EXPECT_NEAR(static_cast<double>(host[1]),
+        static_cast<double>(std::exp(1.0f)), tol);
+    EXPECT_NEAR(static_cast<double>(host[2]),
+        static_cast<double>(std::exp(-1.0f)), tol);
+}
+
+/**
+ * @test EXP.exp_view_and_alias
+ * @brief Elementwise exp on views and alias views (strided/contiguous).
+ */
+TEST(EXP, exp_view_and_alias)
+{
+    Tensor<float> owner({2,3}, MemoryLocation::DEVICE);
+    owner = std::vector<float>{0.0f, 1.0f, 2.0f, -1.0f, -2.0f, 3.0f};
+
+    Tensor<float> view(owner,
+                       std::vector<uint64_t>{0ull, 0ull},
+                       std::vector<uint64_t>{3ull},
+                       std::vector<uint64_t>{1ull});
+    Tensor<float> r1 = math::exp(view);
+    std::vector<float> h1(3);
+    g_sycl_queue.memcpy(h1.data(), r1.m_p_data.get(), 3 * sizeof(float)).wait();
+    EXPECT_NEAR(static_cast<double>(h1[0]),
+        static_cast<double>(std::exp(0.0f)), 1e-6);
+    EXPECT_NEAR(static_cast<double>(h1[1]),
+        static_cast<double>(std::exp(1.0f)), 1e-6);
+    EXPECT_NEAR(static_cast<double>(h1[2]),
+        static_cast<double>(std::exp(2.0f)), 1e-6);
+
+    std::vector<uint64_t> start = {0ull, 0ull};
+    std::vector<uint64_t> dims = {3ull};
+    std::vector<uint64_t> strides = {2ull};
+    Tensor<float> alias(owner, start, dims, strides);
+    Tensor<float> r2 = math::exp(alias);
+    std::vector<float> h2(3);
+    g_sycl_queue.memcpy(h2.data(),
+        r2.m_p_data.get(), 3 * sizeof(float)).wait();
+    EXPECT_NEAR(static_cast<double>(h2[0]),
+        static_cast<double>(std::exp(0.0f)), 1e-6);
+    EXPECT_NEAR(static_cast<double>(h2[1]),
+        static_cast<double>(std::exp(2.0f)), 1e-6);
+    EXPECT_NEAR(static_cast<double>(h2[2]),
+        static_cast<double>(std::exp(-2.0f)), 1e-6);
+}
+
+/**
+ * @test EXP.exp_large_overflow_throws
+ * @brief Very large inputs that overflow to +Inf should cause runtime error.
+ */
+TEST(EXP, exp_large_overflow_throws)
+{
+    Tensor<float> t({1}, MemoryLocation::DEVICE);
+    t = std::vector<float>{1000.0f};
+
+    EXPECT_THROW(math::exp(t), std::runtime_error);
+}
+
+/**
+ * @test EXP.exp_nan_throws
+ * @brief NaN in input should cause std::runtime_error.
+ */
+TEST(EXP, exp_nan_throws)
+{
+    Tensor<float> t({2}, MemoryLocation::DEVICE);
+    t = std::vector<float>{1.0f, std::numeric_limits<float>::quiet_NaN()};
+
+    EXPECT_THROW(math::exp(t), std::runtime_error);
+}
+
+/**
+ * @test EXP.exp_inf_input_throws
+ * @brief +Inf in input leads to non-finite output and should throw.
+ */
+TEST(EXP, exp_inf_input_throws)
+{
+    Tensor<float> t({1}, MemoryLocation::DEVICE);
+    t = std::vector<float>{std::numeric_limits<float>::infinity()};
+
+    EXPECT_THROW(math::exp(t), std::runtime_error);
+}
+
+/**
+ * @test EXP.exp_empty_throws
+ * @brief exp() on an empty tensor should throw std::invalid_argument.
+ */
+TEST(EXP, exp_empty_throws)
+{
+    Tensor<float> t;
+    EXPECT_THROW(math::exp(t), std::invalid_argument);
+}
+
 } // namespace Test
