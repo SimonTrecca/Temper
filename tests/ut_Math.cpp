@@ -4280,9 +4280,8 @@ TEST(EIG, eig_alias_view_strided)
         EXPECT_NEAR(got[i], expected[i], tol);
     }
 
-    Tensor<float> host_copy({N, N}, MemoryLocation::HOST);
-    host_copy = owner;
-    const float* host_ptr = host_copy.get_data();
+    owner.to(MemoryLocation::HOST);
+    const float* host_ptr = owner.get_data();
     for (size_t idx = 0; idx < owner_flat.size(); ++idx)
     {
         EXPECT_FLOAT_EQ(owner_flat[idx], host_ptr[idx]);
@@ -4356,10 +4355,8 @@ TEST(EIG, eig_noncontig_batch_strides_device)
         }
     }
 
-    Tensor<float> host_copy({owner_batches, batch_n, batch_n},
-        MemoryLocation::HOST);
-    host_copy = owner;
-    const float* host_ptr = host_copy.get_data();
+    owner.to(MemoryLocation::HOST);
+    const float* host_ptr = owner.get_data();
     for (size_t idx = 0; idx < owner_flat.size(); ++idx)
     {
         EXPECT_FLOAT_EQ(owner_flat[idx], host_ptr[idx]);
@@ -4452,9 +4449,8 @@ TEST(EIG, eig_5d_noncontig_device)
         }
     }
 
-    Tensor<float> host_copy(owner_dims, MemoryLocation::HOST);
-    host_copy = owner; // device -> host
-    const float* host_ptr = host_copy.get_data();
+    owner.to(MemoryLocation::HOST);
+    const float* host_ptr = owner.get_data();
     for (size_t idx = 0; idx < owner_flat.size(); ++idx)
     {
         EXPECT_FLOAT_EQ(owner_flat[idx], host_ptr[idx]);
