@@ -173,7 +173,6 @@ TEST(TENSOR, compute_strides_overflow_throws)
     EXPECT_THROW(t.compute_strides(), std::overflow_error);
 }
 
-
 /**
  * @test TENSOR.main_constructor_sets_dimensions_and_strides
  * @brief Tests that the Tensor constructor
@@ -4638,6 +4637,48 @@ TEST(TENSOR, sort_3D_axis2)
 }
 
 /**
+ * @test TENSOR.sort_3D_axis_negative
+ * @brief Sort the last axis of a 3D tensor (through negative indexing).
+ */
+TEST(TENSOR, sort_3D_axis_negative)
+{
+    Tensor<float> t({2,2,4}, MemoryLocation::HOST);
+    // slices:
+    // t[0][0] = [4,1,3,2]  -> [1,2,3,4]
+    // t[0][1] = [0,-1,5,2] -> [-1,0,2,5]
+    // t[1][0] = [9,7,8,6]  -> [6,7,8,9]
+    // t[1][1] = [3,3,1,2]  -> [1,2,3,3]
+    std::vector<float> vals = {
+        4,1,3,2,
+        0,-1,5,2,
+        9,7,8,6,
+        3,3,1,2
+    };
+    t = vals;
+    t.sort(-1);
+
+    EXPECT_FLOAT_EQ(t[0][0][0], 1.0f);
+    EXPECT_FLOAT_EQ(t[0][0][1], 2.0f);
+    EXPECT_FLOAT_EQ(t[0][0][2], 3.0f);
+    EXPECT_FLOAT_EQ(t[0][0][3], 4.0f);
+
+    EXPECT_FLOAT_EQ(t[0][1][0], -1.0f);
+    EXPECT_FLOAT_EQ(t[0][1][1], 0.0f);
+    EXPECT_FLOAT_EQ(t[0][1][2], 2.0f);
+    EXPECT_FLOAT_EQ(t[0][1][3], 5.0f);
+
+    EXPECT_FLOAT_EQ(t[1][0][0], 6.0f);
+    EXPECT_FLOAT_EQ(t[1][0][1], 7.0f);
+    EXPECT_FLOAT_EQ(t[1][0][2], 8.0f);
+    EXPECT_FLOAT_EQ(t[1][0][3], 9.0f);
+
+    EXPECT_FLOAT_EQ(t[1][1][0], 1.0f);
+    EXPECT_FLOAT_EQ(t[1][1][1], 2.0f);
+    EXPECT_FLOAT_EQ(t[1][1][2], 3.0f);
+    EXPECT_FLOAT_EQ(t[1][1][3], 3.0f);
+}
+
+/**
  * @test TENSOR.sort_3D_flatten
  * @brief Flatten-sort a 3D tensor (axis = -1) and confirm global ordering.
  */
@@ -4654,7 +4695,7 @@ TEST(TENSOR, sort_3D_flatten)
         -1, 10
     };
     t = vals;
-    t.sort(-1);
+    t.sort();
 
     std::vector<float> got;
     for (uint64_t i = 0; i < 2; ++i)
@@ -4828,7 +4869,7 @@ TEST(TENSOR, sort_view_non1D_flatten)
 
     Tensor<float> v(t, {0,1,0}, {2,2,3});
 
-    v.sort(-1);
+    v.sort();
 
     std::vector<float> got;
     for (uint64_t i = 0; i < 2; ++i)
@@ -4963,7 +5004,7 @@ TEST(TENSOR, sort_alias_view_flatten_subregion)
 
     Tensor<float> sub(t, {0,0}, {2,2}, {3,1});
 
-    sub.sort(-1);
+    sub.sort();
 
     // After operation owner should be:
     // row0: [1,2,3]
@@ -5071,7 +5112,7 @@ TEST(TENSOR, sum_all_elements)
     std::vector<float> vals = {1.0f, 2.0f, 3.0f};
     t = vals;
 
-    Tensor<float> res = t.sum(-1);
+    Tensor<float> res = t.sum();
 
     std::vector<float> host(1);
     g_sycl_queue.memcpy(host.data(), res.m_p_data.get(), sizeof(float)).wait();
@@ -5150,6 +5191,31 @@ TEST(TENSOR, sum_axis0_3D)
 }
 
 /**
+ * @test TENSOR.sum_axis_negative
+ * @brief Sum along axis -3 for a 2x2x2 device tensor and verify resulting values.
+ */
+TEST(TENSOR, sum_axis_negative)
+{
+    Tensor<float> t({2, 2, 2}, MemoryLocation::DEVICE);
+    std::vector<float> vals = {
+        1.0f, 2.0f, 3.0f, 4.0f,
+        5.0f, 6.0f, 7.0f, 8.0f
+    };
+    t = vals;
+
+    Tensor<float> res = t.sum(-3);
+
+    std::vector<float> host(4);
+    g_sycl_queue.memcpy
+        (host.data(), res.m_p_data.get(), 4 * sizeof(float)).wait();
+
+    EXPECT_FLOAT_EQ(host[0], 1.0f + 5.0f);
+    EXPECT_FLOAT_EQ(host[1], 2.0f + 6.0f);
+    EXPECT_FLOAT_EQ(host[2], 3.0f + 7.0f);
+    EXPECT_FLOAT_EQ(host[3], 4.0f + 8.0f);
+}
+
+/**
  * @test TENSOR.sum_axis1_3D
  * @brief Sum along axis 1 for a 2x2x2 device tensor and verify resulting values.
  */
@@ -5216,7 +5282,7 @@ TEST(TENSOR, sum_view_tensor)
 
     Tensor<float> view(t, start_indices, view_shape);
 
-    Tensor<float> res = view.sum(-1);
+    Tensor<float> res = view.sum();
 
     std::vector<float> host(1);
     g_sycl_queue.memcpy(host.data(), res.m_p_data.get(), sizeof(float)).wait();
@@ -5241,7 +5307,7 @@ TEST(TENSOR, sum_alias_view_tensor)
 
     Tensor<float> alias_view(t, start_indices, dims, strides);
 
-    Tensor<float> res = alias_view.sum(-1);
+    Tensor<float> res = alias_view.sum();
 
     std::vector<float> host(1);
     g_sycl_queue.memcpy(host.data(), res.m_p_data.get(), sizeof(float)).wait();
@@ -5347,7 +5413,7 @@ TEST(TENSOR, sum_nan_throws)
         {1.0f, std::numeric_limits<float>::quiet_NaN(), 3.0f};
     t = vals;
 
-    EXPECT_THROW(t.sum(-1), std::runtime_error);
+    EXPECT_THROW(t.sum(), std::runtime_error);
 }
 
 /**
@@ -5361,7 +5427,7 @@ TEST(TENSOR, sum_non_finite_throws)
     std::vector<float> vals = {std::numeric_limits<float>::infinity(), 1.0f};
     t = vals;
 
-    EXPECT_THROW(t.sum(-1), std::runtime_error);
+    EXPECT_THROW(t.sum(), std::runtime_error);
 }
 
 /**
@@ -5373,7 +5439,7 @@ TEST(TENSOR, sum_empty)
     Tensor<float> t;
 
     Tensor<float> res({1}, MemoryLocation::DEVICE);
-    res = t.sum(-1);
+    res = t.sum();
 
     std::vector<float> host(1);
     g_sycl_queue.memcpy(host.data(), res.m_p_data.get(), sizeof(float)).wait();
@@ -5428,6 +5494,31 @@ TEST(TENSOR, cumsum_axis0_2D)
 }
 
 /**
+ * @test TENSOR.cumsum_axis_negative
+ * @brief Tests cumsum along axis -2 of a 2D tensor.
+ */
+TEST(TENSOR, cumsum_axis_negative)
+{
+    Tensor<float> t({2, 3}, MemoryLocation::DEVICE);
+    std::vector<float> vals = {1.0f, 2.0f, 3.0f,
+                               4.0f, 5.0f, 6.0f};
+    t = vals;
+
+    Tensor<float> res = t.cumsum(-2);
+
+    std::vector<float> host(6);
+    g_sycl_queue.memcpy
+        (host.data(), res.m_p_data.get(), 6 * sizeof(float)).wait();
+
+    EXPECT_FLOAT_EQ(host[0], 1.0f);
+    EXPECT_FLOAT_EQ(host[1], 2.0f);
+    EXPECT_FLOAT_EQ(host[2], 3.0f);
+    EXPECT_FLOAT_EQ(host[3], 1.0f + 4.0f);
+    EXPECT_FLOAT_EQ(host[4], 2.0f + 5.0f);
+    EXPECT_FLOAT_EQ(host[5], 3.0f + 6.0f);
+}
+
+/**
  * @test TENSOR.cumsum_axis1_2D
  * @brief Tests cumsum along axis 1 of a 2D tensor.
  */
@@ -5454,7 +5545,7 @@ TEST(TENSOR, cumsum_axis1_2D)
 
 /**
  * @test TENSOR.cumsum_flatten_3D
- * @brief Tests cumsum on a 3D tensor flattened along the last axis.
+ * @brief Tests cumsum on a 3D tensor flattened.
  */
 TEST(TENSOR, cumsum_flatten_3D)
 {
@@ -5462,7 +5553,7 @@ TEST(TENSOR, cumsum_flatten_3D)
     std::vector<float> vals = {1.0f, 2.0f, 3.0f, 4.0f,
                                5.0f, 6.0f, 7.0f, 8.0f};
     t = vals;
-    Tensor<float> res = t.cumsum(-1);
+    Tensor<float> res = t.cumsum();
 
     std::vector<float> host(8);
     g_sycl_queue.memcpy
@@ -5497,7 +5588,7 @@ TEST(TENSOR, cumsum_view_flatten)
     std::vector<uint64_t> view_shape = {2ull, 2ull};
     Tensor<float> view(t, start, view_shape);
 
-    Tensor<float> res = view.cumsum(-1);
+    Tensor<float> res = view.cumsum();
 
     std::vector<float> host(4);
     g_sycl_queue.memcpy
@@ -5523,7 +5614,7 @@ TEST(TENSOR, cumsum_alias_view_strided)
     std::vector<uint64_t> strides = {2ull};
     Tensor<float> alias_view(t, start, dims, strides);
 
-    Tensor<float> res = alias_view.cumsum(-1);
+    Tensor<float> res = alias_view.cumsum();
 
     std::vector<float> host(3);
     g_sycl_queue.memcpy
@@ -5619,7 +5710,7 @@ TEST(TENSOR, cumsum_axis_out_of_bounds)
     t = vals;
 
     EXPECT_THROW(t.cumsum(2), std::invalid_argument);
-    EXPECT_THROW(t.cumsum(-2), std::invalid_argument);
+    EXPECT_THROW(t.cumsum(-3), std::invalid_argument);
 }
 
 /**
@@ -5634,7 +5725,7 @@ TEST(TENSOR, cumsum_nan_throws)
         {1.0f, std::numeric_limits<float>::quiet_NaN(), 3.0f};
     t = vals;
 
-    EXPECT_THROW(t.cumsum(-1), std::runtime_error);
+    EXPECT_THROW(t.cumsum(), std::runtime_error);
 }
 
 /**
@@ -5648,7 +5739,7 @@ TEST(TENSOR, cumsum_non_finite_throws)
     std::vector<float> vals = {std::numeric_limits<float>::infinity(), 1.0f};
     t = vals;
 
-    EXPECT_THROW(t.cumsum(-1), std::runtime_error);
+    EXPECT_THROW(t.cumsum(), std::runtime_error);
 }
 
 /**
@@ -5661,7 +5752,7 @@ TEST(TENSOR, cumsum_empty)
     Tensor<float> t;
 
     Tensor<float> res({1}, MemoryLocation::DEVICE);
-    res = t.cumsum(-1);
+    res = t.cumsum();
 
     std::vector<float> host(1);
     g_sycl_queue.memcpy(host.data(), res.m_p_data.get(), sizeof(float)).wait();
@@ -5679,7 +5770,7 @@ TEST(TENSOR, mean_flatten)
     std::vector<float> vals = {1.0f, 2.0f, 3.0f};
     t = vals;
 
-    Tensor<float> res = t.mean(-1);
+    Tensor<float> res = t.mean();
 
     std::vector<float> host(1);
     g_sycl_queue.memcpy(host.data(), res.m_p_data.get(), sizeof(float)).wait();
@@ -5699,6 +5790,28 @@ TEST(TENSOR, mean_axis0_2D)
     t = vals;
 
     Tensor<float> res = t.mean(0);
+
+    std::vector<float> host(3);
+    g_sycl_queue.memcpy(host.data(),
+        res.m_p_data.get(), 3 * sizeof(float)).wait();
+
+    EXPECT_FLOAT_EQ(host[0], 2.5f);
+    EXPECT_FLOAT_EQ(host[1], 3.5f);
+    EXPECT_FLOAT_EQ(host[2], 4.5f);
+}
+
+/**
+ * @test TENSOR.mean_axis_negative
+ * @brief Mean along axis -2 of a 2D tensor.
+ */
+TEST(TENSOR, mean_axis_negative)
+{
+    Tensor<float> t({2, 3}, MemoryLocation::DEVICE);
+    std::vector<float> vals = {1.0f, 2.0f, 3.0f,
+                               4.0f, 5.0f, 6.0f};
+    t = vals;
+
+    Tensor<float> res = t.mean(-2);
 
     std::vector<float> host(3);
     g_sycl_queue.memcpy(host.data(),
@@ -5738,7 +5851,7 @@ TEST(TENSOR, mean_empty)
 {
     Tensor<float> t;
 
-    EXPECT_THROW(t.mean(-1), std::invalid_argument);
+    EXPECT_THROW(t.mean(), std::invalid_argument);
 }
 
 /**
@@ -5752,7 +5865,7 @@ TEST(TENSOR, mean_nan_throws)
         {1.0f, std::numeric_limits<float>::quiet_NaN(), 3.0f};
     t = vals;
 
-    EXPECT_THROW(t.mean(-1), std::runtime_error);
+    EXPECT_THROW(t.mean(), std::runtime_error);
 }
 
 /**
@@ -5765,7 +5878,7 @@ TEST(TENSOR, mean_non_finite_throws)
     std::vector<float> vals = {std::numeric_limits<float>::infinity(), 1.0f};
     t = vals;
 
-    EXPECT_THROW(t.mean(-1), std::runtime_error);
+    EXPECT_THROW(t.mean(), std::runtime_error);
 }
 
 /**
@@ -5783,7 +5896,7 @@ TEST(TENSOR, mean_view_flatten)
     std::vector<uint64_t> view_shape = {2ull, 2ull};
     Tensor<float> view(owner, start, view_shape);
 
-    Tensor<float> res = view.mean(-1);
+    Tensor<float> res = view.mean();
     std::vector<float> host(1);
     g_sycl_queue.memcpy(host.data(), res.m_p_data.get(), sizeof(float)).wait();
 
@@ -5804,7 +5917,7 @@ TEST(TENSOR, mean_alias_view_strided)
     std::vector<uint64_t> strides = {2ull};
     Tensor<float> alias_view(t, start, dims, strides);
 
-    Tensor<float> res = alias_view.mean(-1);
+    Tensor<float> res = alias_view.mean();
 
     std::vector<float> host(1);
     g_sycl_queue.memcpy(host.data(), res.m_p_data.get(), sizeof(float)).wait();
@@ -5821,7 +5934,7 @@ TEST(TENSOR, var_all_elements)
     Tensor<float> t({3}, MemoryLocation::DEVICE);
     t = std::vector<float>{1.0f, 2.0f, 3.0f};
 
-    Tensor<float> res = t.var(-1, 0);
+    Tensor<float> res = t.var(std::nullopt, 0);
     std::vector<float> host(1);
     g_sycl_queue.memcpy(host.data(), res.m_p_data.get(), sizeof(float)).wait();
 
@@ -5837,7 +5950,7 @@ TEST(TENSOR, var_ddof_1_sample)
     Tensor<float> t({3}, MemoryLocation::DEVICE);
     t = std::vector<float>{1.0f, 2.0f, 3.0f};
 
-    Tensor<float> res = t.var(-1, 1);
+    Tensor<float> res = t.var(std::nullopt, 1);
     std::vector<float> host(1);
     g_sycl_queue.memcpy(host.data(), res.m_p_data.get(), sizeof(float)).wait();
 
@@ -5866,6 +5979,26 @@ TEST(TENSOR, var_axis0)
 }
 
 /**
+ * @test TENSOR.var_axis_negative
+ * @brief Variance along axis -2 for a 2x3 tensor (per-column).
+ */
+TEST(TENSOR, var_axis_negative)
+{
+    Tensor<float> t({2,3}, MemoryLocation::DEVICE);
+    t = std::vector<float>{1.0f, 2.0f, 3.0f,
+                           4.0f, 5.0f, 6.0f};
+
+    Tensor<float> res = t.var(-2, 0);
+    std::vector<float> host(3);
+    g_sycl_queue.memcpy(host.data(),
+        res.m_p_data.get(), 3 * sizeof(float)).wait();
+
+    EXPECT_FLOAT_EQ(host[0], 2.25f);
+    EXPECT_FLOAT_EQ(host[1], 2.25f);
+    EXPECT_FLOAT_EQ(host[2], 2.25f);
+}
+
+/**
  * @test TENSOR.var_view_and_alias
  * @brief Variance on view and alias view (flattened).
  */
@@ -5878,7 +6011,7 @@ TEST(TENSOR, var_view_and_alias)
                        std::vector<uint64_t>{0ull, 0ull},
                        std::vector<uint64_t>{3ull},
                        std::vector<uint64_t>{1ull});
-    Tensor<float> v1 = view.var(-1, 0);
+    Tensor<float> v1 = view.var(std::nullopt, 0);
     std::vector<float> h1(1);
     g_sycl_queue.memcpy(h1.data(), v1.m_p_data.get(), sizeof(float)).wait();
     EXPECT_FLOAT_EQ(h1[0], 2.0f/3.0f);
@@ -5887,7 +6020,7 @@ TEST(TENSOR, var_view_and_alias)
     std::vector<uint64_t> dims = {3ull};
     std::vector<uint64_t> strides = {2ull};
     Tensor<float> alias(owner, start, dims, strides);
-    Tensor<float> v2 = alias.var(-1, 0);
+    Tensor<float> v2 = alias.var(std::nullopt, 0);
     std::vector<float> h2(1);
     g_sycl_queue.memcpy(h2.data(), v2.m_p_data.get(), sizeof(float)).wait();
     EXPECT_FLOAT_EQ(h2[0], 8.0f/3.0f);
@@ -5902,7 +6035,7 @@ TEST(TENSOR, var_nan_throws)
     Tensor<float> t({3}, MemoryLocation::DEVICE);
     t = std::vector<float>{1.0f, std::numeric_limits<float>::quiet_NaN(), 3.0f};
 
-    EXPECT_THROW(t.var(-1, 0), std::runtime_error);
+    EXPECT_THROW(t.var(std::nullopt, 0), std::runtime_error);
 }
 
 /**
@@ -5914,7 +6047,7 @@ TEST(TENSOR, var_non_finite_throws)
     Tensor<float> t({2}, MemoryLocation::DEVICE);
     t = std::vector<float>{std::numeric_limits<float>::infinity(), 1.0f};
 
-    EXPECT_THROW(t.var(-1, 0), std::runtime_error);
+    EXPECT_THROW(t.var(std::nullopt, 0), std::runtime_error);
 }
 
 /**
@@ -5924,7 +6057,7 @@ TEST(TENSOR, var_non_finite_throws)
 TEST(TENSOR, var_empty)
 {
     Tensor<float> t;
-    EXPECT_THROW(t.var(-1, 0), std::invalid_argument);
+    EXPECT_THROW(t.var(std::nullopt, 0), std::invalid_argument);
 }
 
 /**
@@ -6014,6 +6147,36 @@ TEST(TENSOR, cov_basic)
     t = values;
 
     Tensor<float> t_cov = t.cov({0}, {1}, 1);
+
+    std::vector<float> expected = { 1.0033f, 2.6665f,
+                                    2.6665f, 9.333f};
+    const float tol = 1e-3;
+
+    for (uint64_t i = 0; i < 2; ++i)
+    {
+        for (uint64_t j = 0; j < 2; ++j)
+        {
+            EXPECT_NEAR(t_cov[i][j], expected[i*2 + j], tol);
+        }
+    }
+}
+
+/**
+ * @test TENSOR.cov_negative_axis
+ * @brief Basic 2D covariance computation using negative indexing.
+ *
+ * Creates a 3×2 tensor, computes sample covariance (ddof=1)
+ * and verifies matrix entries against precomputed values.
+ */
+TEST(TENSOR, cov_negative_axis)
+{
+    Tensor<float> t({3, 2});
+    std::vector<float> values = { 2.1f, 8.0f,
+                                2.5f, 12.0f,
+                                4.0f, 14.0f};
+    t = values;
+
+    Tensor<float> t_cov = t.cov({-2}, {-1}, 1);
 
     std::vector<float> expected = { 1.0033f, 2.6665f,
                                     2.6665f, 9.333f};
@@ -6521,15 +6684,15 @@ TEST(TENSOR, cov_ddof_default_batched3d)
 }
 
 /**
- * @test TENSOR.std_all_elements
+ * @test TENSOR.stddev_all_elements
  * @brief Standard deviation of all elements (axis = -1) returns scalar.
  */
-TEST(TENSOR, std_all_elements)
+TEST(TENSOR, stddev_all_elements)
 {
     Tensor<float> t({3}, MemoryLocation::DEVICE);
     t = std::vector<float>{1.0f, 2.0f, 3.0f};
 
-    Tensor<float> res = t.std(-1, 0);
+    Tensor<float> res = t.stddev(std::nullopt, 0);
     std::vector<float> host(1);
     g_sycl_queue.memcpy(host.data(), res.m_p_data.get(), sizeof(float)).wait();
 
@@ -6538,15 +6701,15 @@ TEST(TENSOR, std_all_elements)
 }
 
 /**
- * @test TENSOR.std_ddof_1_sample
+ * @test TENSOR.stddev_ddof_1_sample
  * @brief Standard deviation with ddof=1 (sample std).
  */
-TEST(TENSOR, std_ddof_1_sample)
+TEST(TENSOR, stddev_ddof_1_sample)
 {
     Tensor<float> t({3}, MemoryLocation::DEVICE);
     t = std::vector<float>{1.0f, 2.0f, 3.0f};
 
-    Tensor<float> res = t.std(-1, 1);
+    Tensor<float> res = t.stddev(std::nullopt, 1);
     std::vector<float> host(1);
     g_sycl_queue.memcpy(host.data(), res.m_p_data.get(), sizeof(float)).wait();
 
@@ -6554,16 +6717,16 @@ TEST(TENSOR, std_ddof_1_sample)
 }
 
 /**
- * @test TENSOR.std_axis0
+ * @test TENSOR.stddev_axis0
  * @brief Standard deviation along axis 0 for a 2x3 tensor (per-column).
  */
-TEST(TENSOR, std_axis0)
+TEST(TENSOR, stddev_axis0)
 {
     Tensor<float> t({2,3}, MemoryLocation::DEVICE);
     t = std::vector<float>{1.0f, 2.0f, 3.0f,
                            4.0f, 5.0f, 6.0f};
 
-    Tensor<float> res = t.std(0, 0);
+    Tensor<float> res = t.stddev(0, 0);
     std::vector<float> host(3);
     g_sycl_queue.memcpy(host.data(), res.m_p_data.get(), 3 * sizeof(float)).wait();
 
@@ -6573,16 +6736,16 @@ TEST(TENSOR, std_axis0)
 }
 
 /**
- * @test TENSOR.std_axis1_2D
+ * @test TENSOR.stddev_axis1_2D
  * @brief Standard deviation along axis 1 for a 2x3 tensor (per-row).
  */
-TEST(TENSOR, std_axis1_2D)
+TEST(TENSOR, stddev_axis1_2D)
 {
     Tensor<float> t({2,3}, MemoryLocation::DEVICE);
     t = std::vector<float>{1.0f, 2.0f, 3.0f,
                            4.0f, 5.0f, 6.0f};
 
-    Tensor<float> res = t.std(1, 0);
+    Tensor<float> res = t.stddev(1, 0);
     std::vector<float> host(2);
     g_sycl_queue.memcpy(host.data(), res.m_p_data.get(), 2 * sizeof(float)).wait();
 
@@ -6591,10 +6754,10 @@ TEST(TENSOR, std_axis1_2D)
 }
 
 /**
- * @test TENSOR.std_axis0_3D
+ * @test TENSOR.stddev_axis0_3D
  * @brief Standard deviation along axis 0 for a 2x2x2 tensor.
  */
-TEST(TENSOR, std_axis0_3D)
+TEST(TENSOR, stddev_axis0_3D)
 {
     Tensor<float> t({2,2,2}, MemoryLocation::DEVICE);
     t = std::vector<float>{
@@ -6602,7 +6765,7 @@ TEST(TENSOR, std_axis0_3D)
         5.0f, 6.0f, 7.0f, 8.0f
     };
 
-    Tensor<float> res = t.std(0, 0);
+    Tensor<float> res = t.stddev(0, 0);
     std::vector<float> host(4);
     g_sycl_queue.memcpy
         (host.data(), res.m_p_data.get(), 4 * sizeof(float)).wait();
@@ -6614,10 +6777,33 @@ TEST(TENSOR, std_axis0_3D)
 }
 
 /**
- * @test TENSOR.std_view_and_alias
+ * @test TENSOR.stddev_axis_negative
+ * @brief Standard deviation along axis -3 for a 2x2x2 tensor.
+ */
+TEST(TENSOR, stddev_axis_negative)
+{
+    Tensor<float> t({2,2,2}, MemoryLocation::DEVICE);
+    t = std::vector<float>{
+        1.0f, 2.0f, 3.0f, 4.0f,
+        5.0f, 6.0f, 7.0f, 8.0f
+    };
+
+    Tensor<float> res = t.stddev(-3, 0);
+    std::vector<float> host(4);
+    g_sycl_queue.memcpy
+        (host.data(), res.m_p_data.get(), 4 * sizeof(float)).wait();
+
+    EXPECT_FLOAT_EQ(host[0], 2.0f);
+    EXPECT_FLOAT_EQ(host[1], 2.0f);
+    EXPECT_FLOAT_EQ(host[2], 2.0f);
+    EXPECT_FLOAT_EQ(host[3], 2.0f);
+}
+
+/**
+ * @test TENSOR.stddev_view_and_alias
  * @brief Standard deviation on view and alias view (flattened).
  */
-TEST(TENSOR, std_view_and_alias)
+TEST(TENSOR, stddev_view_and_alias)
 {
     Tensor<float> owner({2,3}, MemoryLocation::DEVICE);
     owner = std::vector<float>{1,2,3,4,5,6};
@@ -6626,7 +6812,7 @@ TEST(TENSOR, std_view_and_alias)
                        std::vector<uint64_t>{0ull, 0ull},
                        std::vector<uint64_t>{3ull},
                        std::vector<uint64_t>{1ull});
-    Tensor<float> v1 = view.std(-1, 0);
+    Tensor<float> v1 = view.stddev(std::nullopt, 0);
     std::vector<float> h1(1);
     g_sycl_queue.memcpy(h1.data(), v1.m_p_data.get(), sizeof(float)).wait();
     EXPECT_FLOAT_EQ(h1[0], std::sqrt(2.0f/3.0f));
@@ -6635,57 +6821,57 @@ TEST(TENSOR, std_view_and_alias)
     std::vector<uint64_t> dims = {3ull};
     std::vector<uint64_t> strides = {2ull};
     Tensor<float> alias(owner, start, dims, strides);
-    Tensor<float> v2 = alias.std(-1, 0);
+    Tensor<float> v2 = alias.stddev(-1, 0);
     std::vector<float> h2(1);
     g_sycl_queue.memcpy(h2.data(), v2.m_p_data.get(), sizeof(float)).wait();
     EXPECT_FLOAT_EQ(h2[0], std::sqrt(8.0f/3.0f));
 }
 
 /**
- * @test TENSOR.std_nan_throws
- * @brief std() throws when tensor contains NaN values.
+ * @test TENSOR.stddev_nan_throws
+ * @brief stddev() throws when tensor contains NaN values.
  */
-TEST(TENSOR, std_nan_throws)
+TEST(TENSOR, stddev_nan_throws)
 {
     Tensor<float> t({3}, MemoryLocation::DEVICE);
     t = std::vector<float>{1.0f, std::numeric_limits<float>::quiet_NaN(), 3.0f};
 
-    EXPECT_THROW(t.std(-1, 0), std::runtime_error);
+    EXPECT_THROW(t.stddev(std::nullopt, 0), std::runtime_error);
 }
 
 /**
- * @test TENSOR.std_non_finite_throws
- * @brief std() throws when tensor contains non-finite values (Inf).
+ * @test TENSOR.stddev_non_finite_throws
+ * @brief stddev() throws when tensor contains non-finite values (Inf).
  */
-TEST(TENSOR, std_non_finite_throws)
+TEST(TENSOR, stddev_non_finite_throws)
 {
     Tensor<float> t({2}, MemoryLocation::DEVICE);
     t = std::vector<float>{std::numeric_limits<float>::infinity(), 1.0f};
 
-    EXPECT_THROW(t.std(-1, 0), std::runtime_error);
+    EXPECT_THROW(t.stddev(std::nullopt, 0), std::runtime_error);
 }
 
 /**
- * @test TENSOR.std_empty
- * @brief std() on an empty tensor throws std::invalid_argument.
+ * @test TENSOR.stddev_empty
+ * @brief stddev() on an empty tensor throws std::invalid_argument.
  */
-TEST(TENSOR, std_empty)
+TEST(TENSOR, stddev_empty)
 {
     Tensor<float> t;
-    EXPECT_THROW(t.std(-1, 0), std::invalid_argument);
+    EXPECT_THROW(t.stddev(-1, 0), std::invalid_argument);
 }
 
 /**
- * @test TENSOR.std_ddof_invalid_throws
- * @brief std() throws when ddof >= axis length (invalid denominator).
+ * @test TENSOR.stddev_ddof_invalid_throws
+ * @brief stddev() throws when ddof >= axis length (invalid denominator).
  */
-TEST(TENSOR, std_ddof_invalid_throws)
+TEST(TENSOR, stddev_ddof_invalid_throws)
 {
     Tensor<float> t({3}, MemoryLocation::DEVICE);
     t = std::vector<float>{1.0f, 2.0f, 3.0f};
 
-    EXPECT_THROW(t.std(-1, 3), std::invalid_argument);
-    EXPECT_THROW(t.std(-1, 4), std::invalid_argument);
+    EXPECT_THROW(t.stddev(std::nullopt, 3), std::invalid_argument);
+    EXPECT_THROW(t.stddev(std::nullopt, 4), std::invalid_argument);
 }
 
 /**
@@ -7118,6 +7304,36 @@ TEST(TENSOR, transpose_explicit_axes)
 }
 
 /**
+ * @test TENSOR.transpose_explicit_axes_negative
+ * @brief Tests transpose with explicit negative axis permutation.
+ */
+TEST(TENSOR, transpose_explicit_axes_negative)
+{
+    Tensor<float> t({2, 3, 4}, MemoryLocation::HOST);
+    std::vector<float> vals(24);
+    for (uint64_t i = 0; i < 24; ++i)
+    {
+        vals[i] = static_cast<float>(i);
+    }
+    t = vals;
+
+    Tensor<float> perm = t.transpose({-1, -2, -3});
+
+    EXPECT_EQ(perm.m_dimensions, (std::vector<uint64_t>{4, 3, 2}));
+    EXPECT_EQ(perm.m_strides,
+        (std::vector<uint64_t>{t.m_strides[2], t.m_strides[1], t.m_strides[0]}));
+
+    Tensor<float> host({4, 3, 2}, MemoryLocation::HOST);
+    copy_tensor_data(host, perm);
+    std::vector<float> out(24);
+    g_sycl_queue.memcpy
+        (out.data(), host.m_p_data.get(), sizeof(float) * 24).wait();
+
+    EXPECT_FLOAT_EQ(out[0], vals[0]);
+    EXPECT_FLOAT_EQ(out[23], vals[23]);
+}
+
+/**
  * @test TENSOR.transpose_2d
  * @brief Tests transpose on a 2D tensor (matrix).
  */
@@ -7504,8 +7720,8 @@ TEST(TENSOR, get_rank)
 
     static_assert(std::is_same_v<
         decltype(std::declval<const Tensor<float>&>().get_rank()),
-        uint64_t
-    >, "get_rank() must return uint64_t");
+        int64_t
+    >, "get_rank() must return int64_t");
 }
 
 /**

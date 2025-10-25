@@ -29,11 +29,9 @@ namespace temper::ml
  *    label and replaced by `depth` values. Only the label position
  *    is set to `on_value`. All other positions take `off_value`.
  *
- * Note: `axis` is an unsigned axis index in [0, rank-1]. Negative
- * indexing is not supported.
  *
  * @param tensor Input tensor.
- * @param axis Axis to target (unsigned, must be < rank).
+ * @param axis Axis to target, -rank..rank-1.
  * @param axis_index Index along `axis` to read labels from
  *        (0..Daxis-1).
  * @param depth Number of classes to expand into (must be > 0).
@@ -50,37 +48,40 @@ namespace temper::ml
  */
 template <typename float_t>
 Tensor<float_t> one_hot_expand_at(const Tensor<float_t>& tensor,
-    uint64_t axis,
+    int64_t axis,
     uint64_t axis_index,
     uint64_t depth,
     float_t on_value = static_cast<float_t>(1),
     float_t off_value = static_cast<float_t>(0));
 /// Explicit instantiation of one_hot_expand_at for float
 extern template Tensor<float> one_hot_expand_at<float>
-    (const Tensor<float>&, uint64_t, uint64_t, uint64_t, float, float);
+    (const Tensor<float>&, int64_t, uint64_t, uint64_t, float, float);
 
 /**
  * @brief Compute the softmax along a single axis.
  *
- * Produces a tensor where each slice along the given @p axis is
+ * Produces a tensor where each slice along the given @p axis_opt is
  * exponentiated and normalized so that the values along that axis sum to 1.
  *
  * @param tensor   Input tensor. Must contain at least one element.
- * @param axis     Axis along which softmax is applied (0 .. rank-1).
+ * @param axis_opt Axis along which softmax is applied, nullopt = flatten,
+ * otherwise -rank..rank-1.
  *
  * @return A new tensor with the same shape as @p tensor containing
- *         the normalized values.
+ * the normalized values.
  *
- * @throws std::invalid_argument If the tensor is empty or @p axis is
- *         outside the valid range.
+ * @throws std::invalid_argument If the tensor is empty or @p axis_opt is
+ * outside the valid range.
  * @throws std::bad_alloc If memory allocation fails.
  * @throws std::runtime_error If NaN or non-finite values are encountered
- *         during computation.
+ * during computation.
  */
 template<typename float_t>
-Tensor<float_t> softmax(const Tensor<float_t> & tensor, int64_t axis);
+Tensor<float_t> softmax(const Tensor<float_t> & tensor,
+    std::optional<int64_t> axis_opt = std::nullopt);
 /// Explicit instantiation of softmax for float
-extern template Tensor<float> softmax<float>(const Tensor<float>&, int64_t);
+extern template Tensor<float> softmax<float>
+    (const Tensor<float>&, std::optional<int64_t>);
 
 /* todo
     cross entropy loss

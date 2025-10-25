@@ -54,13 +54,13 @@ struct BroadcastResult
 inline std::vector<uint64_t>
 compute_divisors(const std::vector<uint64_t>& shape)
 {
-    uint64_t rank = static_cast<uint64_t>(shape.size());
+    int64_t rank = static_cast<uint64_t>(shape.size());
     std::vector<uint64_t> divs(rank, 1);
 
-    for (uint64_t i = 0; i < rank; ++i)
+    for (int64_t i = 0; i < rank; ++i)
     {
         uint64_t prod = 1;
-        for (uint64_t j = i + 1; j < rank; ++j)
+        for (int64_t j = i + 1; j < rank; ++j)
         {
             prod *= shape[j];
         }
@@ -81,14 +81,14 @@ compute_divisors(const std::vector<uint64_t>& shape)
  * @return A new descriptor with shape and strides expanded to `rank`.
  */
 inline TensorDesc
-align_tensor(const TensorDesc& t, uint64_t rank)
+align_tensor(const TensorDesc& t, int64_t rank)
 {
     TensorDesc out;
     out.shape.assign(rank, 1);
     out.strides.assign(rank, 0);
 
-    uint64_t offset = rank - static_cast<uint64_t>(t.shape.size());
-    for (uint64_t i = 0; i < t.shape.size(); ++i)
+    int64_t offset = rank - static_cast<int64_t>(t.shape.size());
+    for (int64_t i = 0; i < static_cast<int64_t>(t.shape.size()); ++i)
     {
         out.shape[offset + i]   = t.shape[i];
         out.strides[offset + i] = t.strides[i];
@@ -119,14 +119,14 @@ compute_broadcast(const TensorDesc& a, const TensorDesc& b)
             descriptors must have same rank)");
     }
 
-    uint64_t rank = static_cast<uint64_t>(a.shape.size());
+    const int64_t rank = static_cast<int64_t>(a.shape.size());
     BroadcastResult res;
     res.out.shape.resize(rank);
     res.out.strides.assign(rank, 0);
     res.a_strides.assign(rank, 0);
     res.b_strides.assign(rank, 0);
 
-    for (uint64_t d = 0; d < rank; ++d)
+    for (int64_t d = 0; d < rank; ++d)
     {
         const uint64_t asz = a.shape[d];
         const uint64_t bsz = b.shape[d];

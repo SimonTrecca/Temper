@@ -12,6 +12,7 @@
 #include <memory>
 #include <cmath>
 #include <limits>
+#include <optional>
 #include "SYCLQueue.hpp"
 
 namespace temper
@@ -88,6 +89,8 @@ public:
      * - @p dimensions is empty
      * - any entry in @p dimensions is zero
      * @throws std::overflow_error if:
+     * - the number of dimensions (m_dimensions.size())
+     * is greater than INT64_MAX
      * - the product of @p dimensions would overflow uint64_t
      * - the total allocation size in bytes would not fit into size_t
      * @throws std::runtime_error if:
@@ -167,6 +170,8 @@ public:
      * @throws std::invalid_argument if:
      * - @p start_indices.size() does not equal the owner's rank
      * - @p view_shape is empty or its rank is greater than the owner's rank
+     * @throws std::overflow_error if:
+     * - the number of dimensions (view_shape.size()) is greater than INT64_MAX
      * @throws std::out_of_range if:
      * - any entry in @p start_indices is >= the corresponding owner dimension
      * - any entry in @p view_shape is zero
@@ -488,93 +493,98 @@ public:
     /**
      * @brief Sort tensor elements (device merge-sort).
      *
-     * Sorts the tensor either flattened (axis = -1) or independently along a
-     * single axis. Uses device buffers and SYCL kernels; sorting is done
-     * in place.
+     * Sorts the tensor either flattened (axis = nullopt, default)
+     * or independently along a single axis.
+     * Uses device buffers and SYCL kernels; sorting is done in place.
+     * Supports negative axis indexing to start from right to left.
      *
-     * @param axis Axis to sort along, -1 = flatten, otherwise 0..rank-1.
-     * @throws std::invalid_argument if axis is out of range.
+     * @param axis_opt Axis to sort along, nullopt = flatten,
+     * otherwise -rank..rank-1.
+     * @throws std::invalid_argument if @p axis_opt is out of range.
      * @throws std::bad_alloc if required device memory cannot be allocated.
      */
-    void sort(int64_t axis = -1);
+    void sort(std::optional<int64_t> axis_opt = std::nullopt);
 
     /**
      * @brief Compute the sum of tensor elements (device reduction).
      *
-     * Computes sums either flattened (axis = -1) or independently
+     * Computes sums either flattened (axis = nullopt) or independently
      * along a single axis.
      * Uses device buffers and SYCL kernels; operation returns a new tensor.
      *
-     * @param axis Axis to sum along, -1 = flatten (sum all elements),
-     * otherwise 0..rank-1.
+     * @param axis_opt Axis to sum along, nullopt = flatten,
+     * otherwise -rank..rank-1.
      * @return Tensor<float_t> New tensor containing the sums;
      * the returned tensor uses the same memory location as the input.
      * If the input tensor has no dimensions, a tensor
      * with shape {1} is returned.
-     * @throws std::invalid_argument If axis is not -1 and is out of range.
+     * @throws std::invalid_argument If axis is out of range.
      * @throws std::bad_alloc if required device memory cannot be allocated.
      * @throws std::runtime_error If NaN or non-finite values are encountered
      * in the inputs or the results.
      */
-    Tensor<float_t> sum(int64_t axis = -1) const;
+    Tensor<float_t> sum(std::optional<int64_t> axis_opt = std::nullopt) const;
 
     /**
      * @brief Compute the cumulative sum of tensor elements (device scan).
      *
-     * Computes cumulative sums either flattened (axis = -1) or
+     * Computes cumulative sums either flattened (axis = nullopt) or
      * independently along a single axis. Uses device buffers and
      * SYCL kernels; operation returns a new tensor.
      *
-     * @param axis Axis to scan along, -1 = flatten (treat as 1D and scan
-     * all elements), otherwise 0..rank-1.
+     * @param axis_opt Axis to cumsum along, nullopt = flatten,
+     * otherwise -rank..rank-1.
      * @return Tensor<float_t> New tensor containing the cumulative sums;
      * the returned tensor uses the same memory location as the input.
      * If the input tensor has no dimensions, a tensor
      * with shape {1} is returned.
      *
-     * @throws std::invalid_argument If axis is not -1 and is out of range.
+     * @throws std::invalid_argument If axis is out of range.
      * @throws std::bad_alloc If required device memory cannot be allocated.
      * @throws std::runtime_error If NaN or non-finite values are encountered
      * in the inputs or the results.
      */
-    Tensor<float_t> cumsum(int64_t axis = -1) const;
+    Tensor<float_t> cumsum(std::optional<int64_t> axis_opt = std::nullopt) const;
 
     /**
      * @brief Compute the mean (average) of tensor elements.
      *
      * Reduces the tensor by computing the arithmetic mean either over all
-     * elements (axis = -1) or independently along a single axis.
+     * elements (axis = nullopt) or independently along a single axis.
      *
-     * @param axis Axis to reduce (-1 = flatten / all elements).
+     * @param axis_opt Axis to compute mean along, nullopt = flatten,
+     * otherwise -rank..rank-1.
      * @return Tensor<float_t> Tensor with the specified axis reduced (result
      * uses the same memory location as the input).
      *
      * @throws std::invalid_argument If the input tensor has no elements,
-     * if @p axis is not -1 and out of range, or if the selected axis
+     * if @p axis is out of range, or if the selected axis
      * has zero length.
      * @throws std::bad_alloc If required device/host memory cannot be allocated.
      * @throws std::runtime_error If NaN or non-finite values are encountered
      * in inputs or produced by the reduction/division.
      */
-    Tensor<float_t> mean(int64_t axis = -1) const;
+    Tensor<float_t> mean(std::optional<int64_t> axis_opt = std::nullopt) const;
 
     /**
      * @brief Compute the variance of tensor elements.
      *
      * Reduces the tensor by computing the arithmetic variance either over all
-     * elements (axis = -1) or independently along a single axis.
+     * elements (axis = nullopt) or independently along a single axis.
      *
-     * @param axis Axis to reduce (-1 = flatten / all elements).
+     * @param axis_opt Axis to reduce along, nullopt = flatten,
+     * otherwise -rank..rank-1.
      * @param ddof Delta degrees of freedom (0 => population variance).
      * @return Tensor<float_t> Tensor with the specified axis reduced.
      *
      * @throws std::invalid_argument If the input tensor has no elements,
-     * if @p axis is not -1 and out of range, if the selected axis
-     * has zero length, or if (N - ddof) <= 0.
+     * if @p axis is out of range, if the selected axis has zero length,
+     * or if (N - ddof) <= 0.
      * @throws std::bad_alloc If required memory cannot be allocated.
      * @throws std::runtime_error If NaN or non-finite values are encountered.
      */
-    Tensor<float_t> var(int64_t axis = -1, int64_t ddof = 0) const;
+    Tensor<float_t> var(std::optional<int64_t> axis_opt = std::nullopt,
+        int64_t ddof = 0) const;
 
     /**
      * @brief Compute covariance matrices over specified sample and event axes.
@@ -587,10 +597,10 @@ public:
      *
      * @param sample_axes Non-empty vector of axis indices to flatten as samples.
      *                    Order matters. Entries must be distinct and in
-     *                    [0, rank-1].
+     *                    [-rank, rank-1].
      * @param event_axes  Non-empty vector of axis indices to flatten as events.
      *                    Order matters. Entries must be distinct, disjoint from
-     *                    @p sample_axes, and in [0, rank-1].
+     *                    @p sample_axes, and in [-rank, rank-1].
      * @param ddof        Delta degrees of freedom (>= 0). Divisor is
      *                    (N - ddof) where N = product(lengths of sample axes).
      * @return Tensor<float_t> Covariance matrices with shape
@@ -613,8 +623,8 @@ public:
      * - NaN or non-finite values encountered, or device/kernel errors during
      *   reduction or matrix multiplication.
      */
-    Tensor<float_t> cov(std::vector<uint64_t> sample_axes,
-                        std::vector<uint64_t> event_axes,
+    Tensor<float_t> cov(std::vector<int64_t> sample_axes,
+                        std::vector<int64_t> event_axes,
                         int64_t ddof = 0) const;
 
     /**
@@ -645,25 +655,28 @@ public:
      * @brief Compute the standard deviation of tensor elements.
      *
      * Reduces the tensor by computing the square root of the variance,
-     * either over all elements (axis = -1) or independently along a single axis.
+     * either over all elements (axis = nullopt)or independently
+     * along a single axis.
      *
      * The computation follows the same semantics as `var()`, using the given
      * delta degrees of freedom (ddof) to adjust the divisor (N - ddof). When
      * ddof = 0, the result is the population standard deviation; when ddof = 1,
      * the result is the sample standard deviation.
      *
-     * @param axis Axis to reduce (-1 = flatten / all elements).
+     * @param axis_opt Axis to reduce along, nullopt = flatten,
+     * otherwise -rank..rank-1.
      * @param ddof Delta degrees of freedom (0 => population std).
      * @return Tensor<float_t> Tensor with the specified axis reduced.
      *
      * @throws std::invalid_argument If the input tensor has no elements,
-     * if @p axis is not -1 and out of range, if the selected axis has
+     * if @p axis is out of range, if the selected axis has
      * zero length, or if (N - ddof) <= 0.
      * @throws std::bad_alloc If required memory cannot be allocated.
      * @throws std::runtime_error If NaN or non-finite values are encountered
      * in the inputs or produced during the sqrt computation.
      */
-    Tensor<float_t> std(int64_t axis = -1, int64_t ddof = 0) const;
+    Tensor<float_t> stddev(std::optional<int64_t> axis_opt = std::nullopt,
+        int64_t ddof = 0) const;
 
     /**
      * @brief Compute eigenvalues and right eigenvectors for the last two axes.
@@ -709,14 +722,14 @@ public:
      * the original tensor, so no data is copied.
      *
      * @param axes Vector specifying the new order of axes.
-     * Must be a permutation of [0..rank-1], where `rank` is
+     * Must be a permutation of [-rank..rank-1], where `rank` is
      * the number of dimensions of the tensor.
      *
      * @throws std::invalid_argument if `axes.size()` != rank or
      * if `axes` is not a valid permutation.
      * @return Tensor<float_t> A new tensor view with permuted axes.
      */
-    Tensor<float_t> transpose(const std::vector<uint64_t> & axes) const;
+    Tensor<float_t> transpose(const std::vector<int64_t> & axes) const;
 
     /**
      * @brief Prints the tensor elements to the provided output
@@ -801,9 +814,9 @@ public:
      * For example, a 2D matrix has rank 2, a vector has rank 1,
      * and if empty it has rank 0.
      *
-     * @return uint64_t Tensor rank.
+     * @return int64_t Tensor rank.
      */
-    uint64_t get_rank() const noexcept;
+    int64_t get_rank() const noexcept;
 
     /**
      * @brief Returns the total number of elements in the tensor.

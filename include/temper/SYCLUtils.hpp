@@ -26,11 +26,11 @@ namespace temper::sycl_utils
 inline uint64_t idx_of(uint64_t logical_idx,
                        const uint64_t* p_divisors,
                        const uint64_t* p_strides,
-                       uint64_t rank)
+                       int64_t rank)
 {
     uint64_t rem = logical_idx;
     uint64_t off = 0;
-    for (uint64_t d = 0; d < rank; ++d)
+    for (int64_t d = 0; d < rank; ++d)
     {
         uint64_t div = p_divisors[d];
         uint64_t coord = 0;
@@ -43,7 +43,6 @@ inline uint64_t idx_of(uint64_t logical_idx,
     }
     return off;
 }
-
 
 /**
  * @brief Atomically set an error flag if a NaN is observed.
@@ -142,7 +141,7 @@ inline uint64_t merge_path_partition(uint64_t k,
                                      uint64_t right,
                                      const uint64_t* p_divs,
                                      const uint64_t* p_strides,
-                                     uint64_t rank,
+                                     int64_t rank,
                                      const float_t* merge_input)
 {
     const uint64_t len_left  = mid - left;

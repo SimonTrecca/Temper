@@ -155,7 +155,6 @@ TEST(ONEHOT, non_integer_label_throws_2d)
 TEST(ONEHOT, basic_2d)
 {
     Tensor<float> t({2, 4}, MemoryLocation::DEVICE);
-    // row-major input
     std::vector<float> vals = {
         1.0f, 2.0f, 0.0f, 4.0f,
         5.0f, 6.0f, 2.0f, 8.0f
@@ -178,6 +177,58 @@ TEST(ONEHOT, basic_2d)
     std::vector<float> host(N, -1.0f);
     g_sycl_queue.memcpy(host.data(),
     	out.m_p_data.get(), sizeof(float) * N).wait();
+
+    std::vector<float> expected = {
+        1.0f, 2.0f, 1.0f, 0.0f, 0.0f, 4.0f,
+        5.0f, 6.0f, 0.0f, 0.0f, 1.0f, 8.0f
+    };
+
+    for (uint64_t i = 0; i < N; ++i)
+    {
+        EXPECT_FLOAT_EQ(host[i], expected[i]);
+    }
+}
+
+/**
+ * @test ONEHOT.basic_axis_negative
+ * @brief One-hot expand a chosen column in a 2x4 contiguous tensor
+ * using negative indexing.
+ *
+ * Input:
+ *  [1, 2, 0, 4]
+ *  [5, 6, 2, 8]
+ *
+ * axis=1, axis_index=2, depth=3
+ * Output shape: {2, 6}
+ * Expected rows:
+ *  [1,2, 1,0,0, 4]
+ *  [5,6, 0,0,1, 8]
+ */
+TEST(ONEHOT, basic_axis_negative)
+{
+    Tensor<float> t({2, 4}, MemoryLocation::DEVICE);
+    std::vector<float> vals = {
+        1.0f, 2.0f, 0.0f, 4.0f,
+        5.0f, 6.0f, 2.0f, 8.0f
+    };
+    t = vals;
+
+    Tensor<float> out = ml::one_hot_expand_at<float>(t, /*axis=*/-1,
+        /*axis_index=*/2, /*depth=*/3, /*on_value=*/1.0f, /*off_value=*/0.0f);
+
+    std::vector<uint64_t> expected_shape = {2ull, 6ull};
+    EXPECT_EQ(out.get_dimensions().size(), expected_shape.size());
+    for (size_t i = 0; i < expected_shape.size(); ++i)
+    {
+        EXPECT_EQ(out.get_dimensions()[i], expected_shape[i]);
+    }
+
+    const uint64_t N = out.get_num_elements();
+    ASSERT_EQ(N, 12u);
+
+    std::vector<float> host(N, -1.0f);
+    g_sycl_queue.memcpy(host.data(),
+        out.m_p_data.get(), sizeof(float) * N).wait();
 
     std::vector<float> expected = {
         1.0f, 2.0f, 1.0f, 0.0f, 0.0f, 4.0f,
@@ -582,5 +633,79 @@ TEST(SOFTMAX, alias_view_weird_strides)
     EXPECT_NEAR(static_cast<double>(host[2]), r0_c0, 1e-6);
     EXPECT_NEAR(static_cast<double>(host[3]), r0_c1, 1e-6);
 }
+
+/**
+ * @test SOFTMAX.softmax_negative_indexing
+ * @brief Negative axis indexing: axis = -1 should behave like axis = rank-1.
+ */
+TEST(SOFTMAX, softmax_negative_indexing)
+{
+    Tensor<float> t({2,3}, MemoryLocation::DEVICE);
+    std::vector<float> vals = {
+        1.0f, 2.0f, 3.0f,
+        3.0f, 2.0f, 1.0f
+    };
+    t = vals;
+
+    Tensor<float> out = ml::softmax<float>(t, /*axis=*/-1);
+
+    ASSERT_EQ(out.get_dimensions(), t.get_dimensions());
+    const uint64_t N = out.get_num_elements();
+    ASSERT_EQ(N, 6u);
+
+    std::vector<float> host(N);
+    g_sycl_queue.memcpy(host.data(),
+        out.m_p_data.get(), sizeof(float) * N).wait();
+
+    const double e1 = 2.71828182845904523536;
+    const double e2 = 7.38905609893065022723;
+    const double e3 = 20.08553692318766774092;
+    const double S  = e1 + e2 + e3;
+
+    EXPECT_NEAR(static_cast<double>(host[0]), e1 / S, 1e-6);
+    EXPECT_NEAR(static_cast<double>(host[1]), e2 / S, 1e-6);
+    EXPECT_NEAR(static_cast<double>(host[2]), e3 / S, 1e-6);
+
+    EXPECT_NEAR(static_cast<double>(host[3]), e3 / S, 1e-6);
+    EXPECT_NEAR(static_cast<double>(host[4]), e2 / S, 1e-6);
+    EXPECT_NEAR(static_cast<double>(host[5]), e1 / S, 1e-6);
+}
+
+/**
+ * @test SOFTMAX.softmax_flatten
+ * @brief Softmax with no axis (flatten)should compute softmax
+ * over all elements.
+ */
+TEST(SOFTMAX, softmax_flatten)
+{
+    Tensor<float> t({2,2}, MemoryLocation::DEVICE);
+    std::vector<float> vals = {
+        0.0f, 1.0f,
+        2.0f, 3.0f
+    };
+    t = vals;
+
+    Tensor<float> out = ml::softmax<float>(t);
+
+    ASSERT_EQ(out.get_dimensions(), t.get_dimensions());
+    const uint64_t N = out.get_num_elements();
+    ASSERT_EQ(N, 4u);
+
+    std::vector<float> host(N);
+    g_sycl_queue.memcpy(host.data(),
+        out.m_p_data.get(), sizeof(float) * N).wait();
+
+    const double e0 = std::exp(0.0);
+    const double e1 = std::exp(1.0);
+    const double e2 = std::exp(2.0);
+    const double e3 = std::exp(3.0);
+    const double S  = e0 + e1 + e2 + e3;
+
+    EXPECT_NEAR(static_cast<double>(host[0]), e0 / S, 1e-6);
+    EXPECT_NEAR(static_cast<double>(host[1]), e1 / S, 1e-6);
+    EXPECT_NEAR(static_cast<double>(host[2]), e2 / S, 1e-6);
+    EXPECT_NEAR(static_cast<double>(host[3]), e3 / S, 1e-6);
+}
+
 
 } // namespace Test

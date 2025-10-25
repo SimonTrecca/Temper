@@ -30,7 +30,7 @@ void Tensor<float_t>::compute_strides()
 
     m_strides.back() = 1;
 
-    for (uint64_t i = m_dimensions.size() - 1; i > 0; --i)
+    for (int64_t i = this->get_rank() - 1; i > 0; --i)
     {
         uint64_t dim = m_dimensions[i];
         if (dim == 0)
@@ -68,6 +68,16 @@ Tensor<float_t>::Tensor(const std::vector<uint64_t> & dimensions,
         throw std::invalid_argument(R"(Tensor(main constructor):
             dims must not be empty (rank-0 not supported).)");
     }
+
+    // Ensure the number of dimensions itself fits in an int64_t.
+    const size_t max_int64_size =
+        static_cast<size_t>(std::numeric_limits<int64_t>::max());
+    if (m_dimensions.size() > max_int64_size)
+    {
+        throw std::overflow_error(R"(Tensor(main constructor):
+            number of dimensions doesn't fit in int64_t.)");
+    }
+
 
     constexpr uint64_t U64_MAX = std::numeric_limits<uint64_t>::max();
 
@@ -295,8 +305,17 @@ Tensor<float_t>::Tensor(const Tensor & owner,
     : m_own_data(false),
       m_mem_loc(owner.m_mem_loc)
 {
-    const uint64_t original_rank = owner.m_dimensions.size();
-    const uint64_t view_rank = view_shape.size();
+    const int64_t original_rank = owner.get_rank();
+
+    const size_t max_int64_size =
+        static_cast<size_t>(std::numeric_limits<int64_t>::max());
+    if (view_shape.size() > max_int64_size)
+    {
+        throw std::overflow_error(R"(Tensor(view constructor):
+            number of dimensions doesn't fit in int64_t.)");
+    }
+
+    const int64_t view_rank = static_cast<int64_t>(view_shape.size());
 
     if (!owner.m_p_data)
     {
@@ -304,7 +323,7 @@ Tensor<float_t>::Tensor(const Tensor & owner,
             cannot create view from uninitialized tensor.)");
     }
 
-    if (start_indices.size() != original_rank)
+    if (start_indices.size() != static_cast<size_t>(original_rank))
     {
         throw std::invalid_argument(R"(Tensor(view constructor):
             start_indices must match tensor rank.)");
@@ -317,7 +336,7 @@ Tensor<float_t>::Tensor(const Tensor & owner,
     }
 
     // Check bounds for start indices and view dimensions.
-    for (uint64_t i = 0; i < original_rank; ++i)
+    for (int64_t i = 0; i < original_rank; ++i)
     {
         if (start_indices[i] >= owner.m_dimensions[i])
         {
@@ -325,9 +344,9 @@ Tensor<float_t>::Tensor(const Tensor & owner,
                 start index out of bounds.)");
         }
     }
-    for (uint64_t j = 0; j < view_rank; ++j)
+    for (int64_t j = 0; j < view_rank; ++j)
     {
-        uint64_t i = original_rank - view_rank + j;
+        int64_t i = original_rank - view_rank + j;
         if (view_shape[j] == 0 ||
             start_indices[i] + view_shape[j] > owner.m_dimensions[i])
         {
@@ -337,7 +356,7 @@ Tensor<float_t>::Tensor(const Tensor & owner,
     }
 
     uint64_t offset = 0;
-    for (uint64_t i = 0; i < original_rank; ++i)
+    for (int64_t i = 0; i < original_rank; ++i)
     {
         offset += start_indices[i] * owner.m_strides[i];
     }
@@ -366,16 +385,25 @@ Tensor<float_t>::Tensor(const Tensor & owner,
             cannot create view from uninitialized tensor.)");
     }
 
-    const uint64_t owner_rank = static_cast<uint64_t>(owner.m_dimensions.size());
-    const uint64_t view_rank = static_cast<uint64_t>(dims.size());
+    const int64_t owner_rank = owner.get_rank();
 
-    if (start_indices.size() != owner_rank)
+    const size_t max_int64_size =
+        static_cast<size_t>(std::numeric_limits<int64_t>::max());
+    if (dims.size() > max_int64_size || strides.size() > max_int64_size)
+    {
+        throw std::overflow_error(R"(Tensor(alias view constructor):
+            number of dimensions or strides doesn't fit in int64_t.)");
+    }
+
+    const int64_t view_rank = static_cast<int64_t>(dims.size());
+
+    if (static_cast<int64_t>(start_indices.size()) != owner_rank)
     {
         throw std::invalid_argument(R"(Tensor(alias view constructor):
             start_indices must match owner's rank.)");
     }
 
-    if (strides.size() != view_rank)
+    if (static_cast<int64_t>(strides.size()) != view_rank)
     {
         throw std::invalid_argument(R"(Tensor(alias view constructor):
             dims and strides must have the same rank.)");
@@ -387,7 +415,7 @@ Tensor<float_t>::Tensor(const Tensor & owner,
             view rank must be >= 1.)");
     }
 
-    for (uint64_t i = 0; i < owner_rank; ++i)
+    for (int64_t i = 0; i < owner_rank; ++i)
     {
         if (start_indices[i] >= owner.m_dimensions[i])
         {
@@ -396,7 +424,7 @@ Tensor<float_t>::Tensor(const Tensor & owner,
         }
     }
 
-    for (uint64_t j = 0; j < view_rank; ++j)
+    for (int64_t j = 0; j < view_rank; ++j)
     {
         if (dims[j] == 0)
         {
@@ -408,7 +436,7 @@ Tensor<float_t>::Tensor(const Tensor & owner,
     // Compute offset from owner's base pointer (with basic overflow safety)
     constexpr uint64_t U64_MAX = std::numeric_limits<uint64_t>::max();
     uint64_t offset = 0;
-    for (uint64_t i = 0; i < owner_rank; ++i)
+    for (int64_t i = 0; i < owner_rank; ++i)
     {
         uint64_t si = start_indices[i];
         uint64_t ostride = owner.m_strides[i];
@@ -433,7 +461,7 @@ Tensor<float_t>::Tensor(const Tensor & owner,
     // Compute the maximum linear index that the new view may access
     // (relative to owner.m_p_data).
     uint64_t max_index = offset;
-    for (uint64_t j = 0; j < view_rank; ++j)
+    for (int64_t j = 0; j < view_rank; ++j)
     {
         uint64_t dimm1 = dims[j] - 1;
         uint64_t vstride = strides[j];
@@ -458,7 +486,7 @@ Tensor<float_t>::Tensor(const Tensor & owner,
     // Compute the owner's maximum reachable linear index
     // (relative to owner.m_p_data).
     uint64_t owner_max_index = 0;
-    for (uint64_t j = 0; j < owner_rank; ++j)
+    for (int64_t j = 0; j < owner_rank; ++j)
     {
         uint64_t odimm1 = owner.m_dimensions[j] - 1;
         uint64_t ostride = owner.m_strides[j];
@@ -579,7 +607,7 @@ Tensor<float_t> & Tensor<float_t>::operator=(const std::vector<float_t> & values
             target tensor has no elements.)");
     }
 
-    uint64_t total_size = get_num_elements();
+    uint64_t total_size = this->get_num_elements();
 
     uint64_t values_size = static_cast<uint64_t>(values.size());
     if (values_size != total_size)
@@ -588,14 +616,14 @@ Tensor<float_t> & Tensor<float_t>::operator=(const std::vector<float_t> & values
             size mismatch in 1D vector assignment.)");
     }
 
-    const uint64_t rank = get_rank();
+    const int64_t rank = this->get_rank();
     bool dst_contig = true;
     if (rank > 0)
     {
         // Build canonical row-major strides for this shape
         std::vector<uint64_t> canon(rank);
         canon[rank - 1] = 1;
-        for (int64_t i = static_cast<int64_t>(rank) - 2; i >= 0; --i)
+        for (int64_t i = rank - 2; i >= 0; --i)
         {
             canon[i] = canon[i + 1] * m_dimensions[i + 1];
         }
@@ -611,10 +639,10 @@ Tensor<float_t> & Tensor<float_t>::operator=(const std::vector<float_t> & values
     }
 
     std::vector<uint64_t> divisors(rank);
-    for (uint64_t i = 0; i < rank; ++i)
+    for (int64_t i = 0; i < rank; ++i)
     {
         uint64_t d = 1;
-        for (uint64_t j = i + 1; j < rank; ++j)
+        for (int64_t j = i + 1; j < rank; ++j)
         {
             d *= m_dimensions[j];
         }
@@ -645,7 +673,7 @@ Tensor<float_t> & Tensor<float_t>::operator=(const std::vector<float_t> & values
         values.data(), sizeof(float_t) * static_cast<size_t>(total_size));
 
     const float_t* p_src_flat = p_vals_shared;
-    float_t* p_dst = get_data();
+    float_t* p_dst = this->get_data();
 
     g_sycl_queue.submit([&](sycl::handler & cgh)
     {
@@ -716,7 +744,7 @@ Tensor<float_t> & Tensor<float_t>::operator=(float_t val)
 template<typename float_t>
 Tensor<float_t> Tensor<float_t>::operator[](uint64_t idx)
 {
-    const uint64_t rank = static_cast<uint64_t>(m_dimensions.size());
+    const int64_t rank = this->get_rank();
     if (rank == 0)
     {
         throw std::out_of_range(R"(Tensor(operator[]):
@@ -747,7 +775,7 @@ Tensor<float_t> Tensor<float_t>::operator[](uint64_t idx)
 template<typename float_t>
 const Tensor<float_t> Tensor<float_t>::operator[](uint64_t idx) const
 {
-    const uint64_t rank = static_cast<uint64_t>(m_dimensions.size());
+    const int64_t rank = static_cast<uint64_t>(m_dimensions.size());
     if (rank == 0)
     {
         throw std::out_of_range(R"(Tensor(operator[]):
@@ -806,9 +834,9 @@ Tensor<float_t> Tensor<float_t>::operator+(const Tensor & other) const
             either tensor has no elements.)");
     }
 
-    const uint64_t rank_a = get_rank();
-    const uint64_t rank_b = other.get_rank();
-    const uint64_t max_rank = std::max(rank_a, rank_b);
+    const int64_t rank_a = this->get_rank();
+    const int64_t rank_b = other.get_rank();
+    const int64_t max_rank = std::max(rank_a, rank_b);
 
     utils::TensorDesc a_desc{m_dimensions, m_strides, {}};
     utils::TensorDesc b_desc{other.m_dimensions, other.m_strides, {}};
@@ -936,9 +964,9 @@ Tensor<float_t> Tensor<float_t>::operator-(const Tensor & other) const
             either tensor has no elements.)");
     }
 
-    const uint64_t rank_a = get_rank();
-    const uint64_t rank_b = other.get_rank();
-    const uint64_t max_rank = std::max(rank_a, rank_b);
+    const int64_t rank_a = get_rank();
+    const int64_t rank_b = other.get_rank();
+    const int64_t max_rank = std::max(rank_a, rank_b);
 
     utils::TensorDesc a_desc{m_dimensions, m_strides, {}};
     utils::TensorDesc b_desc{other.m_dimensions, other.m_strides, {}};
@@ -1066,9 +1094,9 @@ Tensor<float_t> Tensor<float_t>::operator*(const Tensor & other) const
             either tensor has no elements.)");
     }
 
-    const uint64_t rank_a = get_rank();
-    const uint64_t rank_b = other.get_rank();
-    const uint64_t max_rank = std::max(rank_a, rank_b);
+    const int64_t rank_a = this->get_rank();
+    const int64_t rank_b = other.get_rank();
+    const int64_t max_rank = std::max(rank_a, rank_b);
 
     utils::TensorDesc a_desc{m_dimensions, m_strides, {}};
     utils::TensorDesc b_desc{other.m_dimensions, other.m_strides, {}};
@@ -1196,9 +1224,9 @@ Tensor<float_t> Tensor<float_t>::operator/(const Tensor & other) const
             either tensor has no elements.)");
     }
 
-    const uint64_t rank_a = get_rank();
-    const uint64_t rank_b = other.get_rank();
-    const uint64_t max_rank = std::max(rank_a, rank_b);
+    const int64_t rank_a = get_rank();
+    const int64_t rank_b = other.get_rank();
+    const int64_t max_rank = std::max(rank_a, rank_b);
 
     utils::TensorDesc a_desc{m_dimensions, m_strides, {}};
     utils::TensorDesc b_desc{other.m_dimensions, other.m_strides, {}};
@@ -1331,8 +1359,8 @@ Tensor<float_t> Tensor<float_t>::operator-() const
             tensor has no elements.)");
     }
 
-    const uint64_t rank = get_rank();
-    uint64_t total_size = get_num_elements();
+    const int64_t rank = this->get_rank();
+    uint64_t total_size = this->get_num_elements();
 
     MemoryLocation res_loc = m_mem_loc;
     Tensor result(m_dimensions, res_loc);
@@ -1406,8 +1434,8 @@ Tensor<float_t> Tensor<float_t>::clone() const
 
     Tensor<float_t> result(m_dimensions, m_mem_loc);
 
-    uint64_t total_elements = get_num_elements();
-    uint64_t rank = get_rank();
+    const uint64_t total_elements = this->get_num_elements();
+    const uint64_t rank = this->get_rank();
 
     std::vector<uint64_t> shape_divs = utils::compute_divisors(m_dimensions);
 
@@ -1418,10 +1446,10 @@ Tensor<float_t> Tensor<float_t>::clone() const
 
     if (!p_dims || !p_src_strides || !p_dest_strides || !p_shape_divs)
     {
-        if (p_dims) sycl::free(p_dims, g_sycl_queue);
-        if (p_src_strides) sycl::free(p_src_strides, g_sycl_queue);
-        if (p_dest_strides) sycl::free(p_dest_strides, g_sycl_queue);
-        if (p_shape_divs) sycl::free(p_shape_divs, g_sycl_queue);
+        sycl::free(p_dims, g_sycl_queue);
+        sycl::free(p_src_strides, g_sycl_queue);
+        sycl::free(p_dest_strides, g_sycl_queue);
+        sycl::free(p_shape_divs, g_sycl_queue);
         throw std::bad_alloc();
     }
 
@@ -1479,8 +1507,8 @@ void Tensor<float_t>::copy_from(const Tensor & src)
             target has zero elements.)");
     }
 
-    const uint64_t rank_dst = get_rank();
-    const uint64_t rank_src = src.get_rank();
+    const int64_t rank_dst = this->get_rank();
+    const int64_t rank_src = src.get_rank();
 
     if (rank_src > rank_dst)
     {
@@ -1513,19 +1541,19 @@ void Tensor<float_t>::copy_from(const Tensor & src)
         }
     }
 
-    const uint64_t pad = rank_dst - rank_src;
-    const uint64_t max_rank = rank_dst;
+    const int64_t pad = rank_dst - rank_src;
+    const int64_t max_rank = rank_dst;
 
     std::vector<uint64_t> src_aligned_dims(max_rank);
     std::vector<uint64_t> src_aligned_strides(max_rank);
 
-    for (uint64_t i = 0; i < pad; ++i)
+    for (int64_t i = 0; i < pad; ++i)
     {
         src_aligned_dims[i] = 1;
         src_aligned_strides[i] = 0;
     }
 
-    for (uint64_t i = 0; i < rank_src; ++i)
+    for (int64_t i = 0; i < rank_src; ++i)
     {
         src_aligned_dims[pad + i] = src.m_dimensions[i];
         src_aligned_strides[pad + i] = src.m_strides[i];
@@ -1698,17 +1726,29 @@ void Tensor<float_t>::reshape(const std::vector<uint64_t>& new_dimensions)
 }
 
 template<typename float_t>
-void Tensor<float_t>::sort(int64_t axis)
+void Tensor<float_t>::sort(std::optional<int64_t> axis_opt)
 {
-    if (m_dimensions.empty())
+    const int64_t rank = this->get_rank();
+
+    if (rank == 0)
     {
         return;
     }
 
-    const uint64_t rank = static_cast<uint64_t>(m_dimensions.size());
-    if (axis != -1 && (axis < 0 || static_cast<uint64_t>(axis) >= rank))
+    const bool flatten = !axis_opt.has_value();
+    int64_t axis;
+
+    if (!flatten)
     {
-        throw std::invalid_argument("Tensor(sort): axis out of bounds");
+        axis = axis_opt.value();
+        if (axis < 0)
+        {
+            axis += rank;
+        }
+        if (axis < 0 || axis >= rank)
+        {
+            throw std::invalid_argument("Tensor(sort): axis out of bounds");
+        }
     }
 
     uint64_t total_size = get_num_elements();
@@ -1716,7 +1756,7 @@ void Tensor<float_t>::sort(int64_t axis)
     uint64_t effective_axis_size = 0;
     uint64_t slice_count = 1;
     uint64_t axis_stride = 1;
-    if (axis == -1)
+    if (flatten)
     {
         effective_axis_size = total_size;
         slice_count = 1;
@@ -1724,11 +1764,10 @@ void Tensor<float_t>::sort(int64_t axis)
     }
     else
     {
-        const uint64_t u_axis = static_cast<uint64_t>(axis);
         slice_count = 1;
-        for (uint64_t i = 0; i < rank; ++i)
+        for (int64_t i = 0; i < rank; ++i)
         {
-            if (i == u_axis)
+            if (i == axis)
             {
                 effective_axis_size = m_dimensions[i];
                 axis_stride = m_strides[i];
@@ -1743,14 +1782,13 @@ void Tensor<float_t>::sort(int64_t axis)
     std::vector<uint64_t> divisors = utils::compute_divisors(m_dimensions);
 
     std::vector<uint64_t> host_slice_base(static_cast<size_t>(slice_count), 0);
-    if (axis != -1)
+    if (!flatten)
     {
         std::vector<uint64_t> dims;
         std::vector<uint64_t> strides_for_dims;
-        const uint64_t u_axis = static_cast<uint64_t>(axis);
-        for (uint64_t i = 0; i < rank; ++i)
+        for (int64_t i = 0; i < rank; ++i)
         {
-            if (i == u_axis) continue;
+            if (i == axis) continue;
             dims.push_back(m_dimensions[i]);
             strides_for_dims.push_back(m_strides[i]);
         }
@@ -1869,7 +1907,7 @@ void Tensor<float_t>::sort(int64_t axis)
 
                 auto idx_of_local = [&](uint64_t logical_idx) -> uint64_t
                 {
-                    if (axis == -1)
+                    if (flatten)
                     {
                         return sycl_utils::idx_of
                             (logical_idx, p_divisors, p_strides, rank);
@@ -1882,7 +1920,7 @@ void Tensor<float_t>::sort(int64_t axis)
 
                 auto find_partition_local = [&](uint64_t k) -> uint64_t
                 {
-                    if (axis == -1)
+                    if (flatten)
                     {
                         return sycl_utils::merge_path_partition<float_t>(
                             k, left, mid, right, p_divisors, p_strides, rank,
@@ -2003,50 +2041,52 @@ void Tensor<float_t>::sort(int64_t axis)
 }
 
 template<typename float_t>
-Tensor<float_t> Tensor<float_t>::sum(int64_t axis) const
+Tensor<float_t> Tensor<float_t>::sum(std::optional<int64_t> axis_opt) const
 {
-    if (m_dimensions.empty())
+    const int64_t rank = this->get_rank();
+    const MemoryLocation res_loc = this->get_memory_location();
+
+    if (rank == 0)
     {
-        const MemoryLocation res_loc = m_mem_loc;
         return Tensor<float_t>({1}, res_loc);
     }
 
-    const uint64_t rank = get_rank();
-    uint64_t total_size = get_num_elements();
-    const MemoryLocation res_loc = m_mem_loc;
+    const bool flatten = !axis_opt.has_value();
+    int64_t axis;
 
-    std::vector<uint64_t> divisors = utils::compute_divisors(m_dimensions);
-
-    // Validate axis
-    if (axis != -1 && (axis < 0 || static_cast<uint64_t>(axis) >= rank))
+    if (!flatten)
     {
-        throw std::invalid_argument("Tensor(sum): axis is out of bounds.");
-    }
-
-    uint64_t ax = 0;
-    if (axis != -1)
-    {
-        ax = static_cast<uint64_t>(axis);
+        axis = axis_opt.value();
+        if (axis < 0)
+        {
+            axis += rank;
+        }
+        if (axis < 0 || axis >= rank)
+        {
+            throw std::invalid_argument("Tensor(sum): axis out of bounds");
+        }
     }
 
     uint64_t axis_size = 0;
-    if (axis != -1)
-    {
-        axis_size = m_dimensions[ax];
-    }
-
     std::vector<uint64_t> new_dimensions(m_dimensions);
-    if (axis != -1)
+
+    if (!flatten)
     {
-        new_dimensions[ax] = 1;
+        axis_size = m_dimensions[axis];
+        new_dimensions[axis] = 1;
     }
 
     uint64_t output_size = 1;
-    for (uint64_t d : new_dimensions) output_size *= d;
+    for (uint64_t d : new_dimensions)
+    {
+        output_size *= d;
+    }
 
     uint64_t effective_axis_size = 0;
     uint64_t effective_output_size = 0;
-    if (axis == -1)
+
+    const uint64_t total_size = this->get_num_elements();
+    if (flatten)
     {
         effective_axis_size = total_size;
         effective_output_size = 1;
@@ -2058,7 +2098,7 @@ Tensor<float_t> Tensor<float_t>::sum(int64_t axis) const
     }
 
     Tensor<float_t> result;
-    if (axis == -1)
+    if (flatten)
     {
         result = Tensor<float_t>({1}, res_loc);
     }
@@ -2076,10 +2116,10 @@ Tensor<float_t> Tensor<float_t>::sum(int64_t axis) const
         sycl::malloc_device(sizeof(uint64_t) * rank, g_sycl_queue));
 
     std::vector<uint64_t> fixed_dims;
-    if (rank > 0) fixed_dims.reserve(rank - 1);
-    for (uint64_t i = 0; i < rank; ++i)
+    fixed_dims.reserve(rank - 1);
+    for (int64_t i = 0; i < rank; ++i)
     {
-        if (axis != -1 && i == ax) continue;
+        if (!flatten && i == axis) continue;
         fixed_dims.push_back(m_dimensions[i]);
     }
     const uint64_t fixed_count = fixed_dims.size();
@@ -2096,11 +2136,13 @@ Tensor<float_t> Tensor<float_t>::sum(int64_t axis) const
         utils::compute_wg_and_groups(g_sycl_queue,
             static_cast<size_t>(effective_axis_size));
 
-    size_t total_groups = static_cast<size_t>(effective_output_size) * num_groups_per_slice;
+    size_t total_groups =
+        static_cast<size_t>(effective_output_size) * num_groups_per_slice;
     size_t total_group_items = total_groups * workgroup_size;
     if (total_group_items == 0) total_group_items = workgroup_size;
 
-    size_t partial_count = static_cast<size_t>(effective_output_size) * num_groups_per_slice;
+    size_t partial_count =
+        static_cast<size_t>(effective_output_size) * num_groups_per_slice;
     size_t alloc_partial_count = 0;
     if (partial_count == 0)
     {
@@ -2110,6 +2152,8 @@ Tensor<float_t> Tensor<float_t>::sum(int64_t axis) const
     {
         alloc_partial_count = partial_count;
     }
+
+    const std::vector<uint64_t> divisors = utils::compute_divisors(m_dimensions);
 
     float_t* p_partials = nullptr;
     int32_t* p_error_flag = nullptr;
@@ -2126,20 +2170,16 @@ Tensor<float_t> Tensor<float_t>::sum(int64_t axis) const
     p_error_flag = static_cast<int32_t*>(
         sycl::malloc_shared(sizeof(int32_t), g_sycl_queue));
 
-    bool alloc_failed = false;
-    if (!p_strides_dev) alloc_failed = true;
-    if (!p_divisors_dev) alloc_failed = true;
-    if (fixed_count > 0 && !p_fixed_divs_dev) alloc_failed = true;
-    if (!p_partials) alloc_failed = true;
-    if (!p_error_flag) alloc_failed = true;
+    bool alloc_ok = (p_strides_dev && p_divisors_dev && p_partials && p_error_flag
+                 && (fixed_count <= 0 || p_fixed_divs_dev));
 
-    if (alloc_failed)
+    if (!alloc_ok)
     {
-        if (p_strides_dev) sycl::free(p_strides_dev, g_sycl_queue);
-        if (p_divisors_dev) sycl::free(p_divisors_dev, g_sycl_queue);
-        if (p_fixed_divs_dev) sycl::free(p_fixed_divs_dev, g_sycl_queue);
-        if (p_partials) sycl::free(p_partials, g_sycl_queue);
-        if (p_error_flag) sycl::free(p_error_flag, g_sycl_queue);
+        sycl::free(p_strides_dev, g_sycl_queue);
+        sycl::free(p_divisors_dev, g_sycl_queue);
+        sycl::free(p_fixed_divs_dev, g_sycl_queue);
+        sycl::free(p_partials, g_sycl_queue);
+        sycl::free(p_error_flag, g_sycl_queue);
 
         throw std::bad_alloc();
     }
@@ -2176,7 +2216,7 @@ Tensor<float_t> Tensor<float_t>::sum(int64_t axis) const
 
             float_t local_sum = float_t{};
 
-            if (axis == -1)
+            if (flatten)
             {
                 size_t start = group_in_slice * workgroup_size + local_id;
                 size_t stride = workgroup_size * num_groups_per_slice;
@@ -2197,9 +2237,9 @@ Tensor<float_t> Tensor<float_t>::sum(int64_t axis) const
                 uint64_t remaining = slice;
                 uint64_t base_offset = 0;
                 uint64_t counter = 0;
-                for (uint64_t i = 0; i < rank; ++i)
+                for (int64_t i = 0; i < rank; ++i)
                 {
-                    if (i == ax)
+                    if (i == axis)
                     {
                         continue;
                     }
@@ -2221,7 +2261,7 @@ Tensor<float_t> Tensor<float_t>::sum(int64_t axis) const
                     j += stride)
                 {
                     uint64_t offs = base_offset + static_cast<uint64_t>(j) *
-                        p_strides_dev[ax];
+                        p_strides_dev[axis];
                     float_t v = p_src[offs];
                     sycl_utils::device_check_nan_and_set(v, p_error_flag);
                     local_sum += v;
@@ -2247,7 +2287,10 @@ Tensor<float_t> Tensor<float_t>::sum(int64_t axis) const
     {
         size_t candidate_limit = workgroup_size;
         size_t candidate_min = 1;
-        if (num_groups_per_slice > candidate_min) candidate_min = num_groups_per_slice;
+        if (num_groups_per_slice > candidate_min)
+        {
+            candidate_min = num_groups_per_slice;
+        }
         size_t chosen = 1;
         while (chosen * 2 <= std::min(candidate_limit, candidate_min))
         {
@@ -2318,37 +2361,45 @@ Tensor<float_t> Tensor<float_t>::sum(int64_t axis) const
 }
 
 template<typename float_t>
-Tensor<float_t> Tensor<float_t>::cumsum(int64_t axis) const
+Tensor<float_t> Tensor<float_t>::cumsum(std::optional<int64_t> axis_opt) const
 {
-    if (m_dimensions.empty())
+    const int64_t rank = this->get_rank();
+    const MemoryLocation res_loc = this->get_memory_location();
+
+    if (rank == 0)
     {
-        const MemoryLocation res_loc = m_mem_loc;
         return Tensor<float_t>({1}, res_loc);
     }
 
-    const uint64_t rank = get_rank();
-    uint64_t total_size = get_num_elements();
+    const bool flatten = !axis_opt.has_value();
+    int64_t axis;
 
-    if (axis != -1 && (axis < 0 || static_cast<uint64_t>(axis) >= rank))
+    if (!flatten)
     {
-        throw std::invalid_argument("Tensor(cumsum): axis is out of bounds.");
+        axis = axis_opt.value();
+        if (axis < 0)
+        {
+            axis += rank;
+        }
+        if (axis < 0 || axis >= rank)
+        {
+            throw std::invalid_argument("Tensor(cumsum): axis out of bounds");
+        }
     }
 
-    uint64_t ax = 0;
+    const uint64_t total_size = this->get_num_elements();
     uint64_t axis_size = 0;
-    if (axis == -1)
+    if (flatten)
     {
         axis_size = total_size;
-        ax = 0;
     }
     else
     {
-        ax = static_cast<uint64_t>(axis);
-        axis_size = m_dimensions[ax];
+        axis_size = m_dimensions[axis];
     }
 
     std::vector<uint64_t> out_dims;
-    if (axis == -1)
+    if (flatten)
     {
         out_dims = std::vector<uint64_t>{ total_size };
     }
@@ -2368,13 +2419,13 @@ Tensor<float_t> Tensor<float_t>::cumsum(int64_t axis) const
     std::vector<uint64_t> fixed_out_strides;
     uint64_t fixed_count = 0;
 
-    if (axis != -1)
+    if (!flatten)
     {
         std::vector<uint64_t> fixed_dims;
         fixed_dims.reserve(rank - 1);
-        for (uint64_t i = 0; i < rank; ++i)
+        for (int64_t i = 0; i < rank; ++i)
         {
-            if (i == ax) continue;
+            if (i == axis) continue;
             fixed_dims.push_back(m_dimensions[i]);
         }
         fixed_count = static_cast<uint64_t>(fixed_dims.size());
@@ -2382,15 +2433,15 @@ Tensor<float_t> Tensor<float_t>::cumsum(int64_t axis) const
 
         fixed_strides.reserve(fixed_count);
         fixed_out_strides.reserve(fixed_count);
-        for (uint64_t d = 0; d < rank; ++d)
+        for (int64_t d = 0; d < rank; ++d)
         {
-            if (d == ax) continue;
+            if (d == axis) continue;
             fixed_strides.push_back(m_strides[d]);
             fixed_out_strides.push_back(result.m_strides[d]);
         }
     }
     uint64_t effective_axis_size;
-    if (axis == -1)
+    if (flatten)
     {
         effective_axis_size = total_size;
     }
@@ -2400,16 +2451,16 @@ Tensor<float_t> Tensor<float_t>::cumsum(int64_t axis) const
     }
 
     uint64_t effective_output_size = 0;
-    if (axis == -1)
+    if (flatten)
     {
         effective_output_size = 1;
     }
     else
     {
         uint64_t out_sz = 1;
-        for (uint64_t i = 0; i < rank; ++i)
+        for (int64_t i = 0; i < rank; ++i)
         {
-            if (i == ax) continue;
+            if (i == axis) continue;
             out_sz *= m_dimensions[i];
         }
         effective_output_size = out_sz;
@@ -2444,7 +2495,7 @@ Tensor<float_t> Tensor<float_t>::cumsum(int64_t axis) const
     p_strides_dev = static_cast<uint64_t*>
         (sycl::malloc_device(sizeof(uint64_t) * rank, g_sycl_queue));
 
-    if (axis != -1)
+    if (!flatten)
     {
         p_out_strides_dev = static_cast<uint64_t*>(
             sycl::malloc_device(sizeof(uint64_t) * rank, g_sycl_queue));
@@ -2465,24 +2516,22 @@ Tensor<float_t> Tensor<float_t>::cumsum(int64_t axis) const
     p_block_partials = static_cast<float_t*>
         (sycl::malloc_device(sizeof(float_t) * total_groups, g_sycl_queue));
 
-    bool alloc_ok = true;
-    if (!p_divs_dev || !p_strides_dev || !p_error_flag || !p_block_partials)
-        alloc_ok = false;
-    if (axis != -1 && !p_out_strides_dev) alloc_ok = false;
-    if (fixed_count > 0 &&
-        (!p_fixed_divs_dev || !p_fixed_strides_dev || !p_fixed_out_strides_dev))
-        alloc_ok = false;
+    bool alloc_ok = p_divs_dev && p_strides_dev && p_error_flag &&
+        p_block_partials && (flatten || p_out_strides_dev) &&
+        (fixed_count <= 0 || (p_fixed_divs_dev && p_fixed_strides_dev &&
+        p_fixed_out_strides_dev));
 
     if (!alloc_ok)
     {
-        if (p_block_partials) sycl::free(p_block_partials, g_sycl_queue);
-        if (p_fixed_out_strides_dev) sycl::free(p_fixed_out_strides_dev, g_sycl_queue);
-        if (p_fixed_strides_dev) sycl::free(p_fixed_strides_dev, g_sycl_queue);
-        if (p_fixed_divs_dev) sycl::free(p_fixed_divs_dev, g_sycl_queue);
-        if (p_out_strides_dev) sycl::free(p_out_strides_dev, g_sycl_queue);
-        if (p_strides_dev) sycl::free(p_strides_dev, g_sycl_queue);
-        if (p_divs_dev) sycl::free(p_divs_dev, g_sycl_queue);
-        if (p_error_flag) sycl::free(p_error_flag, g_sycl_queue);
+        sycl::free(p_block_partials,        g_sycl_queue);
+        sycl::free(p_fixed_out_strides_dev, g_sycl_queue);
+        sycl::free(p_fixed_strides_dev,     g_sycl_queue);
+        sycl::free(p_fixed_divs_dev,        g_sycl_queue);
+        sycl::free(p_out_strides_dev,       g_sycl_queue);
+        sycl::free(p_strides_dev,           g_sycl_queue);
+        sycl::free(p_divs_dev,              g_sycl_queue);
+        sycl::free(p_error_flag,            g_sycl_queue);
+
         throw std::bad_alloc();
     }
 
@@ -2491,7 +2540,7 @@ Tensor<float_t> Tensor<float_t>::cumsum(int64_t axis) const
     g_sycl_queue.memcpy
         (p_strides_dev, m_strides.data(), sizeof(uint64_t) * rank).wait();
 
-    if (axis != -1)
+    if (!flatten)
     {
         g_sycl_queue.memcpy(p_out_strides_dev, result.m_strides.data(),
                             sizeof(uint64_t) * rank).wait();
@@ -2546,7 +2595,7 @@ Tensor<float_t> Tensor<float_t>::cumsum(int64_t axis) const
                     p_fixed_divs_dev,
                     p_fixed_strides_dev,
                     static_cast<uint64_t>(fixed_count));
-                if (axis != -1)
+                if (!flatten)
                 {
                     base_dst = sycl_utils::idx_of(slice,
                         p_fixed_divs_dev,
@@ -2556,7 +2605,7 @@ Tensor<float_t> Tensor<float_t>::cumsum(int64_t axis) const
             }
 
             uint64_t src_off = 0, dst_off = 0;
-            if (axis == -1)
+            if (flatten)
             {
                 uint64_t linear = static_cast<uint64_t>(index_in_slice);
                 src_off = sycl_utils::idx_of
@@ -2566,9 +2615,9 @@ Tensor<float_t> Tensor<float_t>::cumsum(int64_t axis) const
             else
             {
                 src_off = base_src +
-                static_cast<uint64_t>(index_in_slice) * p_strides_dev[ax];
-                dst_off = base_dst +
-                    static_cast<uint64_t>(index_in_slice) * p_out_strides_dev[ax];
+                static_cast<uint64_t>(index_in_slice) * p_strides_dev[axis];
+                dst_off = base_dst + static_cast<uint64_t>(index_in_slice) *
+                    p_out_strides_dev[axis];
             }
 
             float_t x = float_t{0};
@@ -2644,14 +2693,14 @@ Tensor<float_t> Tensor<float_t>::cumsum(int64_t axis) const
             }
 
             uint64_t dst_off = 0;
-            if (axis == -1)
+            if (flatten)
             {
                 dst_off = static_cast<uint64_t>(index_in_slice);
             }
             else
             {
-                dst_off = base_dst +
-                    static_cast<uint64_t>(index_in_slice) * p_out_strides_dev[ax];
+                dst_off = base_dst + static_cast<uint64_t>(index_in_slice) *
+                    p_out_strides_dev[axis];
             }
 
             float_t add = p_block_partials
@@ -2691,31 +2740,35 @@ Tensor<float_t> Tensor<float_t>::cumsum(int64_t axis) const
 }
 
 template<typename float_t>
-Tensor<float_t> Tensor<float_t>::mean(int64_t axis) const
+Tensor<float_t> Tensor<float_t>::mean(std::optional<int64_t> axis_opt) const
 {
-    const uint64_t total_elems = this->get_num_elements();
-    if (total_elems == 0)
+    const int64_t rank = this->get_rank();
+    if (rank == 0)
     {
         throw std::invalid_argument(R"(Tensor(mean):
             input tensor has no elements.)");
     }
+    const bool flatten = !axis_opt.has_value();
 
     uint64_t denom_u = 1;
-    if (axis == -1)
+    if (flatten)
     {
-        denom_u = total_elems;
+        denom_u = this->get_num_elements();
     }
     else
     {
-        const uint64_t rank = this->get_rank();
-        if (axis < 0 || static_cast<uint64_t>(axis) >= rank)
+        int64_t axis = axis_opt.value();
+        if (axis < 0)
         {
-            throw std::invalid_argument(R"(Tensor(mean): axis out of range.)");
+            axis += rank;
         }
-        denom_u = this->get_dimensions()[static_cast<uint64_t>(axis)];
+        if (axis < 0 || axis >= rank)
+        {
+            throw std::invalid_argument("Tensor(mean): axis out of bounds");
+        }
+        denom_u = this->get_dimensions()[axis];
     }
-
-    Tensor<float_t> s = this->sum(axis);
+    Tensor<float_t> s = this->sum(axis_opt);
 
     float_t denom_val = static_cast<float_t>(denom_u);
     MemoryLocation loc = this->get_memory_location();
@@ -2727,7 +2780,8 @@ Tensor<float_t> Tensor<float_t>::mean(int64_t axis) const
 }
 
 template<typename float_t>
-Tensor<float_t> Tensor<float_t>::var(int64_t axis, int64_t ddof) const
+Tensor<float_t> Tensor<float_t>::var(std::optional<int64_t> axis_opt,
+    int64_t ddof) const
 {
     const uint64_t total_elems = this->get_num_elements();
     if (total_elems == 0)
@@ -2742,8 +2796,10 @@ Tensor<float_t> Tensor<float_t>::var(int64_t axis, int64_t ddof) const
             ddof must be non-negative.)");
     }
 
+    const bool flatten = !axis_opt.has_value();
+
     uint64_t N = 0;
-    if (axis == -1)
+    if (flatten)
     {
         if (static_cast<uint64_t>(ddof) >= total_elems)
         {
@@ -2754,18 +2810,17 @@ Tensor<float_t> Tensor<float_t>::var(int64_t axis, int64_t ddof) const
     }
     else
     {
-        const uint64_t rank = this->get_rank();
-        if (axis < 0 || static_cast<uint64_t>(axis) >= rank)
+        const int64_t rank = this->get_rank();
+        int64_t axis = axis_opt.value();
+        if (axis < 0)
         {
-            throw std::invalid_argument(R"(Tensor(var): axis out of range.)");
+            axis += rank;
         }
-        const uint64_t axis_u = static_cast<uint64_t>(axis);
-        const uint64_t axis_len = this->get_dimensions()[axis_u];
-        if (axis_len == 0)
+        if (axis < 0 || axis >= rank)
         {
-            throw std::invalid_argument(R"(Tensor(var):
-                selected axis has zero length.)");
+            throw std::invalid_argument("Tensor(var): axis out of bounds");
         }
+        const uint64_t axis_len = this->get_dimensions()[axis];
         if (static_cast<uint64_t>(ddof) >= axis_len)
         {
             throw std::invalid_argument(R"(Tensor(var):
@@ -2775,11 +2830,11 @@ Tensor<float_t> Tensor<float_t>::var(int64_t axis, int64_t ddof) const
     }
 
     uint64_t denom_u = N - static_cast<uint64_t>(ddof);
-    Tensor<float_t> m = this->mean(axis);
+    Tensor<float_t> m = this->mean(axis_opt);
 
     Tensor<float_t> diff = (*this) - m;
     Tensor<float_t> sq = diff * diff;
-    Tensor<float_t> sumsq = sq.sum(axis);
+    Tensor<float_t> sumsq = sq.sum(axis_opt);
 
     float_t denom_val = static_cast<float_t>(denom_u);
     MemoryLocation loc = this->get_memory_location();
@@ -2791,13 +2846,13 @@ Tensor<float_t> Tensor<float_t>::var(int64_t axis, int64_t ddof) const
 }
 
 template<typename float_t>
-Tensor<float_t> Tensor<float_t>::cov(std::vector<uint64_t> sample_axes,
-                        std::vector<uint64_t> event_axes,
+Tensor<float_t> Tensor<float_t>::cov(std::vector<int64_t> sample_axes,
+                        std::vector<int64_t> event_axes,
                         int64_t ddof) const
 {
     const uint64_t total_elems = this->get_num_elements();
     const std::vector<uint64_t> & original_shape = this->get_dimensions();
-    const uint64_t rank = this->get_rank();
+    const int64_t rank = this->get_rank();
     if (total_elems == 0)
     {
         throw std::invalid_argument(R"(Tensor(cov):
@@ -2822,15 +2877,21 @@ Tensor<float_t> Tensor<float_t>::cov(std::vector<uint64_t> sample_axes,
             rank must be >= 2.)");
     }
 
+    const uint64_t num_sample_axes = static_cast<int64_t>(sample_axes.size());
+    const uint64_t num_event_axes  = static_cast<int64_t>(event_axes.size());
     // Check if the sample axes are regular
     // (within tensor range, not replicated).
     std::vector<bool> seen(rank, false);
-    for (uint64_t axis : sample_axes)
+    for (uint64_t i = 0; i < sample_axes.size(); ++i)
     {
-        if (axis >= rank)
+        int64_t axis = sample_axes[i];
+        if (axis < 0)
         {
-            throw std::invalid_argument(R"(Tensor(cov):
-                sample axis out of range)");
+            axis += rank;
+        }
+        if (axis < 0 || axis >= rank)
+        {
+            throw std::invalid_argument("Tensor(cov): axis out of bounds");
         }
         if (seen[axis])
         {
@@ -2838,15 +2899,20 @@ Tensor<float_t> Tensor<float_t>::cov(std::vector<uint64_t> sample_axes,
                 the same axis cannot be used twice)");
         }
         seen[axis] = true;
+        sample_axes[i] = axis;
     }
 
     // We do the same for event axes.
-    for (uint64_t axis : event_axes)
+    for (uint64_t i = 0; i < event_axes.size(); ++i)
     {
-        if (axis >= rank)
+        int64_t axis = event_axes[i];
+        if (axis < 0)
         {
-            throw std::invalid_argument(R"(Tensor(cov):
-                event axis out of range)");
+            axis += rank;
+        }
+        if (axis < 0 || axis >= rank)
+        {
+            throw std::invalid_argument("Tensor(cov): axis out of bounds");
         }
         if (seen[axis])
         {
@@ -2854,12 +2920,13 @@ Tensor<float_t> Tensor<float_t>::cov(std::vector<uint64_t> sample_axes,
                 the same axis cannot be used twice)");
         }
         seen[axis] = true;
+        event_axes[i] = axis;
     }
 
     // Build the tensor shape: batch axes -> sample axes -> event axes.
-    std::vector<uint64_t> t_shape;
+    std::vector<int64_t> t_shape;
     t_shape.reserve(rank);
-    for (size_t i = 0; i < rank; ++i)
+    for (int64_t i = 0; i < rank; ++i)
     {
         if (seen[i])
         {
@@ -2877,7 +2944,7 @@ Tensor<float_t> Tensor<float_t>::cov(std::vector<uint64_t> sample_axes,
 
     uint64_t sample_total = 1, event_total = 1;
     // Compute the final shape of the tensor we need to operate on.
-    for (uint64_t axis : sample_axes)
+    for (int64_t axis : sample_axes)
     {
         sample_total *= original_shape[axis];
     }
@@ -2886,7 +2953,7 @@ Tensor<float_t> Tensor<float_t>::cov(std::vector<uint64_t> sample_axes,
         throw std::invalid_argument(R"(Tensor(cov):
                 not enough samples for ddof.)");
     }
-    for (uint64_t axis : event_axes)
+    for (int64_t axis : event_axes)
     {
         event_total *= original_shape[axis];
     }
@@ -2894,13 +2961,11 @@ Tensor<float_t> Tensor<float_t>::cov(std::vector<uint64_t> sample_axes,
     const std::vector<uint64_t> & transposed_shape =
         t_tensor_clone.get_dimensions();
 
-    const size_t num_sample_axes = sample_axes.size();
-    const size_t num_event_axes  = event_axes.size();
-    const size_t batch_len = rank - (num_sample_axes + num_event_axes);
+    const int64_t batch_len = rank - (num_sample_axes + num_event_axes);
 
     std::vector<uint64_t> final_shape;
     final_shape.reserve(batch_len + 2);
-    for (size_t i = 0; i < batch_len; ++i)
+    for (int64_t i = 0; i < batch_len; ++i)
     {
         final_shape.push_back(transposed_shape[i]);
     }
@@ -2909,15 +2974,13 @@ Tensor<float_t> Tensor<float_t>::cov(std::vector<uint64_t> sample_axes,
 
     t_tensor_clone.reshape(final_shape);
 
-    uint64_t sample_axis_idx = static_cast<uint64_t>(batch_len);
-
-    Tensor<float_t> mu = t_tensor_clone.mean(sample_axis_idx);
+    Tensor<float_t> mu = t_tensor_clone.mean(batch_len);
     Tensor<float_t> centered = t_tensor_clone - mu;
 
     Tensor<float_t> denom({1}, m_mem_loc);
     denom = 1.0f / (sample_total - ddof);
 
-    std::vector<uint64_t> transpose_order;
+    std::vector<int64_t> transpose_order;
     transpose_order.reserve(centered.get_rank());
     for (uint64_t i = 0; i < batch_len; ++i)
     {
@@ -2936,7 +2999,7 @@ Tensor<float_t> Tensor<float_t>::cov(std::vector<uint64_t> sample_axes,
 template<typename float_t>
 Tensor<float_t> Tensor<float_t>::cov(int64_t ddof) const
 {
-    const uint64_t rank = this->get_rank();
+    const int64_t rank = this->get_rank();
     if (rank < 2)
     {
         throw std::invalid_argument(R"(Tensor(cov):
@@ -2947,18 +3010,19 @@ Tensor<float_t> Tensor<float_t>::cov(int64_t ddof) const
 }
 
 template<typename float_t>
-Tensor<float_t> Tensor<float_t>::std(int64_t axis, int64_t ddof) const
+Tensor<float_t> Tensor<float_t>::stddev(std::optional<int64_t> axis_opt,
+    int64_t ddof) const
 {
-    Tensor<float_t> v = this->var(axis, ddof);
-
-    const std::vector<uint64_t> & in_shape = v.get_dimensions();
-    if (in_shape.empty())
+    const int64_t rank = this->get_rank();
+    if (rank == 0)
     {
         throw std::invalid_argument(R"(Tensor(std):
             input tensor has no elements.)");
     }
+    Tensor<float_t> v = this->var(axis_opt, ddof);
 
-    const uint64_t arr_len = static_cast<uint64_t>(in_shape.size());
+    const std::vector<uint64_t> & in_shape = v.get_dimensions();
+
     const uint64_t total_output_elems = v.get_num_elements();
     MemoryLocation res_loc = v.get_memory_location();
     Tensor<float_t> result(in_shape, res_loc);
@@ -2968,11 +3032,9 @@ Tensor<float_t> Tensor<float_t>::std(int64_t axis, int64_t ddof) const
     const std::vector<uint64_t> in_strides = v.get_strides();
 
     uint64_t* p_in_divs = static_cast<uint64_t*>(
-        sycl::malloc_device(sizeof(uint64_t) * static_cast<size_t>(arr_len),
-                            g_sycl_queue));
+        sycl::malloc_device(sizeof(uint64_t) * rank, g_sycl_queue));
     uint64_t* p_in_strides = static_cast<uint64_t*>(
-        sycl::malloc_device(sizeof(uint64_t) * static_cast<size_t>(arr_len),
-                            g_sycl_queue));
+        sycl::malloc_device(sizeof(uint64_t) * rank, g_sycl_queue));
     int32_t* p_error_flag = static_cast<int32_t*>(
         sycl::malloc_shared(sizeof(int32_t), g_sycl_queue));
 
@@ -2986,9 +3048,9 @@ Tensor<float_t> Tensor<float_t>::std(int64_t axis, int64_t ddof) const
     }
 
     g_sycl_queue.memcpy(p_in_divs, in_divs.data(),
-        sizeof(uint64_t) * arr_len).wait();
+        sizeof(uint64_t) * rank).wait();
     g_sycl_queue.memcpy(p_in_strides, in_strides.data(),
-        sizeof(uint64_t) * arr_len).wait();
+        sizeof(uint64_t) * rank).wait();
     *p_error_flag = 0;
 
     const float_t* p_in_data = v.get_data();
@@ -3002,7 +3064,7 @@ Tensor<float_t> Tensor<float_t>::std(int64_t axis, int64_t ddof) const
             uint64_t in_idx = temper::sycl_utils::idx_of(flat,
                                                     p_in_divs,
                                                     p_in_strides,
-                                                    arr_len);
+                                                    rank);
             float_t val = p_in_data[in_idx];
             temper::sycl_utils::device_check_nan_and_set<float_t>
                 (val, p_error_flag);
@@ -3040,7 +3102,7 @@ template<typename float_t>
 std::pair<Tensor<float_t>, Tensor<float_t>> Tensor<float_t>::eig
     (uint64_t max_iters, float_t tol) const
 {
-    const uint64_t rank = this->get_rank();
+    const int64_t rank = this->get_rank();
     if (rank < 2)
     {
         throw std::invalid_argument("Tensor(eig): rank must be >= 2.");
@@ -3055,7 +3117,7 @@ std::pair<Tensor<float_t>, Tensor<float_t>> Tensor<float_t>::eig
     const uint64_t n = shape[rank - 1];
 
     std::vector<uint64_t> batch_shape;
-    for (uint64_t i = 0; i + 2 < rank; ++i)
+    for (int64_t i = 0; i + 2 < rank; ++i)
     {
         batch_shape.push_back(shape[i]);
     }
@@ -3247,15 +3309,15 @@ std::pair<Tensor<float_t>, Tensor<float_t>> Tensor<float_t>::eig
 template<typename float_t>
 Tensor<float_t> Tensor<float_t>::transpose() const
 {
-    const uint64_t rank = m_dimensions.size();
+    const int64_t rank = this->get_rank();
     if (rank == 0)
     {
         throw std::runtime_error(R"(Tensor(transpose):
             cannot transpose an empty tensor.)");
     }
 
-    std::vector<uint64_t> axes(rank);
-    for (uint64_t i = 0; i < rank; ++i)
+    std::vector<int64_t> axes(rank);
+    for (int64_t i = 0; i < rank; ++i)
     {
         axes[i] = rank - 1 - i;
     }
@@ -3264,35 +3326,43 @@ Tensor<float_t> Tensor<float_t>::transpose() const
 }
 
 template<typename float_t>
-Tensor<float_t> Tensor<float_t>::transpose(const std::vector<uint64_t> & axes) const
+Tensor<float_t> Tensor<float_t>::transpose(const std::vector<int64_t> & axes) const
 {
-    const uint64_t rank = m_dimensions.size();
+    const int64_t rank = this->get_rank();
 
-    if (axes.size() != rank)
+    if (axes.size() != static_cast<uint64_t>(rank))
     {
         throw std::invalid_argument(R"(Tensor(transpose):
             axes vector must have same length as tensor rank.)"
         );
     }
 
+    std::vector<int64_t> new_axes(rank);
+
     std::vector<bool> seen(rank, false);
-    for (uint64_t ax : axes)
+    for (uint64_t i = 0; i < axes.size(); ++i)
     {
-        if (ax >= rank || seen[ax])
+        int64_t axis = axes[i];
+        if (axis < 0)
+        {
+            axis += rank;
+        }
+        if (axis < 0 || axis >= rank || seen[axis])
         {
             throw std::invalid_argument(R"(Tensor(transpose):
-                axes must be a permutation of [0..rank-1].)"
+                axes must be a permutation of [-rank..rank-1].)"
             );
         }
-        seen[ax] = true;
+        seen[axis] = true;
+        new_axes[i] = axis;
     }
 
     std::vector<uint64_t> new_dims(rank);
     std::vector<uint64_t> new_strides(rank);
-    for (uint64_t i = 0; i < rank; ++i)
+    for (int64_t i = 0; i < rank; ++i)
     {
-        new_dims[i] = m_dimensions[axes[i]];
-        new_strides[i] = m_strides[axes[i]];
+        new_dims[i] = m_dimensions[new_axes[i]];
+        new_strides[i] = m_strides[new_axes[i]];
     }
 
     std::vector<uint64_t> start_indices(rank, 0);
@@ -3393,9 +3463,9 @@ const std::vector<uint64_t> & Tensor<float_t>::get_shape() const noexcept
 }
 
 template<typename float_t>
-uint64_t Tensor<float_t>::get_rank() const noexcept
+int64_t Tensor<float_t>::get_rank() const noexcept
 {
-    return static_cast<uint64_t>(m_dimensions.size());
+    return static_cast<int64_t>(m_dimensions.size());
 }
 
 template<typename float_t>
@@ -3450,7 +3520,7 @@ uint64_t Tensor<float_t>::get_total_bytes() const noexcept
 template<typename float_t>
 std::vector<uint64_t> Tensor<float_t>::index_to_coords(uint64_t flat) const
 {
-    const size_t rank = m_dimensions.size();
+    const int64_t rank = this->get_rank();
     if (rank == 0)
         return {};
 
@@ -3464,7 +3534,7 @@ std::vector<uint64_t> Tensor<float_t>::index_to_coords(uint64_t flat) const
     std::vector<uint64_t> divs = utils::compute_divisors(m_dimensions);
     std::vector<uint64_t> coords(rank, 0);
 
-    for (size_t d = 0; d < rank; ++d)
+    for (int64_t d = 0; d < rank; ++d)
     {
         if (divs[d] == 0)
         {
@@ -3483,7 +3553,7 @@ template<typename float_t>
 uint64_t Tensor<float_t>::coords_to_index
     (const std::vector<uint64_t>& coords) const
 {
-    const size_t rank = m_dimensions.size();
+    const int64_t rank = this->get_rank();
     if (coords.size() != rank)
     {
         throw std::invalid_argument(R"(Tensor(coords_to_index):
@@ -3498,7 +3568,7 @@ uint64_t Tensor<float_t>::coords_to_index
     std::vector<uint64_t> divs = temper::utils::compute_divisors(m_dimensions);
     uint64_t flat = 0;
 
-    for (size_t d = 0; d < rank; ++d)
+    for (int64_t d = 0; d < rank; ++d)
     {
         if (coords[d] >= m_dimensions[d])
         {
@@ -3515,38 +3585,38 @@ uint64_t Tensor<float_t>::coords_to_index
 template<typename float_t>
 Tensor<float_t> Tensor<float_t>::at(uint64_t flat)
 {
-    const size_t rank = m_dimensions.size();
+    const int64_t rank = this->get_rank();
     if (rank == 0)
     {
         throw std::out_of_range("Tensor(at): tensor has no elements.");
     }
 
-    const uint64_t total = get_num_elements();
+    const uint64_t total = this->get_num_elements();
     if (flat >= total)
     {
         throw std::out_of_range("Tensor(at): flat index out of range.");
     }
 
-    std::vector<uint64_t> coords = index_to_coords(flat);
+    std::vector<uint64_t> coords = this->index_to_coords(flat);
     return Tensor(*this, coords, std::vector<uint64_t>{1});
 }
 
 template<typename float_t>
 const Tensor<float_t> Tensor<float_t>::at(uint64_t flat) const
 {
-    const size_t rank = m_dimensions.size();
+    const int64_t rank = this->get_rank();
     if (rank == 0)
     {
         throw std::out_of_range("Tensor(at): tensor has no elements.");
     }
 
-    const uint64_t total = get_num_elements();
+    const uint64_t total = this->get_num_elements();
     if (flat >= total)
     {
         throw std::out_of_range("Tensor(at): flat index out of range.");
     }
 
-    std::vector<uint64_t> coords = index_to_coords(flat);
+    std::vector<uint64_t> coords = this->index_to_coords(flat);
     return Tensor(*this, coords, std::vector<uint64_t>{1});
 }
 

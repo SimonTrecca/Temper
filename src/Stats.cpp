@@ -59,8 +59,8 @@ Tensor<float_t> ppf(const Tensor<float_t>& q,
     temper::utils::TensorDesc b_desc{loc_shape, loc.get_strides(), {}};
     temper::utils::TensorDesc c_desc{scale_shape, scale.get_strides(), {}};
 
-    const uint64_t full_rank = std::max({a_desc.shape.size(),
-    	b_desc.shape.size(), c_desc.shape.size()});
+    const int64_t full_rank = static_cast<int64_t>(std::max({a_desc.shape.size(),
+    	b_desc.shape.size(), c_desc.shape.size()}));
     temper::utils::TensorDesc a_al =
     	temper::utils::align_tensor(a_desc, full_rank);
     temper::utils::TensorDesc b_al =
@@ -79,13 +79,13 @@ Tensor<float_t> ppf(const Tensor<float_t>& q,
     	temper::utils::compute_broadcast(ab_owner, c_al);
 
     const std::vector<uint64_t> out_shape = abc.out.shape;
-    const uint64_t out_rank = static_cast<uint64_t>(out_shape.size());
+    const int64_t out_rank = static_cast<int64_t>(out_shape.size());
 
     std::vector<uint64_t> q_bcast(out_rank, 0);
     std::vector<uint64_t> loc_bcast(out_rank, 0);
     std::vector<uint64_t> scale_bcast = abc.b_strides;
 
-    for (uint64_t d = 0; d < out_rank; ++d)
+    for (int64_t d = 0; d < out_rank; ++d)
 	{
 	    if (abc.a_strides[d] == 0)
 	    {
@@ -332,7 +332,7 @@ Tensor<float_t> rvs(const Tensor<float_t>& loc,
     Tensor<float_t> q(out_shape, res_loc);
     const uint64_t total_output_elems = q.get_num_elements();
 
-    const uint64_t out_rank = static_cast<uint64_t>(out_shape.size());
+    const int64_t out_rank = static_cast<int64_t>(out_shape.size());
     std::vector<uint64_t> out_divs = temper::utils::compute_divisors(out_shape);
     uint64_t* p_out_divs = static_cast<uint64_t*>(
         sycl::malloc_device(sizeof(uint64_t) * out_rank, g_sycl_queue));

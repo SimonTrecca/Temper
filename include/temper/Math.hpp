@@ -78,25 +78,27 @@ Tensor<float_t> reshape(const Tensor<float_t> & tensor,
 extern template Tensor<float> reshape<float>
     (const Tensor<float>&, const std::vector<uint64_t>&);
 
+
 /**
  * @brief Sort tensor elements (free function wrapper).
  *
- * Returns a sorted copy of the input tensor, either flattened (axis = -1)
- * or independently sorted along a single axis. The input tensor is not
- * modified.
+ * Returns a sorted copy of the input tensor, either
+ * flattened (axis = std::nullopt, default) or independently along a single axis.
+ * The input tensor is not modified.
+ * Supports negative axis indexing to start from right to left.
  *
  * @param tensor Input tensor.
- * @param axis Axis to sort along, -1 = flatten, otherwise 0..rank-1.
- * @return Tensor<float_t> A new tensor containing the sorted data.
- *
- * @throws std::invalid_argument If @p axis is out of range.
- * @throws std::bad_alloc If required device memory cannot be allocated.
+ * @param axis_opt Axis to sort along, nullopt = flatten,
+ * otherwise -rank..rank-1.
+ * @throws std::invalid_argument if @p axis_opt is out of range.
+ * @throws std::bad_alloc if required device memory cannot be allocated.
  */
 template <typename float_t>
-Tensor<float_t> sort(const Tensor<float_t> & tensor, int64_t axis = -1);
+Tensor<float_t> sort(const Tensor<float_t> & tensor,
+    std::optional<int64_t> axis_opt = std::nullopt);
 /// Explicit instantiation of sort for float
 extern template Tensor<float> sort<float>
-    (const Tensor<float>&, int64_t);
+    (const Tensor<float>&, std::optional<int64_t>);
 
 /**
  * @brief Compute the sum of tensor elements (free function wrapper).
@@ -105,20 +107,21 @@ extern template Tensor<float> sort<float>
  * axis. Delegates to `Tensor::sum`.
  *
  * @param tensor Input tensor.
- * @param axis Axis to sum along, -1 = flatten (sum all elements),
- * otherwise 0..rank-1.
+ * @param axis_opt Axis to sum along, nullopt = flatten,
+ * otherwise -rank..rank-1.
  * @return Tensor<float_t> A new tensor containing the sums.
  *
- * @throws std::invalid_argument If axis is not -1 and out of range.
+ * @throws std::invalid_argument If axis is out of range.
  * @throws std::bad_alloc If required device memory cannot be allocated.
  * @throws std::runtime_error If NaN or non-finite values are encountered
  * in the inputs or the results.
  */
 template <typename float_t>
-Tensor<float_t> sum(const Tensor<float_t> & tensor, int64_t axis = -1);
+Tensor<float_t> sum(const Tensor<float_t> & tensor,
+    std::optional<int64_t> axis_opt = std::nullopt);
 /// Explicit instantiation of sum for float
 extern template Tensor<float> sum<float>
-    (const Tensor<float>&, int64_t);
+    (const Tensor<float>&, std::optional<int64_t>);
 
 /**
  * @brief Compute the cumulative sum of tensor elements (free function wrapper).
@@ -127,8 +130,8 @@ extern template Tensor<float> sum<float>
  * the specified axis. Delegates to `Tensor::cumsum`.
  *
  * @param tensor Input tensor.
- * @param axis Axis to scan along, -1 = flatten (treat as 1D and scan
- * all elements), otherwise 0..rank-1.
+ * @param axis_opt Axis to cumsum along, nullopt = flatten,
+ * otherwise -rank..rank-1.
  * @return Tensor<float_t> A new tensor containing the cumulative sums.
  *
  * @throws std::invalid_argument If axis is not -1 and is out of range.
@@ -137,10 +140,11 @@ extern template Tensor<float> sum<float>
  * in the inputs or the results.
  */
 template <typename float_t>
-Tensor<float_t> cumsum(const Tensor<float_t> & tensor, int64_t axis = -1);
+Tensor<float_t> cumsum(const Tensor<float_t> & tensor,
+    std::optional<int64_t> axis_opt = std::nullopt);
 /// Explicit instantiation of cumsum for float
 extern template Tensor<float> cumsum<float>
-    (const Tensor<float>&, int64_t);
+    (const Tensor<float>&, std::optional<int64_t>);
 
 /**
  * @brief Transpose a tensor (free function wrapper, full reversal).
@@ -167,7 +171,7 @@ extern template Tensor<float> transpose<float>(const Tensor<float>&);
  *
  * @param tensor Input tensor.
  * @param axes Vector specifying the new order of axes. Must be a permutation
- * of [0..rank-1].
+ * of [-rank..rank-1].
  * @return Tensor<float_t> A new tensor view with permuted axes.
  *
  * @throws std::invalid_argument If `axes.size()` != rank or if `axes` is not
@@ -175,10 +179,10 @@ extern template Tensor<float> transpose<float>(const Tensor<float>&);
  */
 template<typename float_t>
 Tensor<float_t> transpose(const Tensor<float_t> & tensor,
-                        const std::vector<uint64_t> & axes);
+                        const std::vector<int64_t> & axes);
 /// Explicit instantiation of transpose(axes) for float
 extern template Tensor<float> transpose<float>
-    (const Tensor<float>&, const std::vector<uint64_t>&);
+    (const Tensor<float>&, const std::vector<int64_t>&);
 
 /**
  * @brief Pad the last two dimensions (height, width) with a constant.
@@ -231,11 +235,11 @@ extern template Tensor<float> pad<float>
  * @brief Compute indices of maximum values along a specified axis.
  *
  * Returns a vector of indices corresponding to the maximum element of
- * each slice along @p axis. For axis = -1, returns a single global max
+ * each slice along @p axis_opt. For axis = nullopt, returns a single global max
  * index. Ties are resolved by taking the first occurrence.
  *
  * @param tensor Input tensor of arbitrary rank.
- * @param axis Axis to reduce (-1 = flatten, otherwise 0..rank-1).
+ * @param axis_opt Axis to reduce (nullopt = flatten, otherwise -rank..rank-1).
  * @return std::vector<uint64_t> Indices of maximum elements.
  *
  * @throws std::invalid_argument If tensor is empty or axis is out of range.
@@ -243,10 +247,11 @@ extern template Tensor<float> pad<float>
  * @throws std::bad_alloc If device memory allocation fails.
  */
 template<typename float_t>
-std::vector<uint64_t> argmax(const Tensor<float_t> & tensor, int64_t axis);
+std::vector<uint64_t> argmax(const Tensor<float_t> & tensor,
+    std::optional<int64_t> axis_opt = std::nullopt);
 /// Explicit instantiation of argmax for float
 extern template std::vector<uint64_t> argmax<float>
-    (const Tensor<float>&, int64_t);
+    (const Tensor<float>&, std::optional<int64_t>);
 
 /**
  * @brief Elementwise linear interpolation between two tensors.
@@ -268,6 +273,7 @@ extern template std::vector<uint64_t> argmax<float>
  *        `*step_out` on return.
  * @return Tensor<float_t> Interpolated tensor (broadcasted shape with
  *         inserted axis).
+ *
  * @throws std::invalid_argument For empty inputs or out-of-range axis.
  * @throws std::bad_alloc On device allocation failure.
  * @throws std::runtime_error If numeric errors (NaN/Inf/overflow) occur.
@@ -277,24 +283,24 @@ Tensor<float_t> linspace(const Tensor<float_t>& start,
                         const Tensor<float_t>& stop,
                         uint64_t num,
                         MemoryLocation res_loc = MemoryLocation::DEVICE,
-                        uint64_t axis = 0,
+                        int64_t axis = 0,
                         bool endpoint = true,
                         Tensor<float_t>* step_out = nullptr);
 /// Explicit instantiation of linspace for float
 extern template Tensor<float> linspace<float>(const Tensor<float>&,
-const Tensor<float>&, uint64_t, MemoryLocation, uint64_t, bool, Tensor<float>*);
+const Tensor<float>&, uint64_t, MemoryLocation, int64_t, bool, Tensor<float>*);
 
 template<typename float_t>
 Tensor<float_t> linspace(float_t start,
                         float_t stop,
                         uint64_t num,
                         MemoryLocation res_loc = MemoryLocation::DEVICE,
-                        uint64_t axis = 0,
+                        int64_t axis = 0,
                         bool endpoint = true,
                         Tensor<float_t>* step_out = nullptr);
 /// Explicit instantiation of linspace(scalars) for float
 extern template Tensor<float> linspace<float>(float,
-float, uint64_t, MemoryLocation, uint64_t, bool, Tensor<float>*);
+float, uint64_t, MemoryLocation, int64_t, bool, Tensor<float>*);
 
 /**
  * @brief Generate a 1-D tensor with values in the half-open interval
@@ -436,8 +442,8 @@ extern template Tensor<float> log<float>(const Tensor<float>&);
  * specified axis. Delegates to `Tensor::mean`.
  *
  * @param tensor Input tensor.
- * @param axis Axis to mean along, -1 = flatten (mean all elements),
- * otherwise 0..rank-1.
+ * @param axis_opt Axis to compute mean along, nullopt = flatten,
+ * otherwise -rank..rank-1.
  * @return Tensor<float_t> A new tensor containing the means.
  *
  * @throws std::invalid_argument If the tensor is empty or if @p axis
@@ -446,26 +452,28 @@ extern template Tensor<float> log<float>(const Tensor<float>&);
  * @throws std::runtime_error If NaN or non-finite values are encountered.
  */
 template <typename float_t>
-Tensor<float_t> mean(const Tensor<float_t> & tensor, int64_t axis = -1);
+Tensor<float_t> mean(const Tensor<float_t> & tensor,
+    std::optional<int64_t> axis_opt = std::nullopt);
 /// Explicit instantiation of mean for float
 extern template Tensor<float> mean<float>
-    (const Tensor<float>&, int64_t);
+    (const Tensor<float>&, std::optional<int64_t>);
 
 /**
  * @brief Compute the variance of tensor elements (free function wrapper).
  *
  * Functional wrapper around `Tensor::var()`. Reduces the input tensor by
- * computing the arithmetic variance either over all elements (axis = -1)
+ * computing the arithmetic variance either over all elements (axis = nullopt)
  * or independently along a single axis. The divisor uses (N - ddof),
  * where N is the number of elements being reduced.
  *
  * @param tensor Input tensor.
- * @param axis Axis to reduce (-1 = flatten / all elements).
+ * @param axis_opt Axis to reduce along, nullopt = flatten,
+ * otherwise -rank..rank-1.
  * @param ddof Delta degrees of freedom (0 => population variance).
  * @return Tensor<float_t> Tensor with the specified axis reduced.
  *
  * @throws std::invalid_argument If the input tensor has no elements,
- * if @p axis is not -1 and out of range, if the selected axis has zero length,
+ * if @p axis is out of range, if the selected axis has zero length,
  * or if (N - ddof) <= 0.
  * @throws std::bad_alloc If required memory cannot be allocated.
  * @throws std::runtime_error If NaN or non-finite values are encountered
@@ -473,11 +481,11 @@ extern template Tensor<float> mean<float>
  */
 template <typename float_t>
 Tensor<float_t> var(const Tensor<float_t> & tensor,
-    int64_t axis = -1,
+    std::optional<int64_t> axis_opt = std::nullopt,
     int64_t ddof = 0);
 /// Explicit instantiation of var for float
 extern template Tensor<float> var<float>
-    (const Tensor<float>&, int64_t, int64_t);
+    (const Tensor<float>&, std::optional<int64_t>, int64_t);
 
 /**
  * @brief Compute covariance (free function wrapper).
@@ -490,10 +498,10 @@ extern template Tensor<float> var<float>
  * @param tensor      Input tensor.
  * @param sample_axes Non-empty vector of axis indices to flatten as
  *                    samples. Order matters; entries must be distinct and
- *                    in [0, rank-1].
+ *                    in [-rank, rank-1].
  * @param event_axes  Non-empty vector of axis indices to flatten as
  *                    events. Order matters; entries must be distinct,
- *                    disjoint from @p sample_axes, and in [0, rank-1].
+ *                    disjoint from @p sample_axes, and in [-rank, rank-1].
  * @param ddof        Delta degrees of freedom (>= 0). Divisor is
  *                    (N - ddof) where N is product(lengths of sample axes).
  *
@@ -508,25 +516,22 @@ extern template Tensor<float> var<float>
  * - any axis index is out of range.
  * - the same axis appears more than once (within or across vectors).
  * - ddof >= number of samples (N).
- *
  * @throws std::out_of_range
  * - internal view/alias construction would exceed the owner's bounds.
- *
  * @throws std::bad_alloc
  * - required host/device memory allocation failed.
- *
  * @throws std::runtime_error
  * - NaN or non-finite values encountered, or device/kernel errors during
  *   reduction or matrix multiplication.
  */
 template <typename float_t>
 Tensor<float_t> cov(const Tensor<float_t> & tensor,
-                    std::vector<uint64_t> sample_axes,
-                    std::vector<uint64_t> event_axes,
+                    std::vector<int64_t> sample_axes,
+                    std::vector<int64_t> event_axes,
                     int64_t ddof = 0);
 /// Explicit instantiation of cov for float
 extern template Tensor<float> cov<float> (const Tensor<float>&,
-    std::vector<uint64_t>, std::vector<uint64_t>, int64_t);
+    std::vector<int64_t>, std::vector<int64_t>, int64_t);
 
 /**
  * @brief Convenience covariance wrapper using last two axes.
@@ -561,12 +566,13 @@ extern template Tensor<float> cov<float> (const Tensor<float>&, int64_t);
  * @brief Compute the standard deviation of
  * tensor elements (free function wrapper).
  *
- * Functional wrapper around `Tensor::std()`. Reduces the input tensor by
+ * Functional wrapper around `Tensor::stddev()`. Reduces the input tensor by
  * computing the square root of its variance, either across all elements
- * (axis = -1) or independently along a single axis.
+ * (axis = nullopt) or independently along a single axis.
  *
  * @param input Input tensor.
- * @param axis Axis to reduce (-1 = flatten / all elements).
+ * @param axis_opt Axis to reduce along, nullopt = flatten,
+ * otherwise -rank..rank-1.
  * @param ddof Delta degrees of freedom (0 => population std).
  * @return Tensor<float_t> Tensor with the specified axis reduced.
  *
@@ -578,12 +584,12 @@ extern template Tensor<float> cov<float> (const Tensor<float>&, int64_t);
  * in the inputs or during the sqrt computation.
  */
 template<typename float_t>
-Tensor<float_t> std(const Tensor<float_t>& input,
-    int64_t axis = -1,
+Tensor<float_t> stddev(const Tensor<float_t>& input,
+    std::optional<int64_t> axis_opt = std::nullopt,
     int64_t ddof = 0);
-/// Explicit instantiation of std for float
-extern template Tensor<float> std<float>
-    (const Tensor<float>&, int64_t, int64_t);
+/// Explicit instantiation of stddev for float
+extern template Tensor<float> stddev<float>
+    (const Tensor<float>&, std::optional<int64_t>, int64_t);
 
 /**
  * @brief Compute eigenvalues and right eigenvectors for the last two axes.
