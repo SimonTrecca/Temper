@@ -160,7 +160,7 @@ temper::Tensor<float_t> matmul(const temper::Tensor<float_t> & first,
     std::vector<uint64_t> a_full_strides(full_rank, 0);
     std::vector<uint64_t> b_full_strides(full_rank, 0);
 
-    for (uint64_t d = 0; d < out_batch_rank; ++d)
+    for (int64_t d = 0; d < out_batch_rank; ++d)
     {
         a_full_strides[d] = a_batch_broadcast_strides[d];
         b_full_strides[d] = b_batch_broadcast_strides[d];
@@ -181,7 +181,7 @@ temper::Tensor<float_t> matmul(const temper::Tensor<float_t> & first,
         b_batch_only_strides[full_rank - 1] = 0;
     }
 
-    uint64_t res_trailing = 0;
+    int64_t res_trailing = 0;
     bool res_trailing_is_n = false;
     if (a_rank_orig == 1 && b_rank_orig == 1)
     {
@@ -205,8 +205,8 @@ temper::Tensor<float_t> matmul(const temper::Tensor<float_t> & first,
 
     const std::vector<uint64_t> res_strides = result.get_strides();
     const int64_t res_rank = static_cast<int64_t>(res_strides.size());
-    uint64_t res_batch_rank = 0;
-    if (static_cast<uint64_t>(res_rank) > res_trailing)
+    int64_t res_batch_rank = 0;
+    if (res_rank > res_trailing)
     {
         res_batch_rank = res_rank - res_trailing;
     }

@@ -2982,7 +2982,7 @@ Tensor<float_t> Tensor<float_t>::cov(std::vector<int64_t> sample_axes,
 
     std::vector<int64_t> transpose_order;
     transpose_order.reserve(centered.get_rank());
-    for (uint64_t i = 0; i < batch_len; ++i)
+    for (int64_t i = 0; i < batch_len; ++i)
     {
         transpose_order.push_back(i);
     }
@@ -3554,7 +3554,7 @@ uint64_t Tensor<float_t>::coords_to_index
     (const std::vector<uint64_t>& coords) const
 {
     const int64_t rank = this->get_rank();
-    if (coords.size() != rank)
+    if (coords.size() != static_cast<uint64_t>(rank))
     {
         throw std::invalid_argument(R"(Tensor(coords_to_index):
             size mismatch)");

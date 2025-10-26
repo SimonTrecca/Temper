@@ -94,7 +94,7 @@ Tensor<float_t> ppf(const Tensor<float_t>& q,
 	    }
 	    else
 	    {
-	        if (d < ab.a_strides.size())
+	        if (d < static_cast<int64_t>(ab.a_strides.size()))
 	        {
 	            q_bcast[d] = ab.a_strides[d];
 	        }
@@ -103,7 +103,7 @@ Tensor<float_t> ppf(const Tensor<float_t>& q,
 	            q_bcast[d] = 0;
 	        }
 
-	        if (d < ab.b_strides.size())
+	        if (d < static_cast<int64_t>(ab.a_strides.size()))
 	        {
 	            loc_bcast[d] = ab.b_strides[d];
 	        }
