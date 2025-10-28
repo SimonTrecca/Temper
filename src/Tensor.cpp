@@ -3620,6 +3620,42 @@ const Tensor<float_t> Tensor<float_t>::at(uint64_t flat) const
     return Tensor(*this, coords, std::vector<uint64_t>{1});
 }
 
+template<typename float_t>
+Tensor<float_t>::iterator Tensor<float_t>::begin() noexcept
+{
+    return iterator(this, 0);
+}
+
+template<typename float_t>
+Tensor<float_t>::iterator Tensor<float_t>::end() noexcept
+{
+    return iterator(this, get_num_elements());
+}
+
+template<typename float_t>
+Tensor<float_t>::const_iterator Tensor<float_t>::begin() const noexcept
+{
+    return const_iterator(this, 0);
+}
+
+template<typename float_t>
+Tensor<float_t>::const_iterator Tensor<float_t>::end() const noexcept
+{
+    return const_iterator(this, get_num_elements());
+}
+
+template<typename float_t>
+Tensor<float_t>::const_iterator Tensor<float_t>::cbegin() const noexcept
+{
+    return begin();
+}
+
+template<typename float_t>
+Tensor<float_t>::const_iterator Tensor<float_t>::cend() const noexcept
+{
+    return end();
+}
+
 template class Tensor<float>;
 
 } // namespace temper

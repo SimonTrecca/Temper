@@ -69,6 +69,545 @@ private:
 public:
 
     /**
+     * @brief Random-access iterator for mutable traversal of a Tensor.
+     *
+     * The iterator stores a pointer to the owning Tensor and a flat (row-major)
+     * index into the owner's storage. It models a RandomAccessIterator.
+     *
+     * Use these iterators to iterate over tensor elements in flat order.
+     * Comparisons between iterators are meaningful only when they refer
+     * to the same owner Tensor.
+     */
+    class iterator
+    {
+
+    private:
+
+        /// Member pointer to owner Tensor.
+        Tensor * m_p_owner= nullptr;
+
+        /// Member flat index to owner Tensor memory.
+        uint64_t m_flat_idx = 0;
+
+    public:
+
+        using iterator_category = std::random_access_iterator_tag;
+        using value_type        = float_t;
+        using difference_type   = int64_t;
+        using pointer           = void;
+        using reference         = Tensor<float_t>;
+
+        /**
+         * @brief Default-construct a Tensor (empty).
+         *
+         * Creates an empty, uninitialized tensor object.
+         */
+        iterator() = default;
+
+        /**
+         * @brief Construct an iterator referring to an element of a Tensor.
+         *
+         * @param owner Pointer to the owning Tensor (must not be nullptr).
+         * @param flat_idx Flat (row-major) index within the owner.
+         */
+        iterator(Tensor * owner, uint64_t flat_idx) noexcept
+            : m_p_owner(owner),
+              m_flat_idx(flat_idx)
+        {
+            // No-op; everything already set before body.
+        }
+
+        /**
+         * @brief Copy-construct an iterator (defaulted).
+         *
+         * Performs a memberwise copy of the iterator state.
+         */
+        iterator(const iterator &) = default;
+
+        /**
+         * @brief Move-construct an iterator (defaulted).
+         *
+         * Performs a memberwise move of the iterator state.
+         */
+        iterator(iterator &&) noexcept = default;
+
+        /**
+         * @brief Copy-assign an iterator (defaulted).
+         *
+         * Performs a memberwise copy assignment.
+         */
+        iterator & operator=(const iterator &) = default;
+
+        /**
+         * @brief Move-assign an iterator (defaulted).
+         *
+         * Performs a memberwise move assignment.
+         */
+        iterator & operator=(iterator &&) noexcept = default;
+
+        /**
+         * @brief Dereference the iterator.
+         *
+         * Returns a view to the tensor element at the iterator's
+         * current flat index. Forwarding to Tensor::at().
+         *
+         * @return reference View Tensor to the element.
+         *
+         * @throws whatever Tensor::at() may throw if index invalid.
+         */
+        reference operator*() const
+        {
+            return m_p_owner->at(m_flat_idx);
+        }
+
+        /**
+         * @brief Pre-increment: advance to the next element.
+         *
+         * @return iterator& Reference to the incremented iterator.
+         */
+        iterator& operator++()
+        {
+            ++m_flat_idx;
+            return *this;
+        }
+
+        /**
+         * @brief Post-increment: advance but return prior state.
+         *
+         * @return iterator Copy of iterator before increment.
+         */
+        iterator operator++(int)
+        {
+            iterator tmp = *this;
+            ++(*this);
+            return tmp;
+        }
+
+        /**
+         * @brief Pre-decrement: move to the previous element.
+         *
+         * @return iterator& Reference to the decremented iterator.
+         */
+        iterator& operator--()
+        {
+            --m_flat_idx;
+            return *this;
+        }
+
+        /**
+         * @brief Post-decrement: move back but return prior state.
+         *
+         * @return iterator Copy of iterator before decrement.
+         */
+        iterator operator--(int)
+        {
+            iterator tmp = *this;
+            --(*this);
+            return tmp;
+        }
+
+        /**
+         * @brief Advance iterator by n positions (in-place).
+         *
+         * @param n Signed offset to add to the flat index.
+         * @return iterator& Reference to this after modification.
+         */
+        iterator& operator+=(difference_type n)
+        {
+            m_flat_idx += static_cast<uint64_t>(n);
+            return *this;
+        }
+
+        /**
+         * @brief Move iterator back by n positions (in-place).
+         *
+         * @param n Signed offset to subtract from the flat index.
+         * @return iterator& Reference to this after modification.
+         */
+        iterator& operator-=(difference_type n)
+        {
+            m_flat_idx -= static_cast<uint64_t>(n);
+            return *this;
+        }
+
+        /**
+         * @brief Return a new iterator advanced by n positions.
+         *
+         * Does not modify *this.
+         *
+         * @param n Signed offset to add.
+         * @return iterator New iterator at the advanced position.
+         */
+        iterator operator+(difference_type n) const
+        {
+            return iterator( m_p_owner, m_flat_idx + static_cast<uint64_t>(n));
+        }
+
+        /**
+         * @brief Return a new iterator moved back by n positions.
+         *
+         * Does not modify *this.
+         *
+         * @param n Signed offset to subtract.
+         * @return iterator New iterator at the resulting position.
+         */
+        iterator operator-(difference_type n) const
+        {
+            return iterator(m_p_owner, m_flat_idx - static_cast<uint64_t>(n));
+        }
+
+        /**
+         * @brief Compute signed distance between two iterators.
+         * Both iterators refer to the same owner Tensor;
+         * otherwise the result is meaningless.
+         *
+         * Result is (this->m_flat_idx - o.m_flat_idx).
+         *
+         * @param o Other iterator to compare.
+         * @return difference_type Signed distance.
+         */
+        difference_type operator-(const iterator& o) const
+        {
+            return static_cast<difference_type>(
+                static_cast<int64_t>(m_flat_idx) -
+                static_cast<int64_t>(o.m_flat_idx)
+            );
+        }
+
+        /**
+         * @brief Equality comparison.
+         *
+         * True if both iterators refer to the same owner and same flat index.
+         *
+         * @param o Other iterator.
+         * @return true if equal.
+         */
+        bool operator==(const iterator& o) const noexcept
+        {
+            return m_p_owner == o.m_p_owner && m_flat_idx == o.m_flat_idx;
+        }
+
+        /**
+         * @brief Inequality comparison (negation of operator==).
+         *
+         * @param o Other iterator.
+         * @return true if not equal.
+         */
+        bool operator!=(const iterator& o) const noexcept
+        {
+            return !(*this == o);
+        }
+
+        /**
+         * @brief Strict weak ordering based on flat index (same-owner only).
+         *
+         * @param o Other iterator.
+         * @return true if this index < o.index and owners are equal.
+         */
+        bool operator<(const iterator& o) const noexcept
+        {
+            return m_p_owner == o.m_p_owner && m_flat_idx < o.m_flat_idx;
+        }
+
+        /**
+         * @brief Greater-than (implemented in terms of operator<).
+         *
+         * @param o Other iterator.
+         * @return true if this > o.
+         */
+        bool operator>(const iterator& o) const noexcept
+        {
+            return o < *this;
+        }
+
+        /**
+         * @brief Less-than-or-equal (implemented in terms of operator<).
+         *
+         * @param o Other iterator.
+         * @return true if this <= o.
+         */
+        bool operator<=(const iterator& o) const noexcept
+        {
+            return !(o < *this);
+        }
+
+        /**
+         * @brief Greater-than-or-equal (implemented in terms of operator<).
+         *
+         * @param o Other iterator.
+         * @return true if this >= o.
+         */
+        bool operator>=(const iterator& o) const noexcept
+        {
+            return !(*this < o);
+        }
+    };
+
+    /**
+     * @brief Random-access iterator for read-only traversal of a Tensor.
+     *
+     * Similar to iterator but provides const access to the underlying elements.
+     * Models RandomAccessIterator for const access.
+     */
+    class const_iterator
+    {
+
+    private:
+
+        /// Member pointer to const owner Tensor.
+        const Tensor * m_p_owner = nullptr;
+
+        /// Member flat index to owner Tensor memory.
+        uint64_t m_flat_idx = 0;
+
+    public:
+
+        using iterator_category = std::random_access_iterator_tag;
+        using value_type        = float_t;
+        using difference_type   = int64_t;
+        using pointer           = void;
+        using reference         = const Tensor<float_t>;
+
+        /**
+         * @brief Default-construct a const_iterator.
+         *
+         * Constructs a const_iterator in an unspecified (null) state.
+         */
+        const_iterator() = default;
+
+        /**
+         * @brief Construct a const_iterator referring to
+         * an element of a Tensor.
+         *
+         * @param owner Pointer to the owning (const) Tensor.
+         * @param flat_idx Flat (row-major) index within the owner.
+         */
+        const_iterator(const Tensor * owner, uint64_t flat_idx) noexcept
+            : m_p_owner(owner),
+              m_flat_idx(flat_idx)
+        {
+            // No-op; everything already set before body.
+        }
+
+        /**
+         * @brief Construct a const_iterator by copying another
+         * const_iterator (defaulted).
+         *
+         * Performs a memberwise copy of const_iterator state.
+         */
+        const_iterator(const const_iterator &) = default;
+
+        /**
+         * @brief Move-construct a const_iterator (defaulted).
+         *
+         * Performs a memberwise move of const_iterator state.
+         */
+        const_iterator(const_iterator &&) noexcept = default;
+
+        /**
+         * @brief Copy-assign a const_iterator (defaulted).
+         *
+         * Performs a memberwise copy assignment.
+         */
+        const_iterator & operator=(const const_iterator &) = default;
+
+        /**
+         * @brief Move-assign a const_iterator (defaulted).
+         *
+         * Performs a memberwise move assignment.
+         */
+        const_iterator & operator=(const_iterator &&) noexcept = default;
+
+        /**
+         * @brief Dereference the const_iterator.
+         *
+         * Returns a const view to the tensor element at the current index.
+         *
+         * @return reference Const view to the element.
+         *
+         * @throws whatever Tensor::at() may throw if index invalid.
+         */
+        reference operator*() const
+        {
+            return m_p_owner->at(m_flat_idx);
+        }
+
+        /**
+         * @brief Pre-increment.
+         *
+         * @return const_iterator& Reference to the incremented iterator.
+         */
+        const_iterator& operator++()
+        {
+            ++m_flat_idx;
+            return *this;
+        }
+
+        /**
+         * @brief Post-increment.
+         *
+         * @return const_iterator Copy before increment.
+         */
+        const_iterator operator++(int)
+        {
+            const_iterator tmp = *this;
+            ++(*this);
+            return tmp;
+        }
+
+        /**
+         * @brief Pre-decrement.
+         *
+         * @return const_iterator& Reference to the decremented iterator.
+         */
+        const_iterator& operator--()
+        {
+            --m_flat_idx;
+            return *this;
+        }
+
+        /**
+         * @brief Post-decrement.
+         *
+         * @return const_iterator Copy before decrement.
+         */
+        const_iterator operator--(int)
+        {
+            const_iterator tmp = *this;
+            --(*this);
+            return tmp;
+        }
+
+        /**
+         * @brief Advance by n positions (in-place).
+         *
+         * @param n Signed offset.
+         * @return const_iterator& Reference to this.
+         */
+        const_iterator& operator+=(difference_type n)
+        {
+            m_flat_idx += static_cast<uint64_t>(n);
+            return *this;
+        }
+
+        /**
+         * @brief Move back by n positions (in-place).
+         *
+         * @param n Signed offset.
+         * @return const_iterator& Reference to this.
+         */
+        const_iterator& operator-=(difference_type n)
+        {
+            m_flat_idx -= static_cast<uint64_t>(n);
+            return *this;
+        }
+
+         /**
+         * @brief Return a new const_iterator advanced by n positions.
+         *
+         * @param n Signed offset.
+         * @return const_iterator New const_iterator at advanced position.
+         */
+        const_iterator operator+(difference_type n) const
+        {
+            return const_iterator(m_p_owner,
+                m_flat_idx + static_cast<uint64_t>(n));
+        }
+
+        /**
+         * @brief Return a new const_iterator moved back by n positions.
+         *
+         * @param n Signed offset.
+         * @return const_iterator New const_iterator at resulting position.
+         */
+        const_iterator operator-(difference_type n) const
+        {
+            return const_iterator(m_p_owner,
+                m_flat_idx - static_cast<uint64_t>(n));
+        }
+
+        /**
+         * @brief Compute signed distance between two const_iterators.
+         *
+         * @param o Other const_iterator.
+         * @return difference_type Signed distance (this - o).
+         */
+        difference_type operator-(const const_iterator& o) const
+        {
+            return static_cast<difference_type>(
+                static_cast<int64_t>(m_flat_idx) -
+                static_cast<int64_t>(o.m_flat_idx)
+            );
+        }
+
+        /**
+         * @brief Equality comparison.
+         *
+         * @param o Other const_iterator.
+         * @return true if equal.
+         */
+        bool operator==(const const_iterator& o) const noexcept
+        {
+            return m_p_owner == o.m_p_owner && m_flat_idx == o.m_flat_idx;
+        }
+
+        /**
+         * @brief Inequality comparison.
+         *
+         * @param o Other const_iterator.
+         * @return true if not equal.
+         */
+        bool operator!=(const const_iterator& o) const noexcept
+        {
+            return !(*this == o);
+        }
+
+        /**
+         * @brief Less-than comparison (same-owner only).
+         *
+         * @param o Other const_iterator.
+         * @return true if this < o.
+         */
+        bool operator<(const const_iterator& o) const noexcept
+        {
+            return m_p_owner == o.m_p_owner && m_flat_idx < o.m_flat_idx;
+        }
+
+        /**
+         * @brief Greater-than comparison.
+         *
+         * @param o Other const_iterator.
+         * @return true if this > o.
+         */
+        bool operator>(const const_iterator& o) const noexcept
+        {
+            return o < *this;
+        }
+
+        /**
+         * @brief Less-than-or-equal comparison.
+         *
+         * @param o Other const_iterator.
+         * @return true if this <= o.
+         */
+        bool operator<=(const const_iterator& o) const noexcept
+        {
+            return !(o < *this);
+        }
+
+        /**
+         * @brief Greater-than-or-equal comparison.
+         *
+         * @param o Other const_iterator.
+         * @return true if this >= o.
+         */
+        bool operator>=(const const_iterator& o) const noexcept
+        {
+            return !(*this < o);
+        }
+    };
+
+    /**
      * @brief Tensor default class constructor.
      *
      * Set as default.
@@ -929,6 +1468,48 @@ public:
      */
     const Tensor<float_t> at(uint64_t flat) const;
 
+    /**
+     * @brief Implementation: iterator to first element (mutable).
+     *
+     * @return iterator Iterator constructed at flat index 0.
+     */
+    iterator begin() noexcept;
+
+    /**
+     * @brief Implementation: iterator one-past-the-end (mutable).
+     *
+     * @return iterator Iterator constructed at flat index get_num_elements().
+     */
+    iterator end() noexcept;
+
+    /**
+     * @brief Implementation: const_iterator to first element.
+     *
+     * @return const_iterator Const iterator constructed at flat index 0.
+     */
+    const_iterator begin() const noexcept;
+
+    /**
+     * @brief Implementation: const_iterator one-past-the-end.
+     *
+     * @return const_iterator Const iterator constructed at flat
+     * index get_num_elements().
+     */
+    const_iterator end() const noexcept;
+
+    /**
+     * @brief Implementation: cbegin() forwards to begin() const.
+     *
+     * @return const_iterator Const iterator to first element.
+     */
+    const_iterator cbegin() const noexcept;
+
+    /**
+     * @brief Implementation: cend() forwards to end() const.
+     *
+     * @return const_iterator Const iterator one-past-the-end.
+     */
+    const_iterator cend() const noexcept;
 };
 
 /// Explicit instantiation for float

@@ -174,6 +174,423 @@ TEST(TENSOR, compute_strides_overflow_throws)
 }
 
 /**
+ * @test TENSOR.iterator_constructor
+ * @brief Tests that the Tensor::iterator constructor correctly
+ * stores the owner pointer and the flat index.
+ */
+TEST(TENSOR, iterator_constructor)
+{
+    Tensor<float> t({2, 3}, MemoryLocation::DEVICE);
+
+    Tensor<float>::iterator it(&t, 0);
+
+    EXPECT_EQ(it.m_p_owner, &t);
+
+    EXPECT_EQ(it.m_flat_idx, 0);
+
+    Tensor<float>::iterator it_end(&t, 5);
+    EXPECT_EQ(it_end.m_p_owner, &t);
+    EXPECT_EQ(it_end.m_flat_idx, 5);
+}
+
+/**
+ * @test TENSOR.iterator_dereference_returns_view
+ * @brief operator* returns a Tensor view equivalent to at(flat).
+ */
+TEST(TENSOR, iterator_dereference_returns_view)
+{
+    Tensor<float> t({2, 3}, MemoryLocation::DEVICE);
+    std::vector<float> vals = {0,1,2,3,4,5};
+    t = vals;
+
+    Tensor<float>::iterator it(&t, 2);
+    Tensor<float> view = *it;
+
+    EXPECT_EQ(view.get_num_elements(), uint64_t{1});
+    EXPECT_FALSE(view.get_owns_data());
+    EXPECT_EQ(view.m_p_data.get(), t.at(2).m_p_data.get());
+}
+
+/**
+ * @test TENSOR.iterator_pre_post_increment
+ * @brief Tests pre-increment and post-increment semantics.
+ */
+TEST(TENSOR, iterator_pre_post_increment)
+{
+    Tensor<float> t({2, 3}, MemoryLocation::DEVICE);
+    Tensor<float>::iterator it(&t, 1);
+
+    Tensor<float>::iterator old = it++;
+    EXPECT_EQ(old.m_flat_idx, 1);
+    EXPECT_EQ(it.m_flat_idx, 2);
+
+    Tensor<float>::iterator &ref = ++it;
+    EXPECT_EQ(ref.m_flat_idx, 3);
+    EXPECT_EQ(it.m_flat_idx, 3);
+}
+
+/**
+ * @test TENSOR.iterator_pre_post_decrement
+ * @brief Tests pre-decrement and post-decrement semantics.
+ */
+TEST(TENSOR, iterator_pre_post_decrement)
+{
+    Tensor<float> t({3, 3}, MemoryLocation::DEVICE);
+    Tensor<float>::iterator it(&t, 5);
+
+    Tensor<float>::iterator old = it--;
+    EXPECT_EQ(old.m_flat_idx, 5);
+    EXPECT_EQ(it.m_flat_idx, 4);
+
+    Tensor<float>::iterator &ref = --it;
+    EXPECT_EQ(ref.m_flat_idx, 3);
+    EXPECT_EQ(it.m_flat_idx, 3);
+}
+
+/**
+ * @test TENSOR.iterator_arithmetic_and_compound
+ * @brief Tests operator+=, operator-=, operator+ and operator- (iterator+d).
+ */
+TEST(TENSOR, iterator_arithmetic_and_compound)
+{
+    Tensor<float> t({4, 4}, MemoryLocation::DEVICE);
+    Tensor<float>::iterator it(&t, 2);
+
+    it += static_cast<Tensor<float>::iterator::difference_type>(3);
+    EXPECT_EQ(it.m_flat_idx, 5u);
+
+    it -= static_cast<Tensor<float>::iterator::difference_type>(2);
+    EXPECT_EQ(it.m_flat_idx, 3u);
+
+    Tensor<float>::iterator it2 = it +
+        static_cast<Tensor<float>::iterator::difference_type>(4);
+    EXPECT_EQ(it2.m_flat_idx, 7u);
+
+    Tensor<float>::iterator it3 = it2 -
+        static_cast<Tensor<float>::iterator::difference_type>(5);
+    EXPECT_EQ(it3.m_flat_idx, 2u);
+}
+
+/**
+ * @test TENSOR.iterator_difference_and_distance
+ * @brief Tests iterator - iterator and std::distance.
+ */
+TEST(TENSOR, iterator_difference_and_distance)
+{
+    Tensor<float> t({2, 3}, MemoryLocation::DEVICE);
+    auto b = t.begin();
+    auto e = t.end();
+
+    auto diff = e - b;
+    EXPECT_EQ(diff, static_cast<Tensor<float>::iterator::difference_type>(6));
+
+    auto sd = std::distance(b, e);
+    EXPECT_EQ(sd, static_cast<std::ptrdiff_t>(6));
+}
+
+/**
+ * @test TENSOR.iterator_comparisons
+ * @brief Tests relational comparisons between iterators.
+ */
+TEST(TENSOR, iterator_comparisons)
+{
+    Tensor<float> t({3, 3}, MemoryLocation::DEVICE);
+    Tensor<float>::iterator a(&t, 2);
+    Tensor<float>::iterator b(&t, 5);
+
+    EXPECT_TRUE(a < b);
+    EXPECT_TRUE(b > a);
+    EXPECT_TRUE(a <= b);
+    EXPECT_TRUE(b >= a);
+    EXPECT_FALSE(a == b);
+    EXPECT_TRUE(a != b);
+
+    Tensor<float>::iterator c(&t, 2);
+    EXPECT_TRUE(a == c);
+    EXPECT_FALSE(a != c);
+}
+
+/**
+ * @test TENSOR.iterator_roundtrip_arithmetic
+ * @brief Ensure combining arithmetic yields consistent flat index.
+ */
+TEST(TENSOR, iterator_roundtrip_arithmetic)
+{
+    Tensor<float> t({4, 2}, MemoryLocation::DEVICE);
+    Tensor<float>::iterator it(&t, 1);
+
+    auto it_plus = it + 5;
+    it_plus -= 3;
+    it_plus += 1;
+
+    EXPECT_EQ(it_plus.m_flat_idx, 4u);
+
+    auto back = it_plus - 3;
+    EXPECT_EQ(back.m_flat_idx, 1u);
+}
+
+/**
+* @test TENSOR.const_iterator_constructor
+* @brief Tests that the Tensor::const_iterator constructor correctly
+* stores the owner pointer and the flat index.
+*/
+TEST(TENSOR, const_iterator_constructor)
+{
+    Tensor<float> t({2, 3}, MemoryLocation::DEVICE);
+
+    Tensor<float>::const_iterator it(&t, 0);
+
+    EXPECT_EQ(it.m_p_owner, &t);
+    EXPECT_EQ(it.m_flat_idx, 0u);
+
+    Tensor<float>::const_iterator it_end(&t, 5);
+    EXPECT_EQ(it_end.m_p_owner, &t);
+    EXPECT_EQ(it_end.m_flat_idx, 5u);
+}
+
+/**
+* @test TENSOR.const_iterator_dereference_returns_view
+* @brief operator* returns a Tensor view equivalent to at(flat) (const version).
+*/
+TEST(TENSOR, const_iterator_dereference_returns_view)
+{
+    Tensor<float> t({2, 3}, MemoryLocation::DEVICE);
+    std::vector<float> vals = {0,1,2,3,4,5};
+    t = vals;
+
+    Tensor<float>::const_iterator it(&t, 2);
+    Tensor<float> view = *it;
+
+    EXPECT_EQ(view.get_num_elements(), uint64_t{1});
+    EXPECT_FALSE(view.get_owns_data());
+    EXPECT_EQ(view.m_p_data.get(), t.at(2).m_p_data.get());
+}
+
+/**
+* @test TENSOR.const_iterator_pre_post_increment
+* @brief Tests pre-increment and post-increment semantics for const_iterator.
+*/
+TEST(TENSOR, const_iterator_pre_post_increment)
+{
+    Tensor<float> t({2, 3}, MemoryLocation::DEVICE);
+    Tensor<float>::const_iterator it(&t, 1);
+
+    Tensor<float>::const_iterator old = it++;
+    EXPECT_EQ(old.m_flat_idx, 1u);
+    EXPECT_EQ(it.m_flat_idx, 2u);
+
+    Tensor<float>::const_iterator &ref = ++it;
+    EXPECT_EQ(ref.m_flat_idx, 3u);
+    EXPECT_EQ(it.m_flat_idx, 3u);
+}
+
+/**
+* @test TENSOR.const_iterator_pre_post_decrement
+* @brief Tests pre-decrement and post-decrement semantics for const_iterator.
+*/
+TEST(TENSOR, const_iterator_pre_post_decrement)
+{
+    Tensor<float> t({3, 3}, MemoryLocation::DEVICE);
+    Tensor<float>::const_iterator it(&t, 5);
+
+    Tensor<float>::const_iterator old = it--;
+    EXPECT_EQ(old.m_flat_idx, 5u);
+    EXPECT_EQ(it.m_flat_idx, 4u);
+
+    Tensor<float>::const_iterator &ref = --it;
+    EXPECT_EQ(ref.m_flat_idx, 3u);
+    EXPECT_EQ(it.m_flat_idx, 3u);
+}
+
+/**
+* @test TENSOR.const_iterator_arithmetic_and_compound
+* @brief Tests operator+=, operator-=, operator+ and operator- (const_iterator + d).
+*/
+TEST(TENSOR, const_iterator_arithmetic_and_compound)
+{
+    Tensor<float> t({4, 4}, MemoryLocation::DEVICE);
+    Tensor<float>::const_iterator it(&t, 2);
+
+    it += static_cast<Tensor<float>::const_iterator::difference_type>(3);
+    EXPECT_EQ(it.m_flat_idx, 5u);
+
+    it -= static_cast<Tensor<float>::const_iterator::difference_type>(2);
+    EXPECT_EQ(it.m_flat_idx, 3u);
+
+    Tensor<float>::const_iterator it2 = it +
+        static_cast<Tensor<float>::const_iterator::difference_type>(4);
+    EXPECT_EQ(it2.m_flat_idx, 7u);
+
+    Tensor<float>::const_iterator it3 = it2 -
+        static_cast<Tensor<float>::const_iterator::difference_type>(5);
+    EXPECT_EQ(it3.m_flat_idx, 2u);
+}
+
+/**
+* @test TENSOR.const_iterator_difference_and_distance
+* @brief Tests const_iterator - const_iterator and std::distance
+* with const iterators.
+*/
+TEST(TENSOR, const_iterator_difference_and_distance)
+{
+Tensor<float> t({2, 3}, MemoryLocation::DEVICE);
+    const uint64_t total = t.get_num_elements();
+
+    Tensor<float>::const_iterator b(&t, 0);
+    Tensor<float>::const_iterator e(&t, total);
+
+    auto diff = e - b;
+    EXPECT_EQ(diff,
+        static_cast<Tensor<float>::const_iterator::difference_type>(total));
+
+    auto sd = std::distance(b, e);
+    EXPECT_EQ(sd, static_cast<std::ptrdiff_t>(total));
+}
+
+/**
+* @test TENSOR.const_iterator_comparisons
+* @brief Tests relational comparisons between const_iterators.
+*/
+TEST(TENSOR, const_iterator_comparisons)
+{
+    Tensor<float> t({3, 3}, MemoryLocation::DEVICE);
+    Tensor<float>::const_iterator a(&t, 2);
+    Tensor<float>::const_iterator b(&t, 5);
+
+    EXPECT_TRUE(a < b);
+    EXPECT_TRUE(b > a);
+    EXPECT_TRUE(a <= b);
+    EXPECT_TRUE(b >= a);
+    EXPECT_FALSE(a == b);
+    EXPECT_TRUE(a != b);
+
+    Tensor<float>::const_iterator c(&t, 2);
+    EXPECT_TRUE(a == c);
+    EXPECT_FALSE(a != c);
+}
+
+/**
+* @test TENSOR.const_iterator_roundtrip_arithmetic
+* @brief Ensure combining arithmetic yields consistent
+* flat index for const_iterator.
+*/
+TEST(TENSOR, const_iterator_roundtrip_arithmetic)
+{
+    Tensor<float> t({4, 2}, MemoryLocation::DEVICE);
+    Tensor<float>::const_iterator it(&t, 1);
+
+    auto it_plus = it + 5;
+    it_plus -= 3;
+    it_plus += 1;
+
+    EXPECT_EQ(it_plus.m_flat_idx, 4u);
+
+    auto back = it_plus - 3;
+    EXPECT_EQ(back.m_flat_idx, 1u);
+}
+
+/**
+ * @test TENSOR.stdlib_range_based_for_and_read
+ * @brief Range-based for works: iterates all elements and reads values.
+ */
+TEST(TENSOR, stdlib_range_based_for_and_read)
+{
+    Tensor<float> t({2, 3}, MemoryLocation::DEVICE);
+    std::vector<float> expected = {0,1,2,3,4,5};
+    t = expected;
+
+    size_t idx = 0;
+    for (auto view : t) {
+        float val = static_cast<float>(view);
+        EXPECT_FLOAT_EQ(val, expected[idx++]);
+    }
+    EXPECT_EQ(idx, expected.size());
+}
+
+/**
+ * @test TENSOR.stdlib_distance_next_prev_advance
+ * @brief std::distance, std::next, std::prev and std::advance work as expected.
+ */
+TEST(TENSOR, stdlib_distance_next_prev_advance)
+{
+    Tensor<float> t({4, 2}, MemoryLocation::DEVICE);
+    std::vector<float> vals(8);
+    std::iota(vals.begin(), vals.end(), 0.0f);
+    t = vals;
+
+    auto b = t.begin();
+    auto e = t.end();
+    EXPECT_EQ(std::distance(b, e), static_cast<std::ptrdiff_t>(8));
+
+    auto it4 = std::next(b, 4);
+    EXPECT_EQ(it4.m_flat_idx, 4u);
+
+    auto it2 = std::prev(it4, 2);
+    EXPECT_EQ(it2.m_flat_idx, 2u);
+
+    auto it = b;
+    std::advance(it, 6);
+    EXPECT_EQ(it.m_flat_idx, 6u);
+}
+
+/**
+ * @test TENSOR.stdlib_find_transform_accumulate_for_each
+ * @brief std::find_if, std::transform, std::accumulate and std::for_each work.
+ */
+TEST(TENSOR, stdlib_find_transform_accumulate_for_each)
+{
+    Tensor<float> t({2, 3}, MemoryLocation::DEVICE);
+    std::vector<float> vals = { 10.f, 20.f, 30.f, 40.f, 50.f, 60.f };
+    t = vals;
+
+    auto found = std::find_if(t.begin(), t.end(),
+        [](const Tensor<float>& v) { return static_cast<float>(v) == 40.0f; });
+    ASSERT_NE(found, t.end());
+    EXPECT_EQ(found.m_flat_idx, 3u);
+
+    std::vector<float> out(6);
+    std::transform(t.begin(), t.end(), out.begin(),
+        [](const Tensor<float>& v) { return static_cast<float>(v); });
+    EXPECT_EQ(out, vals);
+
+    float sum = std::accumulate(t.begin(), t.end(), 0.0f,
+        [](float acc, const Tensor<float>& v) {
+            return acc + static_cast<float>(v);
+        });
+    float expected_sum = std::accumulate(vals.begin(), vals.end(), 0.0f);
+    EXPECT_FLOAT_EQ(sum, expected_sum);
+
+    float sum2 = 0.0f;
+    std::for_each(t.begin(), t.end(), [&](const Tensor<float>& v){
+        sum2 += static_cast<float>(v);
+    });
+    EXPECT_FLOAT_EQ(sum2, expected_sum);
+}
+
+/**
+ * @test TENSOR.stdlib_count_if_and_find_if_not
+ * @brief std::count_if and std::find_if (negated) work.
+ */
+TEST(TENSOR, stdlib_count_if_and_find_if_not)
+{
+    Tensor<float> t({3, 1}, MemoryLocation::DEVICE);
+    std::vector<float> vals = { 1.f, 5.f, 10.f };
+    t = vals;
+
+    auto greater_than_two = [](const Tensor<float>& v) {
+        return static_cast<float>(v) > 2.0f;
+    };
+
+    auto cnt = std::count_if(t.begin(), t.end(), greater_than_two);
+    EXPECT_EQ(cnt, 2);
+
+    auto it_not_gt2 = std::find_if(t.begin(), t.end(),
+        [&](const Tensor<float>& v){ return !greater_than_two(v); });
+    ASSERT_NE(it_not_gt2, t.end());
+    EXPECT_EQ(it_not_gt2.m_flat_idx, 0u);
+}
+
+/**
  * @test TENSOR.main_constructor_sets_dimensions_and_strides
  * @brief Tests that the Tensor constructor
  * correctly sets dimensions and computes strides.
@@ -8066,6 +8483,108 @@ TEST(TENSOR, at_view_out_of_range)
     EXPECT_NO_THROW(v.at(3));
     EXPECT_THROW(v.at(4), std::out_of_range);
     EXPECT_THROW(v.at(100), std::out_of_range);
+}
+
+/**
+ * @test TENSOR.begin_end_basic
+ * @brief begin() points at flat index 0, end() at get_num_elements(),
+ * and iterating from begin to end visits exactly get_num_elements() steps.
+ */
+TEST(TENSOR, begin_end_basic)
+{
+    Tensor<float> t({2, 3}, MemoryLocation::DEVICE);
+
+    auto b = t.begin();
+    auto e = t.end();
+
+    EXPECT_EQ(b.m_flat_idx, 0u);
+    EXPECT_EQ(e.m_flat_idx, t.get_num_elements());
+
+    size_t cnt = 0;
+    for (auto it = b; it != e; ++it) {
+        ++cnt;
+    }
+    EXPECT_EQ(cnt, t.get_num_elements());
+}
+
+/**
+ * @test TENSOR.begin_end_range_for_equivalence
+ * @brief Range-based for uses begin()/end() and reads values in order.
+ */
+TEST(TENSOR, begin_end_range_for_equivalence)
+{
+    Tensor<float> t({2, 3}, MemoryLocation::DEVICE);
+    std::vector<float> vals(6);
+    std::iota(vals.begin(), vals.end(), 0.0f);
+    t = vals;
+
+    EXPECT_EQ(t.begin().m_flat_idx, 0u);
+    EXPECT_EQ(t.end().m_flat_idx, t.get_num_elements());
+
+    size_t idx = 0;
+    for (auto view : t) {
+        float v = static_cast<float>(view);
+        EXPECT_FLOAT_EQ(v, vals[idx++]);
+    }
+    EXPECT_EQ(idx, vals.size());
+}
+
+/**
+ * @test TENSOR.begin_end_const
+ * @brief const overloads of begin()/end() point at flat index 0
+ * and get_num_elements(), and range-for on a const Tensor
+ * reads values in order.
+ */
+TEST(TENSOR, begin_end_const)
+{
+    Tensor<float> t({2, 3}, MemoryLocation::DEVICE);
+    std::vector<float> vals(6);
+    std::iota(vals.begin(), vals.end(), 0.0f);
+    t = vals;
+
+    // bind to const reference to force const overloads
+    const Tensor<float> &ct = t;
+
+    auto b = ct.begin();
+    auto e = ct.end();
+
+    EXPECT_EQ(b.m_flat_idx, 0u);
+    EXPECT_EQ(e.m_flat_idx, ct.get_num_elements());
+
+    size_t idx = 0;
+    for (auto view : ct) {
+        float v = static_cast<float>(view);
+        EXPECT_FLOAT_EQ(v, vals[idx++]);
+    }
+    EXPECT_EQ(idx, vals.size());
+}
+
+/**
+ * @test TENSOR.cbegin_cend_basic
+ * @brief cbegin()/cend() are equivalent to begin()/end() and iterating
+ * from cbegin to cend visits exactly get_num_elements() elements
+ * in the expected order.
+ */
+TEST(TENSOR, cbegin_cend_basic)
+{
+    Tensor<float> t({2, 3}, MemoryLocation::DEVICE);
+    std::vector<float> vals(6);
+    std::iota(vals.begin(), vals.end(), 0.0f);
+    t = vals;
+
+    auto cb = t.cbegin();
+    auto ce = t.cend();
+
+    EXPECT_EQ(cb.m_flat_idx, t.begin().m_flat_idx);
+    EXPECT_EQ(ce.m_flat_idx, t.end().m_flat_idx);
+
+    size_t idx = 0;
+    for (auto it = cb; it != ce; ++it) {
+        auto view = *it;
+        float v = static_cast<float>(view);
+        EXPECT_FLOAT_EQ(v, vals[idx++]);
+    }
+    EXPECT_EQ(idx, vals.size());
 }
 
 } // namespace Test
