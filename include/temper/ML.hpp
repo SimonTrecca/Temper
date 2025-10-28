@@ -83,8 +83,53 @@ Tensor<float_t> softmax(const Tensor<float_t> & tensor,
 extern template Tensor<float> softmax<float>
     (const Tensor<float>&, std::optional<int64_t>);
 
+/**
+ * @brief Compute categorical cross-entropy between predictions and targets.
+ *
+ * Computes the elementwise categorical cross-entropy loss
+ * by taking -sum(labels * log(probs)) over the class axis.
+ * If @p from_logits is true, @p logits are first converted to
+ * probabilities with softmax along the requested axis.
+ * Supports broadcasting.
+ *
+ * @param logits Input tensor containing either raw scores (logits)
+ * or probabilities depending on @p from_logits.
+ * Must contain at least one element.
+ * @param labels Tensor of target values (one-hot or soft labels).
+ * Must be shape-compatible with the probabilities
+ * (or broadcastable to that shape).
+ * @param axis_opt Axis of the class dimension for @p logits.
+ * nullopt = flatten; otherwise -rank_logits..rank_logits-1.
+ * @param from_logits If true (default) treat @p logits as raw scores and
+ * apply softmax before taking the log. If false, treat
+ * @p logits as probabilities already.
+ * @param reduction_mean If true (default) return the mean scalar loss across
+ * all remaining elements. If false return the loss reduced only along
+ * the class axis (result keeps batch shape).
+ *
+ * @return Tensor<float_t> If @p reduction_mean is true a scalar tensor
+ * containing the mean loss is returned. If false, the returned
+ * tensor has the class axis removed (or is scalar when flattened).
+ *
+ * @throws std::invalid_argument If either input tensor is empty, or if
+ * @p axis_opt is outside the valid range for @p logits.
+ * @throws std::out_of_range If an internal view/index operation exceeds
+ * tensor bounds (propagated from underlying tensor ops).
+ * @throws std::runtime_error If non-finite values (NaN/Inf) are encountered
+ * during computation (for example when taking the logarithm).
+ * @throws std::bad_alloc On memory allocation failure.
+ */
+template<typename float_t>
+Tensor<float_t> cross_entropy(const Tensor<float_t> & logits,
+    const Tensor<float_t> & labels,
+    std::optional<int64_t> axis_opt = std::nullopt,
+    bool from_logits = true,
+    bool reduction_mean = true);
+/// Explicit instantiation of cross_entropy for float
+extern template Tensor<float> cross_entropy<float>
+(const Tensor<float>&, const Tensor<float>&, std::optional<int64_t>, bool, bool);
+
 /* todo
-    cross entropy loss
     mse loss
     regularization penalties
     other loss functions?

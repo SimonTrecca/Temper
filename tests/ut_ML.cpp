@@ -707,5 +707,301 @@ TEST(SOFTMAX, softmax_flatten)
     EXPECT_NEAR(static_cast<double>(host[3]), e3 / S, 1e-6);
 }
 
+/**
+ * @test CROSS_ENTROPY.empty_logits_throws
+ * @brief empty/default logits tensor should throw std::invalid_argument.
+ */
+TEST(CROSS_ENTROPY, empty_logits_throws)
+{
+    Tensor<float> logits;
+    Tensor<float> labels({1,2}, MemoryLocation::DEVICE);
+    labels = std::vector<float>{1.0f, 0.0f};
+
+    EXPECT_THROW(ml::cross_entropy<float>(logits, labels),
+        std::invalid_argument);
+}
+
+/**
+ * @test CROSS_ENTROPY.empty_labels_throws
+ * @brief empty/default labels tensor should throw std::invalid_argument.
+ */
+TEST(CROSS_ENTROPY, empty_labels_throws)
+{
+    Tensor<float> logits({1,2}, MemoryLocation::DEVICE);
+    Tensor<float> labels;
+    logits = std::vector<float>{1.0f, 0.0f};
+
+    EXPECT_THROW(ml::cross_entropy<float>(logits, labels),
+        std::invalid_argument);
+}
+
+/**
+ * @test CROSS_ENTROPY.axis_out_of_range_throws
+ * @brief axis >= rank_logits should throw std::invalid_argument.
+ */
+TEST(CROSS_ENTROPY, axis_out_of_range_throws)
+{
+    Tensor<float> logits({2,2}, MemoryLocation::DEVICE);
+    logits = std::vector<float>{0.0f, 1.0f, 2.0f, 3.0f};
+    Tensor<float> labels({2,2}, MemoryLocation::DEVICE);
+    labels = std::vector<float>{1.0f, 0.0f, 0.0f, 1.0f};
+
+    std::optional<int64_t> axis = 2;
+    EXPECT_THROW(ml::cross_entropy<float>(logits, labels, axis),
+        std::invalid_argument);
+}
+
+/**
+ * @test CROSS_ENTROPY.broadcast_labels_mean
+ * @brief Labels tensor has higher rank than logits: test aligning+broadcasting
+ */
+TEST(CROSS_ENTROPY, broadcast_labels_mean)
+{
+    Tensor<float> logits({2,2}, MemoryLocation::DEVICE);
+    // two rows of zeros
+    logits = std::vector<float>{0.0f, 0.0f,
+                                0.0f, 0.0f};
+
+    Tensor<float> labels({1,2,2}, MemoryLocation::DEVICE);
+    labels = std::vector<float>{
+        1.0f, 0.0f,
+        0.0f, 1.0f
+    };
+
+    std::optional<int64_t> axis = 1;
+    Tensor<float> out = ml::cross_entropy<float>(logits, labels,
+        axis, /*from_logits=*/true, /*reduction_mean=*/true);
+
+    ASSERT_EQ(out.get_num_elements(), 1u);
+    std::vector<float> host(1);
+    g_sycl_queue.memcpy(host.data(),
+        out.m_p_data.get(), sizeof(float) * 1).wait();
+
+    const double expected = -std::log(0.5);
+    EXPECT_NEAR(static_cast<double>(host[0]), expected, 1e-6);
+}
+
+/**
+ * @test CROSS_ENTROPY.broadcast_labels_no_reduction
+ * @brief Same broadcast case as above but with reduction_mean = false.
+ */
+TEST(CROSS_ENTROPY, broadcast_labels_no_reduction)
+{
+    Tensor<float> logits({2,2}, MemoryLocation::DEVICE);
+    logits = std::vector<float>{0.0f, 0.0f,
+                                0.0f, 0.0f};
+
+    Tensor<float> labels({1,2,2}, MemoryLocation::DEVICE);
+    labels = std::vector<float>{
+        1.0f, 0.0f,
+        0.0f, 1.0f
+    };
+
+    std::optional<int64_t> axis = 1;
+    Tensor<float> out = ml::cross_entropy<float>(logits, labels,
+        axis, /*from_logits=*/true, /*reduction_mean=*/false);
+
+    std::vector<uint64_t> expected_shape = {1ull, 2ull, 1ull};
+    ASSERT_EQ(out.get_dimensions(), expected_shape);
+
+    const uint64_t N = out.get_num_elements();
+    ASSERT_EQ(N, 2u);
+    std::vector<float> host(N, -1.0f);
+    g_sycl_queue.memcpy(host.data(),
+        out.m_p_data.get(), sizeof(float) * N).wait();
+
+    const double expected = -std::log(0.5);
+    for (uint64_t i = 0; i < N; ++i)
+    {
+        EXPECT_NEAR(static_cast<double>(host[i]), expected, 1e-6);
+    }
+}
+
+/**
+ * @test CROSS_ENTROPY.from_probs_no_logits
+ * @brief When from_logits=false, `logits` are treated as probabilities.
+ */
+TEST(CROSS_ENTROPY, from_probs_no_logits)
+{
+    Tensor<float> probs({2,2}, MemoryLocation::DEVICE);
+    probs = std::vector<float>{
+        0.9f, 0.1f,
+        0.1f, 0.9f
+    };
+
+    Tensor<float> labels({2,2}, MemoryLocation::DEVICE);
+    labels = std::vector<float>{
+        1.0f, 0.0f,
+        0.0f, 1.0f
+    };
+
+    std::optional<int64_t> axis = 1;
+    Tensor<float> out = ml::cross_entropy<float>(probs, labels, axis,
+        /*from_logits=*/false, /*reduction_mean=*/true);
+
+    ASSERT_EQ(out.get_num_elements(), 1u);
+    std::vector<float> host(1);
+    g_sycl_queue.memcpy(host.data(),
+        out.m_p_data.get(), sizeof(float) * 1).wait();
+
+    const double expected = -std::log(0.9);
+    EXPECT_NEAR(static_cast<double>(host[0]), expected, 1e-6);
+}
+
+/**
+ * @test CROSS_ENTROPY.negative_axis_equals_positive
+ * @brief Negative axis indexing should be handled equivalent to rank-1 indexing.
+ */
+TEST(CROSS_ENTROPY, negative_axis_equals_positive)
+{
+    Tensor<float> logits({2,2}, MemoryLocation::DEVICE);
+    logits = std::vector<float>{0.0f, 0.0f,
+                                0.0f, 0.0f};
+
+    Tensor<float> labels({1,2,2}, MemoryLocation::DEVICE);
+    labels = std::vector<float>{
+        1.0f, 0.0f,
+        0.0f, 1.0f
+    };
+
+    std::optional<int64_t> axis_neg = -1;
+    std::optional<int64_t> axis_pos = 1;
+
+    Tensor<float> out_neg = ml::cross_entropy<float>(logits, labels,
+        axis_neg, /*from_logits=*/true, /*reduction_mean=*/true);
+    Tensor<float> out_pos = ml::cross_entropy<float>(logits, labels,
+        axis_pos, /*from_logits=*/true, /*reduction_mean=*/true);
+
+    std::vector<float> host_neg(1), host_pos(1);
+    g_sycl_queue.memcpy(host_neg.data(),
+        out_neg.m_p_data.get(), sizeof(float) * 1).wait();
+    g_sycl_queue.memcpy(host_pos.data(),
+        out_pos.m_p_data.get(), sizeof(float) * 1).wait();
+
+    EXPECT_NEAR(static_cast<double>(host_neg[0]),
+        static_cast<double>(host_pos[0]), 1e-7);
+}
+
+/**
+ * @test CROSS_ENTROPY.alias_logits_weird_strides_mean
+ * @brief logits provided as an alias view with non-standard strides.
+ */
+TEST(CROSS_ENTROPY, alias_logits_weird_strides_mean)
+{
+    Tensor<float> owner({2,3}, MemoryLocation::DEVICE);
+    std::vector<float> owner_vals = {
+        1.0f, 2.0f, 3.0f,
+        4.0f, 5.0f, 6.0f
+    };
+    owner = owner_vals;
+
+    std::vector<uint64_t> start = {0ull, 0ull};
+    std::vector<uint64_t> dims  = {2ull, 2ull};
+    std::vector<uint64_t> strides = {3ull, 2ull};
+    Tensor<float> logits_alias(owner, start, dims, strides);
+
+    Tensor<float> labels({2,2}, MemoryLocation::DEVICE);
+    labels = std::vector<float>{
+        1.0f, 0.0f,
+        0.0f, 1.0f
+    };
+
+    std::optional<int64_t> axis = 1;
+    Tensor<float> out = ml::cross_entropy<float>(logits_alias, labels,
+        axis, /*from_logits=*/true, /*reduction_mean=*/true);
+
+    ASSERT_EQ(out.get_num_elements(), 1u);
+    std::vector<float> host(1);
+    g_sycl_queue.memcpy(host.data(),
+        out.m_p_data.get(), sizeof(float) * 1).wait();
+
+    const double e1 = std::exp(1.0), e3 = std::exp(3.0);
+    const double loss0 = -std::log(e1 / (e1 + e3));
+
+    const double e4 = std::exp(4.0), e6 = std::exp(6.0);
+    const double loss1 = -std::log(e6 / (e4 + e6));
+
+    const double expected_mean = 0.5 * (loss0 + loss1);
+
+    EXPECT_NEAR(static_cast<double>(host[0]), expected_mean, 1e-6);
+}
+
+
+/**
+ * @test CROSS_ENTROPY.alias_labels_weird_strides_mean
+ * @brief labels provided as an alias view with non-standard strides.
+ */
+TEST(CROSS_ENTROPY, alias_labels_weird_strides_mean)
+{
+    Tensor<float> logits({2,2}, MemoryLocation::DEVICE);
+    logits = std::vector<float>{0.0f, 0.0f, 0.0f, 0.0f};
+
+    Tensor<float> owner_labels({2,3}, MemoryLocation::DEVICE);
+
+    owner_labels = std::vector<float>{
+        1.0f, 0.0f, 9.0f,
+        0.0f, 1.0f, 8.0f
+    };
+
+    std::vector<uint64_t> start = {0ull, 0ull};
+    std::vector<uint64_t> dims  = {2ull, 2ull};
+    std::vector<uint64_t> strides = {3ull, 1ull};
+    Tensor<float> labels_alias(owner_labels, start, dims, strides);
+
+    std::optional<int64_t> axis = 1;
+    Tensor<float> out = ml::cross_entropy<float>(logits, labels_alias,
+        axis, /*from_logits=*/true, /*reduction_mean=*/true);
+
+    ASSERT_EQ(out.get_num_elements(), 1u);
+    std::vector<float> host(1);
+    g_sycl_queue.memcpy(host.data(), out.m_p_data.get(), sizeof(float) * 1).wait();
+
+    const double expected = -std::log(0.5);
+    EXPECT_NEAR(static_cast<double>(host[0]), expected, 1e-6);
+}
+
+/**
+ * @test CROSS_ENTROPY.alias_both_weird_strides
+ * @brief both logits and labels are alias views (non-contiguous); verifies
+ * the function works regardless of underlying owner memory layout.
+ *
+ * Reuse the owners from previous cases to build a combined non-contiguous test.
+ */
+TEST(CROSS_ENTROPY, alias_both_weird_strides)
+{
+    Tensor<float> owner_log({2,3}, MemoryLocation::DEVICE);
+    owner_log = std::vector<float>{
+        1.0f, 2.0f, 3.0f,
+        4.0f, 5.0f, 6.0f
+    };
+    Tensor<float> logits_alias(owner_log, std::vector<uint64_t>{0,0},
+        std::vector<uint64_t>{2,2}, std::vector<uint64_t>{3,2});
+
+    Tensor<float> owner_lbl({2,4}, MemoryLocation::DEVICE);
+    owner_lbl = std::vector<float>{
+        1.0f, 9.0f, 0.0f, 7.0f,
+        0.0f, 8.0f, 1.0f, 6.0f
+    };
+    Tensor<float> labels_alias(owner_lbl, std::vector<uint64_t>{0,0},
+        std::vector<uint64_t>{2,2}, std::vector<uint64_t>{4,2});
+
+    std::optional<int64_t> axis = 1;
+    Tensor<float> out = ml::cross_entropy<float>
+        (logits_alias, labels_alias,
+        axis, /*from_logits=*/true, /*reduction_mean=*/true);
+
+    ASSERT_EQ(out.get_num_elements(), 1u);
+    std::vector<float> host(1);
+    g_sycl_queue.memcpy(host.data(),
+        out.m_p_data.get(), sizeof(float) * 1).wait();
+
+    const double e1 = std::exp(1.0), e3 = std::exp(3.0);
+    const double loss0 = -std::log(e1 / (e1 + e3));
+    const double e4 = std::exp(4.0), e6 = std::exp(6.0);
+    const double loss1 = -std::log(e6 / (e4 + e6));
+    const double expected_mean = 0.5 * (loss0 + loss1);
+
+    EXPECT_NEAR(static_cast<double>(host[0]), expected_mean, 1e-6);
+}
 
 } // namespace Test

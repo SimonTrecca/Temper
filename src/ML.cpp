@@ -275,4 +275,82 @@ Tensor<float_t> softmax(const Tensor<float_t> & tensor,
 template Tensor<float> softmax<float>
     (const Tensor<float>&, std::optional<int64_t>);
 
+template<typename float_t>
+Tensor<float_t> cross_entropy(const Tensor<float_t> & logits,
+    const Tensor<float_t> & labels,
+    std::optional<int64_t> axis_opt,
+    bool from_logits,
+    bool reduction_mean)
+{
+    const std::vector<uint64_t> logits_dims = logits.get_dimensions();
+    const std::vector<uint64_t> label_dims  = labels.get_dimensions();
+
+    const int64_t rank_logits = logits.get_rank();
+    if (rank_logits == 0)
+    {
+        throw std::invalid_argument(R"(cross_entropy:
+            input logits tensor has no elements.)");
+    }
+
+    const int64_t rank_labels = labels.get_rank();
+    if (rank_labels == 0)
+    {
+        throw std::invalid_argument(R"(cross_entropy:
+            labels tensor has no elements.)");
+    }
+    const bool flatten = !axis_opt.has_value();
+
+    const int64_t max_rank = std::max(rank_logits, rank_labels);
+
+    std::optional<int64_t> axis_norm;
+    std::optional<int64_t> axis_aligned;
+
+    if (flatten)
+    {
+        axis_norm = std::nullopt;
+        axis_aligned = std::nullopt;
+    }
+    else
+    {
+        int64_t axis = axis_opt.value();
+        if (axis < 0)
+        {
+            axis += rank_logits;
+        }
+        if (axis < 0 || axis >= rank_logits)
+        {
+            throw std::invalid_argument("cross_entropy: axis out of bounds");
+        }
+        axis_norm = axis;
+
+        axis_aligned = axis + (max_rank - rank_logits);
+    }
+
+    Tensor<float_t> probs;
+    if (from_logits)
+    {
+        probs = softmax(logits, axis_norm);
+    }
+    else
+    {
+        probs = logits;
+    }
+
+    Tensor<float_t> logp = temper::math::log(probs);
+    Tensor<float_t> mul = labels * logp;
+    Tensor<float_t> summed = temper::math::sum(mul, axis_aligned);
+    Tensor<float_t> loss = -summed;
+
+    if (reduction_mean)
+    {
+        return temper::math::mean(loss, std::nullopt);
+    }
+    else
+    {
+        return loss;
+    }
+}
+template Tensor<float> cross_entropy<float>
+(const Tensor<float>&, const Tensor<float>&, std::optional<int64_t>, bool, bool);
+
 } // namespace temper::ml
