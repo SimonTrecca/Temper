@@ -7340,6 +7340,7 @@ TEST(TENSOR, eig_diagonal)
     A = flat;
 
     auto result = A.eig(80, 1e-6f);
+
     Tensor<float> vals = result.first;
 
     std::vector<double> got;

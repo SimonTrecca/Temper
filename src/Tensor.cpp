@@ -3330,30 +3330,53 @@ std::pair<Tensor<float_t>, Tensor<float_t>> Tensor<float_t>::eig
 
         if (iter % 10 == 9)
         {
-            float_t max_off_diag = 0;
-            for (uint64_t b = 0; b < batch_count; ++b)
+            float_t* p_max_off_diag = static_cast<float_t*>(
+                sycl::malloc_device(sizeof(float_t), g_sycl_queue));
+
+            g_sycl_queue.memset(p_max_off_diag, 0, sizeof(float_t)).wait();
+            // Compute maximum off-diagonal value on device.
+            g_sycl_queue.submit([&](sycl::handler& cgh)
             {
-                for (uint64_t i = 0; i < n; ++i)
+                cgh.parallel_for(sycl::range<1>(batch_count * matrix_size),
+                    [=](sycl::id<1> idx)
                 {
-                    for (uint64_t j = 0; j < n; ++j)
+                    uint64_t flat = static_cast<uint64_t>(idx[0]);
+                    uint64_t b = flat / matrix_size;
+                    uint64_t in_mat = flat % matrix_size;
+                    uint64_t i = in_mat / n;
+                    uint64_t j = in_mat % n;
+                    if (i != j)
                     {
-                        if (i != j)
+                        float_t val = sycl::fabs
+                            (p_A[b * matrix_size + i * n + j]);
+
+                        sycl_utils::device_check_nan_and_set
+                            (val, p_error_flag);
+                        sycl_utils::device_check_finite_and_set
+                            (val, p_error_flag);
+
+                        sycl::atomic_ref<float_t,
+                            sycl::memory_order::relaxed,
+                            sycl::memory_scope::device,
+                            sycl::access::address_space::global_space>
+                            atomic_max(*p_max_off_diag);
+
+                        float_t old_max = atomic_max.load();
+                        while (val > old_max &&
+                            !atomic_max.compare_exchange_strong(old_max, val))
                         {
-                            float_t val = std::abs
-                                (p_A[b * matrix_size + i * n + j]);
-                            if (val > max_off_diag) max_off_diag = val;
-                            if (!std::isfinite(val))
-                            {
-                                *p_error_flag = 2;
-                            }
-                            if (std::isnan(val))
-                            {
-                                *p_error_flag = 1;
-                            }
+                            old_max = atomic_max.load();
                         }
                     }
-                }
-            }
+                });
+            }).wait();
+
+            float_t max_off_diag;
+            g_sycl_queue.memcpy(&max_off_diag,
+                p_max_off_diag, sizeof(float_t)).wait();
+
+            sycl::free(p_max_off_diag, g_sycl_queue);
+
             if (max_off_diag < tol) break;
             if (*p_error_flag != 0) break;
         }

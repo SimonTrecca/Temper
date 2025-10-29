@@ -115,7 +115,6 @@ inline void device_check_divzero_and_set(float_t b_val, int32_t* p_err)
     }
 }
 
-
 /**
  * @brief Partition helper for merge-path parallel merge.
  *
