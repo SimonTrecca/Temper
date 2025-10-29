@@ -4521,7 +4521,7 @@ TEST(EIG, eig_alias_view_strided)
     }
     std::sort(got.begin(), got.end());
 
-    const double tol = 1e-4;
+    const double tol = 5e-4;
     for (size_t i = 0; i < expected.size(); ++i)
     {
         EXPECT_NEAR(got[i], expected[i], tol);

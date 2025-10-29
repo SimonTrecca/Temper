@@ -1218,24 +1218,36 @@ public:
         int64_t ddof = 0) const;
 
     /**
-     * @brief Compute eigenvalues and right eigenvectors for the last two axes.
+     * @brief Compute the eigenvalues and right eigenvectors of the last
+     * two axes using a batched Jacobi method.
      *
-     * For each square matrix in the input shaped `{B..., N, N}` this routine
-     * computes up to `N` eigenpairs using power-iteration + rank-1 deflation.
+     * This routine interprets the last two dimensions of the tensor as a
+     * stack of square matrices `{B..., N, N}` and applies a Jacobi
+     * (Givens-rotation) diagonalization to each of them in parallel. It
+     * produces all `N` eigenvalues and a full orthonormal set of right
+     * eigenvectors for every matrix in the batch.
      *
-     * @param max_iters Maximum iterations per power iteration (default 100).
-     * @param tol       Convergence tolerance on the L2 iterate difference
-     *                  (default 1e-4).
-     * @return std::pair<Tensor<float_t>,Tensor<float_t>>
-     *         First: eigenvalues tensor of shape `{B..., N}`.
-     *         Second: right eigenvectors tensor of shape `{B..., N, N}`
-     *         (vectors stored as columns).
+     * The diagonalization is iterative. For each sweep over the matrix
+     * entries, a sequence of Givens rotations progressively reduces the
+     * off–diagonal elements. The process stops when either the largest
+     * off–diagonal magnitude falls below `tol`, or `max_iters` sweeps
+     * have completed, or a numerical/device error is detected.
      *
-     * @throws std::invalid_argument if rank < 2 or last two dims are not equal.
-     * @throws std::runtime_error if random init vectors are zero, left/right
-     *         inner product is zero, or numerical/device errors occur.
+     * @param max_iters Maximum number of full Jacobi sweeps to attempt.
+     * @param tol Convergence threshold for the largest off–diagonal entry.
+     * @return std::pair<Tensor<float_t>, Tensor<float_t>>
+     *     First:  eigenvalues of shape `{B..., N}`.
+     *     Second: eigenvectors of shape `{B..., N, N}`, stored by
+     *     columns.
+     *
+     * @throws std::invalid_argument
+     *     If `rank < 2` or the last two dimensions are not square.
+     * @throws std::runtime_error
+     *     If NaN or non-finite values are detected in the input or
+     *     during computation, or a division by zero is encountered
+     *     when forming Givens coefficients.
      */
-    std::pair<Tensor<float_t>, Tensor<float_t>> eig(uint64_t max_iters = 100,
+    std::pair<Tensor<float_t>, Tensor<float_t>> eig(uint64_t max_iters = 1000,
         float_t tol = static_cast<float_t>(1e-4)) const;
 
     /**

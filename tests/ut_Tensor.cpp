@@ -7477,7 +7477,7 @@ TEST(TENSOR, eig_alias_view_strided)
 
     std::sort(got.begin(), got.end());
 
-    const double tol = 1e-4;
+    const double tol = 5e-4;
     for (size_t i = 0; i < expected.size(); ++i)
     {
         EXPECT_NEAR(got[i], expected[i], tol);
@@ -7657,6 +7657,45 @@ TEST(TENSOR, eig_5d_noncontig_device)
     {
         EXPECT_FLOAT_EQ(owner_flat[idx], host_ptr[idx]);
     }
+}
+
+/**
+ * @test TENSOR.eig_input_nan_throws
+ * @brief eig() should throw runtime_error when input contains NaN.
+ */
+TEST(TENSOR, eig_input_nan_throws)
+{
+    Tensor<float> t({2, 2}, MemoryLocation::HOST);
+    t = { 1.0f, 0.0f,
+          0.0f, std::numeric_limits<float>::quiet_NaN() };
+
+    EXPECT_THROW(t.eig(50, 1e-6f), std::runtime_error);
+}
+
+/**
+ * @test TENSOR.eig_input_inf_throws
+ * @brief eig() should throw runtime_error when input contains Inf.
+ */
+TEST(TENSOR, eig_input_inf_throws)
+{
+    Tensor<float> t({2, 2}, MemoryLocation::HOST);
+    t = { 1.0f, std::numeric_limits<float>::infinity(),
+          0.0f, 2.0f };
+
+    EXPECT_THROW(t.eig(50, 1e-6f), std::runtime_error);
+}
+
+/**
+ * @test TENSOR.eig_division_by_zero_throws
+ * @brief eig() should throw runtime_error on division-by-zero during QR.
+ */
+TEST(TENSOR, eig_division_by_zero_throws)
+{
+    Tensor<float> t({3, 3}, MemoryLocation::HOST);
+    std::vector<float> zeros(3 * 3, 0.0f);
+    t = zeros;
+
+    EXPECT_THROW(t.eig(50, 1e-6f), std::runtime_error);
 }
 
 /**

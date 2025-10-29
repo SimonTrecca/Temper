@@ -3122,6 +3122,12 @@ std::pair<Tensor<float_t>, Tensor<float_t>> Tensor<float_t>::eig
         batch_shape.push_back(shape[i]);
     }
 
+    uint64_t batch_count = 1;
+    for (uint64_t d : batch_shape)
+    {
+        batch_count *= d;
+    }
+
     std::vector<uint64_t> eigvals_shape = batch_shape;
     eigvals_shape.push_back(n);
     std::vector<uint64_t> eigvecs_shape = batch_shape;
@@ -3132,175 +3138,285 @@ std::pair<Tensor<float_t>, Tensor<float_t>> Tensor<float_t>::eig
     Tensor<float_t> eigvals_tensor(eigvals_shape, res_loc);
     Tensor<float_t> eigvecs_tensor(eigvecs_shape, res_loc);
 
-    uint64_t batch_count = 1;
-    for (uint64_t d : batch_shape)
-    {
-        batch_count *= d;
-    }
+    const uint64_t matrix_size = n * n;
+    const uint64_t total_matrix_elems = batch_count * matrix_size;
 
-    std::vector<uint64_t> batch_strides(batch_shape.size(), 1);
+    std::vector<uint64_t> batch_divisors;
     if (!batch_shape.empty())
     {
-        for (int i = static_cast<int>(batch_shape.size()) - 2; i >= 0; --i)
+        batch_divisors = utils::compute_divisors(batch_shape);
+    }
+
+    std::vector<uint64_t> batch_strides;
+    for (int64_t i = 0; i < static_cast<int64_t>(batch_shape.size()); ++i)
+    {
+        batch_strides.push_back(m_strides[i]);
+    }
+
+    float_t* p_A = nullptr;
+    float_t* p_Q = nullptr;
+    float_t* p_temp = nullptr;
+    int32_t* p_error_flag = nullptr;
+    uint64_t* p_batch_divisors = nullptr;
+    uint64_t* p_batch_strides = nullptr;
+
+    p_A = static_cast<float_t*>(sycl::malloc_device(
+        sizeof(float_t) * total_matrix_elems, g_sycl_queue));
+    p_Q = static_cast<float_t*>(sycl::malloc_device(
+        sizeof(float_t) * total_matrix_elems, g_sycl_queue));
+    p_temp = static_cast<float_t*>(sycl::malloc_device(
+        sizeof(float_t) * total_matrix_elems, g_sycl_queue));
+
+    p_error_flag = static_cast<int32_t*>(
+        sycl::malloc_shared(sizeof(int32_t), g_sycl_queue));
+
+    if (!batch_shape.empty())
+    {
+        p_batch_divisors = static_cast<uint64_t*>( sycl::malloc_device
+            (sizeof(uint64_t) * batch_shape.size(), g_sycl_queue));
+        p_batch_strides = static_cast<uint64_t*>(sycl::malloc_device
+            (sizeof(uint64_t) * batch_shape.size(), g_sycl_queue));
+    }
+
+    if (!p_A || !p_Q || !p_temp || !p_error_flag ||
+        (!batch_shape.empty() && (!p_batch_divisors || !p_batch_strides)))
+    {
+        sycl::free(p_A, g_sycl_queue);
+        sycl::free(p_Q, g_sycl_queue);
+        sycl::free(p_temp, g_sycl_queue);
+        sycl::free(p_error_flag, g_sycl_queue);
+        sycl::free(p_batch_divisors, g_sycl_queue);
+        sycl::free(p_batch_strides, g_sycl_queue);
+        throw std::bad_alloc();
+    }
+
+    *p_error_flag = 0;
+
+    const float_t* p_src = get_data();
+    const uint64_t stride_row = m_strides[rank - 2];
+    const uint64_t stride_col = m_strides[rank - 1];
+    const int64_t batch_rank = static_cast<int64_t>(batch_shape.size());
+
+    if (!batch_shape.empty())
+    {
+        g_sycl_queue.memcpy(p_batch_divisors, batch_divisors.data(),
+                            sizeof(uint64_t) * batch_rank).wait();
+        g_sycl_queue.memcpy(p_batch_strides, batch_strides.data(),
+                            sizeof(uint64_t) * batch_rank).wait();
+    }
+
+    g_sycl_queue.submit([&](sycl::handler& cgh)
+    {
+        cgh.parallel_for(sycl::range<1>(total_matrix_elems),
+            [=](sycl::id<1> idx)
         {
-            batch_strides[i] = batch_strides[i + 1] * batch_shape[i + 1];
+            uint64_t flat = static_cast<uint64_t>(idx[0]);
+            uint64_t batch_idx = flat / matrix_size;
+            uint64_t in_mat = flat % matrix_size;
+            uint64_t row = in_mat / n;
+            uint64_t col = in_mat % n;
+            uint64_t batch_offset = 0;
+            if (batch_rank > 0)
+            {
+                batch_offset = sycl_utils::idx_of(batch_idx,
+                    p_batch_divisors, p_batch_strides, batch_rank);
+            }
+            uint64_t src_offset = batch_offset +
+                row * stride_row + col * stride_col;
+            float_t v = p_src[src_offset];
+
+            sycl_utils::device_check_nan_and_set(v, p_error_flag);
+            sycl_utils::device_check_finite_and_set(v, p_error_flag);
+
+            p_A[flat] = v;
+        });
+    }).wait();
+
+    g_sycl_queue.submit([&](sycl::handler& cgh)
+    {
+        cgh.parallel_for(sycl::range<1>(total_matrix_elems),
+            [=](sycl::id<1> idx)
+        {
+            uint64_t flat = static_cast<uint64_t>(idx[0]);
+            uint64_t in_mat = flat % matrix_size;
+            uint64_t row = in_mat / n;
+            uint64_t col = in_mat % n;
+            if (row == col)
+            {
+                // Diagonal entry of identity.
+                p_Q[flat] = float_t{1};
+            }
+            else
+            {
+                // Off-diagonal entry of identity.
+                p_Q[flat] = float_t{0};
+            }
+        });
+    }).wait();
+
+    for (uint64_t iter = 0; iter < max_iters; ++iter)
+    {
+        for (uint64_t col = 0; col < n - 1; ++col)
+        {
+            for (uint64_t row = col + 1; row < n; ++row)
+            {
+                g_sycl_queue.submit([&](sycl::handler& cgh)
+                {
+                    cgh.parallel_for(sycl::range<1>(batch_count),
+                        [=](sycl::id<1> b_id)
+                    {
+                        uint64_t b = static_cast<uint64_t>(b_id[0]);
+                        uint64_t base = b * matrix_size;
+                        float_t a = p_A[base + col * n + col];
+                        float_t b_val = p_A[base + row * n + col];
+
+                        float_t r = sycl::sqrt(a * a + b_val * b_val);
+
+                        sycl_utils::device_check_divzero_and_set
+                            (r, p_error_flag);
+                        if (r == float_t{0}) return;
+
+                        float_t c = a / r;
+                        float_t s = -b_val / r;
+
+                        for (uint64_t k = col; k < n; ++k)
+                        {
+                            float_t a_ck = p_A[base + col * n + k];
+                            float_t a_rk = p_A[base + row * n + k];
+                            float_t new_ck = c * a_ck - s * a_rk;
+                            float_t new_rk = s * a_ck + c * a_rk;
+                            p_A[base + col * n + k] = new_ck;
+                            p_A[base + row * n + k] = new_rk;
+                        }
+
+                        for (uint64_t k = 0; k < n; ++k)
+                        {
+                            float_t q_kc = p_Q[base + k * n + col];
+                            float_t q_kr = p_Q[base + k * n + row];
+                            float_t new_qc = c * q_kc - s * q_kr;
+                            float_t new_qr = s * q_kc + c * q_kr;
+                            p_Q[base + k * n + col] = new_qc;
+                            p_Q[base + k * n + row] = new_qr;
+                        }
+                    });
+                }).wait();
+            }
+        }
+
+        g_sycl_queue.submit([&](sycl::handler& cgh)
+        {
+            cgh.parallel_for(sycl::range<1>(total_matrix_elems),
+                [=](sycl::id<1> idx)
+            {
+                uint64_t flat = static_cast<uint64_t>(idx[0]);
+                uint64_t b = flat / matrix_size;
+                uint64_t in_mat = flat % matrix_size;
+                uint64_t row = in_mat / n;
+                uint64_t col = in_mat % n;
+                uint64_t base = b * matrix_size;
+
+                float_t sum = float_t{0};
+                for (uint64_t k = 0; k < n; ++k)
+                {
+                    sum += p_A[base + row * n + k] * p_Q[base + col * n + k];
+                }
+                sycl_utils::device_check_finite_and_set(sum, p_error_flag);
+                p_temp[flat] = sum;
+            });
+        }).wait();
+
+        g_sycl_queue.memcpy(p_A, p_temp,
+            sizeof(float_t) * total_matrix_elems).wait();
+
+        if (iter % 10 == 9)
+        {
+            float_t max_off_diag = 0;
+            for (uint64_t b = 0; b < batch_count; ++b)
+            {
+                for (uint64_t i = 0; i < n; ++i)
+                {
+                    for (uint64_t j = 0; j < n; ++j)
+                    {
+                        if (i != j)
+                        {
+                            float_t val = std::abs
+                                (p_A[b * matrix_size + i * n + j]);
+                            if (val > max_off_diag) max_off_diag = val;
+                            if (!std::isfinite(val))
+                            {
+                                *p_error_flag = 2;
+                            }
+                            if (std::isnan(val))
+                            {
+                                *p_error_flag = 1;
+                            }
+                        }
+                    }
+                }
+            }
+            if (max_off_diag < tol) break;
+            if (*p_error_flag != 0) break;
         }
     }
 
-    for (uint64_t b = 0; b < batch_count; ++b)
+    float_t* p_eigvals = eigvals_tensor.get_data();
+    float_t* p_eigvecs = eigvecs_tensor.get_data();
+
+    g_sycl_queue.submit([&](sycl::handler& cgh)
     {
-        std::vector<uint64_t> start_indices(rank, 0);
-        uint64_t rem = b;
-        for (size_t k = 0; k < batch_shape.size(); ++k)
+        cgh.parallel_for(sycl::range<1>(batch_count * n),
+            [=](sycl::id<1> idx)
         {
-            uint64_t idx = rem / batch_strides[k];
-            rem = rem % batch_strides[k];
-            start_indices[k] = idx;
-        }
-        start_indices[rank - 2] = 0;
-        start_indices[rank - 1] = 0;
+            uint64_t flat = static_cast<uint64_t>(idx[0]);
+            uint64_t b = flat / n;
+            uint64_t i = flat % n;
+            float_t v = p_A[b * matrix_size + i * n + i];
+            sycl_utils::device_check_nan_and_set(v, p_error_flag);
+            sycl_utils::device_check_finite_and_set(v, p_error_flag);
+            p_eigvals[flat] = v;
+        });
+    }).wait();
 
-        Tensor<float_t> A = Tensor<float_t>
-            (*this, start_indices, std::vector<uint64_t>({ n, n }));
-
-        std::vector<float_t> eigvals; eigvals.reserve(n);
-        std::vector<Tensor<float_t>> eigvecs; eigvecs.reserve(n);
-
-        Tensor<float_t> eigvecs_mat({n, n}, res_loc);
-        Tensor<float_t> eigvals_vec({n}, res_loc);
-
-        // Iterate to find n eigenpairs by deflation.
-        for (uint64_t j = 0; j < n; ++j)
+    g_sycl_queue.submit([&](sycl::handler& cgh)
+    {
+        cgh.parallel_for(sycl::range<1>(total_matrix_elems),
+            [=](sycl::id<1> idx)
         {
-            Tensor<float_t> v = stats::randn<float_t>({n});
+            uint64_t flat = static_cast<uint64_t>(idx[0]);
+            float_t v = p_Q[flat];
+            sycl_utils::device_check_nan_and_set(v, p_error_flag);
+            sycl_utils::device_check_finite_and_set(v, p_error_flag);
+            p_eigvecs[flat] = v;
+        });
+    }).wait();
 
-            float_t nv2 = (v * v).sum();
-            if (nv2 == static_cast<float_t>(0))
-            {
-                throw std::runtime_error(R"(Tensor(eig):
-                    initial vector is zero.)");
-            }
-            v = v / Tensor<float_t>(std::sqrt(nv2));
+    int32_t err = *p_error_flag;
+    sycl::free(p_A, g_sycl_queue);
+    sycl::free(p_Q, g_sycl_queue);
+    sycl::free(p_temp, g_sycl_queue);
+    sycl::free(p_error_flag, g_sycl_queue);
+    sycl::free(p_batch_divisors, g_sycl_queue);
+    sycl::free(p_batch_strides, g_sycl_queue);
 
-            for (uint64_t iter = 0; iter < max_iters; ++iter)
-            {
-                Tensor<float_t> w = math::matmul(A, v);
-
-                float_t nw2 = (w * w).sum();
-                if (nw2 == static_cast<float_t>(0))
-                {
-                    break;
-                }
-                Tensor<float_t> v_next = w / Tensor<float_t>(std::sqrt(nw2));
-
-                Tensor<float_t> diff = v_next - v;
-                float_t diff2 = (diff * diff).sum();
-                if (std::sqrt(diff2) < tol)
-                {
-                    v = v_next;
-                    break;
-                }
-                v = v_next;
-            }
-
-            Tensor<float_t> AT = A.transpose();
-            Tensor<float_t> u = stats::randn<float_t>({n});
-            float_t nu2 = (u * u).sum();
-            if (nu2 == static_cast<float_t>(0))
-            {
-                throw std::runtime_error(R"(Tensor(eig):
-                    initial left vector is zero.)");
-            }
-            u = u / Tensor<float_t>(std::sqrt(nu2));
-
-            for (uint64_t iter = 0; iter < max_iters; ++iter)
-            {
-                Tensor<float_t> w = math::matmul(AT, u);
-
-                float_t nw2 = (w * w).sum();
-                if (nw2 == static_cast<float_t>(0))
-                {
-                    break;
-                }
-                Tensor<float_t> u_next = w / Tensor<float_t>(std::sqrt(nw2));
-
-                Tensor<float_t> diff = u_next - u;
-                float_t diff2 = (diff * diff).sum();
-                if (std::sqrt(diff2) < tol)
-                {
-                    u = u_next;
-                    break;
-                }
-                u = u_next;
-            }
-
-            float_t uv = (u * v).sum();
-            if (uv == static_cast<float_t>(0))
-            {
-                throw std::runtime_error(R"(Tensor(eig):
-                    left/right inner product is zero; cannot deflate.)");
-            }
-            u = u / Tensor<float_t>(uv);
-
-            Tensor<float_t> Av = math::matmul(A, v);
-            float_t lambda = (u * Av).sum();
-
-            eigvecs.push_back(v);
-            eigvals.push_back(lambda);
-
-            std::vector<uint64_t> start_col_idx(2);
-            start_col_idx[0] = 0;
-            start_col_idx[1] = j;
-            std::vector<uint64_t> view_shape = { n, 1 };
-            Tensor<float_t> dst_col_view(eigvecs_mat, start_col_idx, view_shape);
-            Tensor<float_t> src_col = v;
-            src_col.reshape({ n, 1 });
-            dst_col_view.copy_from(src_col);
-
-            Tensor<float_t> v_col = v; v_col.reshape({ n, 1 });
-            Tensor<float_t> u_row = u; u_row.reshape({ 1, n });
-            Tensor<float_t> outer = math::matmul(v_col, u_row);
-            Tensor<float_t> scaled = outer * Tensor<float_t>(lambda);
-            A = A - scaled;
-        }
-
-        eigvals_vec = eigvals;
-
-        // Write eigvals_vec into eigvals_tensor at the batch location.
+    if (err != 0)
+    {
+        if (err == 1)
         {
-            std::vector<uint64_t> out_start;
-            out_start.reserve(batch_shape.size() + 1);
-            for (size_t i = 0; i < batch_shape.size(); ++i)
-            {
-                out_start.push_back(start_indices[i]);
-            }
-            out_start.push_back(0);
-            std::vector<uint64_t> view_shape(out_start.size(), 1);
-            view_shape.back() = n;
-            Tensor<float_t> dst_vals_view(eigvals_tensor, out_start, view_shape);
-            Tensor<float_t> src_vals = eigvals_vec;
-            src_vals.reshape(view_shape);
-            dst_vals_view.copy_from(src_vals);
+            throw std::runtime_error(R"(Tensor(eig):
+                NaN detected in inputs or during computation.)");
         }
-
-        // Write eigvecs_mat into eigvecs_tensor at the batch location.
+        if (err == 2)
         {
-            std::vector<uint64_t> out_start;
-            out_start.reserve(batch_shape.size() + 2);
-            for (size_t i = 0; i < batch_shape.size(); ++i)
-            {
-                out_start.push_back(start_indices[i]);
-            }
-            out_start.push_back(0);
-            out_start.push_back(0);
-            std::vector<uint64_t> view_shape(out_start.size(), 1);
-            view_shape[out_start.size() - 2] = n;
-            view_shape[out_start.size() - 1] = n;
-            Tensor<float_t> dst_vecs_view(eigvecs_tensor, out_start, view_shape);
-            Tensor<float_t> src_vecs = eigvecs_mat;
-            src_vecs.reshape(view_shape);
-            dst_vecs_view.copy_from(src_vecs);
+            throw std::runtime_error(R"(Tensor(eig):
+                non-finite result (overflow or Inf) during computation.)");
         }
+        if (err == 3)
+        {
+            throw std::runtime_error(R"(Tensor(eig):
+                division by zero detected during computation.)");
+        }
+        throw std::runtime_error(R"(Tensor(eig):
+            numeric error during eigendecomposition.)");
     }
 
     return std::make_pair(eigvals_tensor, eigvecs_tensor);
