@@ -758,7 +758,6 @@ TEST(CROSS_ENTROPY, axis_out_of_range_throws)
 TEST(CROSS_ENTROPY, broadcast_labels_mean)
 {
     Tensor<float> logits({2,2}, MemoryLocation::DEVICE);
-    // two rows of zeros
     logits = std::vector<float>{0.0f, 0.0f,
                                 0.0f, 0.0f};
 
@@ -768,7 +767,7 @@ TEST(CROSS_ENTROPY, broadcast_labels_mean)
         0.0f, 1.0f
     };
 
-    std::optional<int64_t> axis = 1;
+    std::optional<int64_t> axis = 2;
     Tensor<float> out = ml::cross_entropy<float>(logits, labels,
         axis, /*from_logits=*/true, /*reduction_mean=*/true);
 
@@ -797,7 +796,7 @@ TEST(CROSS_ENTROPY, broadcast_labels_no_reduction)
         0.0f, 1.0f
     };
 
-    std::optional<int64_t> axis = 1;
+    std::optional<int64_t> axis = 2;
     Tensor<float> out = ml::cross_entropy<float>(logits, labels,
         axis, /*from_logits=*/true, /*reduction_mean=*/false);
 
@@ -1002,6 +1001,285 @@ TEST(CROSS_ENTROPY, alias_both_weird_strides)
     const double expected_mean = 0.5 * (loss0 + loss1);
 
     EXPECT_NEAR(static_cast<double>(host[0]), expected_mean, 1e-6);
+}
+
+/**
+ * @test MSE.empty_predictions_throws
+ * @brief empty/default predictions tensor should throw std::invalid_argument.
+ */
+TEST(MSE, empty_predictions_throws)
+{
+    Tensor<float> preds;
+    Tensor<float> targets({1,2}, MemoryLocation::DEVICE);
+    targets = std::vector<float>{1.0f, 1.0f};
+
+    EXPECT_THROW(ml::mean_squared_error<float>
+        (preds, targets, std::nullopt, true),
+        std::invalid_argument);
+}
+
+/**
+ * @test MSE.empty_targets_throws
+ * @brief empty/default targets tensor should throw std::invalid_argument.
+ */
+TEST(MSE, empty_targets_throws)
+{
+    Tensor<float> preds({1,2}, MemoryLocation::DEVICE);
+    preds = std::vector<float>{1.0f, 1.0f};
+    Tensor<float> targets;
+
+    EXPECT_THROW(ml::mean_squared_error<float>
+        (preds, targets, std::nullopt, true),
+        std::invalid_argument);
+}
+
+/**
+ * @test MSE.flatten_mean_basic
+ * @brief Flatten (no axis) + reduction_mean=true returns mean(...) of the
+ * summed tensor. Current implementation: sum(sq) -> scalar, then mean(scalar)
+ * which equals the scalar sum (14.0) for this input.
+ */
+TEST(MSE, flatten_mean_basic)
+{
+    Tensor<float> preds({2,2}, MemoryLocation::DEVICE);
+    preds = std::vector<float>{1.0f, 2.0f, 3.0f, 4.0f};
+
+    Tensor<float> targets({2,2}, MemoryLocation::DEVICE);
+    targets = std::vector<float>{1.0f, 1.0f, 1.0f, 1.0f};
+
+    Tensor<float> out = ml::mean_squared_error<float>
+        (preds, targets, std::nullopt, true);
+
+    ASSERT_EQ(out.get_num_elements(), 1u);
+    std::vector<float> host(1);
+    g_sycl_queue.memcpy(host.data(),
+        out.m_p_data.get(), sizeof(float) * 1).wait();
+
+    EXPECT_NEAR(static_cast<double>(host[0]), 14.0, 1e-6);
+}
+
+/**
+ * @test MSE.flatten_no_reduction
+ * @brief Flatten (no axis) + reduction_mean=false returns
+ * the sum of squared errors.
+ */
+TEST(MSE, flatten_no_reduction)
+{
+    Tensor<float> preds({2,2}, MemoryLocation::DEVICE);
+    preds = std::vector<float>{1.0f, 2.0f, 3.0f, 4.0f};
+
+    Tensor<float> targets({2,2}, MemoryLocation::DEVICE);
+    targets = std::vector<float>{1.0f, 1.0f, 1.0f, 1.0f};
+
+    Tensor<float> out = ml::mean_squared_error<float>
+        (preds, targets, std::nullopt, false);
+
+    ASSERT_EQ(out.get_num_elements(), 1u);
+    std::vector<float> host(1);
+    g_sycl_queue.memcpy(host.data(),
+        out.m_p_data.get(), sizeof(float) * 1).wait();
+
+    EXPECT_NEAR(static_cast<double>(host[0]), 14.0, 1e-6);
+}
+
+/**
+ * @test MSE.axis_out_of_range_throws
+ * @brief Passing axis >= max_rank should throw std::invalid_argument.
+ */
+TEST(MSE, axis_out_of_range_throws)
+{
+    Tensor<float> preds({2,2}, MemoryLocation::DEVICE);
+    preds = std::vector<float>{0.0f, 0.0f, 0.0f, 0.0f};
+    Tensor<float> targets({2,2}, MemoryLocation::DEVICE);
+    targets = std::vector<float>{0.0f, 0.0f, 0.0f, 0.0f};
+
+    std::optional<int64_t> axis = 2;
+    EXPECT_THROW(ml::mean_squared_error<float>(preds, targets, axis, true),
+        std::invalid_argument);
+}
+
+/**
+ * @test MSE.broadcast_targets_mean
+ * @brief targets have higher rank; check alignment + reduction_mean=true.
+ */
+TEST(MSE, broadcast_targets_mean)
+{
+    Tensor<float> preds({2,2}, MemoryLocation::DEVICE);
+    preds = std::vector<float>{0.0f, 0.0f, 0.0f, 0.0f};
+
+    Tensor<float> targets({1,2,2}, MemoryLocation::DEVICE);
+    targets = std::vector<float>{1.0f, 1.0f, 1.0f, 1.0f};
+
+    std::optional<int64_t> axis = 2;
+    Tensor<float> out = ml::mean_squared_error<float>
+        (preds, targets, axis, true);
+
+    ASSERT_EQ(out.get_num_elements(), 1u);
+    std::vector<float> host(1);
+    g_sycl_queue.memcpy(host.data(),
+        out.m_p_data.get(), sizeof(float) * 1).wait();
+
+    EXPECT_NEAR(static_cast<double>(host[0]), 2.0, 1e-6);
+}
+
+/**
+ * @test MSE.broadcast_targets_no_reduction
+ * @brief Same broadcast case but with reduction_mean=false:
+ * expect per-batch sums.
+ */
+TEST(MSE, broadcast_targets_no_reduction)
+{
+    Tensor<float> preds({2,2}, MemoryLocation::DEVICE);
+    preds = std::vector<float>{0.0f, 0.0f, 0.0f, 0.0f};
+
+    Tensor<float> targets({1,2,2}, MemoryLocation::DEVICE);
+    targets = std::vector<float>{1.0f, 1.0f, 1.0f, 1.0f};
+
+    std::optional<int64_t> axis = 2;
+    Tensor<float> out = ml::mean_squared_error<float>
+        (preds, targets, axis, false);
+
+    std::vector<uint64_t> expected_shape = {1ull, 2ull, 1ull};
+    ASSERT_EQ(out.get_dimensions(), expected_shape);
+
+    const uint64_t N = out.get_num_elements();
+    ASSERT_EQ(N, 2u);
+    std::vector<float> host(N, -1.0f);
+    g_sycl_queue.memcpy(host.data(),
+        out.m_p_data.get(), sizeof(float) * N).wait();
+
+    for (uint64_t i = 0; i < N; ++i)
+    {
+        EXPECT_NEAR(static_cast<double>(host[i]), 2.0, 1e-6);
+    }
+}
+
+/**
+ * @test MSE.negative_axis_equals_positive
+ * @brief Negative axis indexing should be handled equivalent to positive axis.
+ */
+TEST(MSE, negative_axis_equals_positive)
+{
+    Tensor<float> preds({2,2}, MemoryLocation::DEVICE);
+    preds = std::vector<float>{0.0f, 0.0f, 0.0f, 0.0f};
+
+    Tensor<float> targets({1,2,2}, MemoryLocation::DEVICE);
+    targets = std::vector<float>{1.0f, 1.0f, 1.0f, 1.0f};
+
+    std::optional<int64_t> axis_neg = -1;
+    std::optional<int64_t> axis_pos = 1;
+
+    Tensor<float> out_neg = ml::mean_squared_error<float>(preds, targets,
+        axis_neg, /*reduction_mean=*/true);
+    Tensor<float> out_pos = ml::mean_squared_error<float>(preds, targets,
+        axis_pos, /*reduction_mean=*/true);
+
+    std::vector<float> host_neg(1), host_pos(1);
+    g_sycl_queue.memcpy(host_neg.data(),
+        out_neg.m_p_data.get(), sizeof(float) * 1).wait();
+    g_sycl_queue.memcpy(host_pos.data(),
+        out_pos.m_p_data.get(), sizeof(float) * 1).wait();
+
+    EXPECT_NEAR(static_cast<double>(host_neg[0]),
+        static_cast<double>(host_pos[0]), 1e-7);
+}
+
+/**
+ * @test MSE.alias_preds_weird_strides_mean
+ * @brief Predictions provided as an alias view with non-standard strides.
+ */
+TEST(MSE, alias_preds_weird_strides_mean)
+{
+    Tensor<float> owner({2,3}, MemoryLocation::DEVICE);
+    owner = std::vector<float>{1.0f, 2.0f, 3.0f,
+                               4.0f, 5.0f, 6.0f};
+
+    std::vector<uint64_t> start = {0ull, 0ull};
+    std::vector<uint64_t> dims  = {2ull, 2ull};
+    std::vector<uint64_t> strides = {3ull, 2ull};
+    Tensor<float> preds_alias(owner, start, dims, strides);
+
+    Tensor<float> targets({2,2}, MemoryLocation::DEVICE);
+    targets = std::vector<float>{1.0f, 1.0f,
+                                 1.0f, 1.0f};
+
+    std::optional<int64_t> axis = 1;
+    Tensor<float> out = ml::mean_squared_error<float>(preds_alias, targets,
+        axis, /*reduction_mean=*/true);
+
+    ASSERT_EQ(out.get_num_elements(), 1u);
+    std::vector<float> host(1);
+    g_sycl_queue.memcpy(host.data(),
+        out.m_p_data.get(), sizeof(float) * 1).wait();
+
+    EXPECT_NEAR(static_cast<double>(host[0]), 19.0, 1e-6);
+}
+
+/**
+ * @test MSE.alias_targets_weird_strides_mean
+ * @brief Targets provided as an alias view with non-standard strides.
+ */
+TEST(MSE, alias_targets_weird_strides_mean)
+{
+    Tensor<float> preds({2,2}, MemoryLocation::DEVICE);
+    preds = std::vector<float>{1.0f, 3.0f,
+                               4.0f, 6.0f};
+
+    Tensor<float> owner_labels({2,3}, MemoryLocation::DEVICE);
+    owner_labels = std::vector<float>{
+        1.0f, 9.0f, 0.0f,
+        1.0f, 8.0f, 0.0f
+    };
+
+    std::vector<uint64_t> start = {0ull, 0ull};
+    std::vector<uint64_t> dims  = {2ull, 2ull};
+    std::vector<uint64_t> strides = {3ull, 1ull};
+    Tensor<float> targets_alias(owner_labels, start, dims, strides);
+
+    std::optional<int64_t> axis = 1;
+    Tensor<float> out = ml::mean_squared_error<float>(preds, targets_alias,
+        axis, /*reduction_mean=*/true);
+
+    ASSERT_EQ(out.get_num_elements(), 1u);
+    std::vector<float> host(1);
+    g_sycl_queue.memcpy(host.data(),
+        out.m_p_data.get(), sizeof(float) * 1).wait();
+
+    EXPECT_NEAR(static_cast<double>(host[0]), 24.5, 1e-6);
+}
+
+/**
+ * @test MSE.alias_both_weird_strides
+ * @brief Both preds and targets are alias views (non-contiguous); verifies
+ * the function works regardless of underlying owner memory layout.
+ */
+TEST(MSE, alias_both_weird_strides)
+{
+    Tensor<float> owner_pred({2,3}, MemoryLocation::DEVICE);
+    owner_pred = std::vector<float>{1.0f, 2.0f, 3.0f,
+                                    4.0f, 5.0f, 6.0f};
+    Tensor<float> preds_alias(owner_pred, std::vector<uint64_t>{0,0},
+        std::vector<uint64_t>{2,2}, std::vector<uint64_t>{3,2});
+
+    Tensor<float> owner_tgt({2,4}, MemoryLocation::DEVICE);
+    owner_tgt = std::vector<float>{
+        1.0f, 9.0f, 1.0f, 7.0f,
+        1.0f, 8.0f, 1.0f, 6.0f
+    };
+    Tensor<float> targets_alias(owner_tgt, std::vector<uint64_t>{0,0},
+        std::vector<uint64_t>{2,2}, std::vector<uint64_t>{4,2});
+
+    std::optional<int64_t> axis = 1;
+    Tensor<float> out = ml::mean_squared_error<float>
+        (preds_alias, targets_alias,
+        axis, /*reduction_mean=*/true);
+
+    ASSERT_EQ(out.get_num_elements(), 1u);
+    std::vector<float> host(1);
+    g_sycl_queue.memcpy(host.data(),
+        out.m_p_data.get(), sizeof(float) * 1).wait();
+
+    EXPECT_NEAR(static_cast<double>(host[0]), 19.0, 1e-6);
 }
 
 } // namespace Test

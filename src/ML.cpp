@@ -298,8 +298,8 @@ Tensor<float_t> cross_entropy(const Tensor<float_t> & logits,
         throw std::invalid_argument(R"(cross_entropy:
             labels tensor has no elements.)");
     }
-    const bool flatten = !axis_opt.has_value();
 
+    const bool flatten = !axis_opt.has_value();
     const int64_t max_rank = std::max(rank_logits, rank_labels);
 
     std::optional<int64_t> axis_norm;
@@ -315,15 +315,29 @@ Tensor<float_t> cross_entropy(const Tensor<float_t> & logits,
         int64_t axis = axis_opt.value();
         if (axis < 0)
         {
-            axis += rank_logits;
+            axis += max_rank;
         }
-        if (axis < 0 || axis >= rank_logits)
+        if (axis < 0 || axis >= max_rank)
         {
-            throw std::invalid_argument("cross_entropy: axis out of bounds");
+            throw std::invalid_argument(R"(cross_entropy:
+                axis out of bounds (aligned shape))");
         }
-        axis_norm = axis;
+        axis_aligned = axis;
 
-        axis_aligned = axis + (max_rank - rank_logits);
+        int64_t axis_for_logits = axis - (max_rank - rank_logits);
+        if (from_logits)
+        {
+            if (axis_for_logits < 0 || axis_for_logits >= rank_logits)
+            {
+                throw std::invalid_argument(R"(cross_entropy:
+                    axis does not exist on logits (required for softmax))");
+            }
+            axis_norm = axis_for_logits;
+        }
+        else
+        {
+            axis_norm = axis_for_logits;
+        }
     }
 
     Tensor<float_t> probs;
@@ -338,6 +352,7 @@ Tensor<float_t> cross_entropy(const Tensor<float_t> & logits,
 
     Tensor<float_t> logp = temper::math::log(probs);
     Tensor<float_t> mul = labels * logp;
+
     Tensor<float_t> summed = temper::math::sum(mul, axis_aligned);
     Tensor<float_t> loss = -summed;
 
@@ -352,5 +367,64 @@ Tensor<float_t> cross_entropy(const Tensor<float_t> & logits,
 }
 template Tensor<float> cross_entropy<float>
 (const Tensor<float>&, const Tensor<float>&, std::optional<int64_t>, bool, bool);
+
+template<typename float_t>
+Tensor<float_t> mean_squared_error(const Tensor<float_t>& predictions,
+    const Tensor<float_t>& targets,
+    std::optional<int64_t> axis_opt,
+    bool reduction_mean)
+{
+    const int64_t rank_pred = predictions.get_rank();
+    const int64_t rank_tgt = targets.get_rank();
+    if (rank_pred == 0)
+    {
+        throw std::invalid_argument(R"(mean_squared_error:
+            predictions tensor has no elements.)");
+    }
+    if (rank_tgt == 0)
+    {
+        throw std::invalid_argument(R"(mean_squared_error:
+            targets tensor has no elements.)");
+    }
+
+    const int64_t max_rank = std::max(rank_pred, rank_tgt);
+    const bool flatten = !axis_opt.has_value();
+
+    std::optional<int64_t> axis_aligned;
+    if (flatten)
+    {
+        axis_aligned = std::nullopt;
+    }
+    else
+    {
+        int64_t axis = axis_opt.value();
+        if (axis < 0)
+        {
+            axis += max_rank;
+        }
+        if (axis < 0 || axis >= max_rank)
+        {
+            throw std::invalid_argument(R"(mean_squared_error:
+                axis out of bounds (aligned shape))");
+        }
+        axis_aligned = axis;
+    }
+
+    Tensor<float_t> diff = predictions - targets;
+    Tensor<float_t> sq = diff * diff;
+
+    Tensor<float_t> summed = temper::math::sum(sq, axis_aligned);
+
+    if (reduction_mean)
+    {
+        return temper::math::mean(summed, std::nullopt);
+    }
+    else
+    {
+        return summed;
+    }
+}
+template Tensor<float> mean_squared_error<float>
+(const Tensor<float>&, const Tensor<float>&, std::optional<int64_t>, bool);
 
 } // namespace temper::ml

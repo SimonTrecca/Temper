@@ -86,38 +86,33 @@ extern template Tensor<float> softmax<float>
 /**
  * @brief Compute categorical cross-entropy between predictions and targets.
  *
- * Computes the elementwise categorical cross-entropy loss
- * by taking -sum(labels * log(probs)) over the class axis.
- * If @p from_logits is true, @p logits are first converted to
- * probabilities with softmax along the requested axis.
- * Supports broadcasting.
+ * Computes elementwise categorical cross-entropy loss by taking
+ * -sum(labels * log(probs)) over the class axis. If @p from_logits is
+ * true, @p logits are converted to probabilities with softmax along the
+ * requested axis. Supports broadcasting.
  *
- * @param logits Input tensor containing either raw scores (logits)
- * or probabilities depending on @p from_logits.
- * Must contain at least one element.
- * @param labels Tensor of target values (one-hot or soft labels).
- * Must be shape-compatible with the probabilities
- * (or broadcastable to that shape).
- * @param axis_opt Axis of the class dimension for @p logits.
- * nullopt = flatten; otherwise -rank_logits..rank_logits-1.
- * @param from_logits If true (default) treat @p logits as raw scores and
- * apply softmax before taking the log. If false, treat
- * @p logits as probabilities already.
- * @param reduction_mean If true (default) return the mean scalar loss across
- * all remaining elements. If false return the loss reduced only along
- * the class axis (result keeps batch shape).
+ * @param logits Input tensor containing raw scores (logits) or
+ * probabilities depending on @p from_logits. Must contain >= 1 element.
+ * @param labels Tensor of target values (one-hot or soft labels). Must be
+ * shape-compatible with the probabilities (broadcastable to that shape).
+ * @param axis_opt Axis of the class dimension expressed on the aligned /
+ * broadcasted output shape (after left-padding ranks to
+ * max_rank = max(rank(logits), rank(labels))). std::nullopt = flatten.
+ * Otherwise in [-max_rank, max_rank-1]. When @p from_logits is true the
+ * aligned axis is mapped to a logits-local axis via
+ * axis_local = axis_aligned - (max_rank - rank_logits) and validated when
+ * needed.
+ * @param from_logits If true treat @p logits as raw scores and apply
+ * softmax before log. If false treat @p logits as probabilities.
+ * @param reduction_mean If true return mean scalar loss. If false return
+ * loss reduced along the class axis (remaining shape preserved).
  *
- * @return Tensor<float_t> If @p reduction_mean is true a scalar tensor
- * containing the mean loss is returned. If false, the returned
- * tensor has the class axis removed (or is scalar when flattened).
+ * @return Tensor<float_t> Scalar if @p reduction_mean is true; otherwise
+ * tensor with the class axis removed (or scalar when flattened).
  *
- * @throws std::invalid_argument If either input tensor is empty, or if
- * @p axis_opt is outside the valid range for @p logits.
- * @throws std::out_of_range If an internal view/index operation exceeds
- * tensor bounds (propagated from underlying tensor ops).
- * @throws std::runtime_error If non-finite values (NaN/Inf) are encountered
- * during computation (for example when taking the logarithm).
- * @throws std::bad_alloc On memory allocation failure.
+ * @throws std::invalid_argument If either input is empty, or if @p axis_opt
+ * is outside [-max_rank, max_rank-1], or if @p from_logits is true and the
+ * mapped logits-local axis does not exist on @p logits.
  */
 template<typename float_t>
 Tensor<float_t> cross_entropy(const Tensor<float_t> & logits,
@@ -129,8 +124,37 @@ Tensor<float_t> cross_entropy(const Tensor<float_t> & logits,
 extern template Tensor<float> cross_entropy<float>
 (const Tensor<float>&, const Tensor<float>&, std::optional<int64_t>, bool, bool);
 
+/**
+ * @brief Compute mean squared error between predictions and targets.
+ *
+ * Computes elementwise MSE by taking sum((predictions - targets)^2)
+ * over the class axis. Supports broadcasting.
+ *
+ * @param predictions Tensor of predictions. Must contain >= 1 element.
+ * @param targets Tensor of target values (broadcastable to preds).
+ * @param axis_opt Axis of the class dimension expressed on the aligned /
+ * broadcasted output shape (after left-padding ranks to
+ * max_rank = max(rank(predictions), rank(targets))).
+ * std::nullopt = flatten. Otherwise in [-max_rank, max_rank-1].
+ * @param reduction_mean If true return mean scalar error. If false return
+ * error reduced along the class axis (remaining shape preserved).
+ *
+ * @return Tensor<float_t> Scalar if @p reduction_mean is true; otherwise
+ * tensor with the class axis removed (or scalar when flattened).
+ *
+ * @throws std::invalid_argument If either input is empty, or if @p axis_opt
+ * is outside [-max_rank, max_rank-1].
+ */
+template<typename float_t>
+Tensor<float_t> mean_squared_error(const Tensor<float_t>& predictions,
+    const Tensor<float_t>& targets,
+    std::optional<int64_t> axis_opt,
+    bool reduction_mean);
+/// Explicit instantiation of mean_squared_error for float
+extern template Tensor<float> mean_squared_error<float>
+(const Tensor<float>&, const Tensor<float>&, std::optional<int64_t>, bool);
+
 /* todo
-    mse loss
     regularization penalties
     other loss functions?
     softmax
