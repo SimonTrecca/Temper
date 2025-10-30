@@ -29,18 +29,18 @@ enum class MemoryLocation
 
 /**
  * @brief Class template for the Tensor data structure.
- * @tparam float_t Floating point adjacent numeric types (float, double, etc.).
+ * @tparam value_t Numeric types.
  *
  * The class manages a linear buffer in row-major order.
  */
-template <typename float_t>
+template <typename value_t>
 class Tensor
 {
 
 private:
 
     /// Member pointer to data.
-	std::shared_ptr<float_t> m_p_data {};
+	std::shared_ptr<value_t> m_p_data {};
 
     /// Member dimensions for each axis.
     std::vector<uint64_t>    m_dimensions {};
@@ -92,10 +92,10 @@ public:
     public:
 
         using iterator_category = std::random_access_iterator_tag;
-        using value_type        = float_t;
+        using value_type        = value_t;
         using difference_type   = int64_t;
         using pointer           = void;
-        using reference         = Tensor<float_t>;
+        using reference         = Tensor<value_t>;
 
         /**
          * @brief Default-construct a Tensor (empty).
@@ -363,10 +363,10 @@ public:
     public:
 
         using iterator_category = std::random_access_iterator_tag;
-        using value_type        = float_t;
+        using value_type        = value_t;
         using difference_type   = int64_t;
         using pointer           = void;
-        using reference         = const Tensor<float_t>;
+        using reference         = const Tensor<value_t>;
 
         /**
          * @brief Default-construct a const_iterator.
@@ -691,7 +691,7 @@ public:
      *
      * @throws std::bad_alloc if memory allocation fails.
      */
-    Tensor(float_t val, MemoryLocation loc = MemoryLocation::DEVICE);
+    Tensor(value_t val, MemoryLocation loc = MemoryLocation::DEVICE);
 
     /**
      * @brief View constructor.
@@ -794,7 +794,7 @@ public:
      * - the tensor has no dimensions
      * - the length of @p values differs from the tensor's total element count
      */
-    Tensor& operator=(const std::vector<float_t> & values);
+    Tensor& operator=(const std::vector<value_t> & values);
 
     /**
      * @brief Assigns a scalar value to this tensor.
@@ -810,7 +810,7 @@ public:
      * @return Reference to this tensor.
      * @throws std::invalid_argument If tensor size is not exactly 1.
      */
-    Tensor& operator=(float_t val);
+    Tensor& operator=(value_t val);
 
     /**
      * @brief Returns a non-owning view into a sub-tensor at the given index.
@@ -850,7 +850,7 @@ public:
      * @return Scalar value stored in this tensor.
      * @throws std::invalid_argument If tensor size is not exactly 1.
      */
-    operator float_t() const;
+    operator value_t() const;
 
     /**
      * @brief Element-wise addition with right-aligned broadcasting.
@@ -970,11 +970,11 @@ public:
      * The clone has the same shape and memory location and contains an
      * independent copy of all elements. Operation is synchronous.
      *
-     * @return Owning Tensor<float_t> with contiguous storage.
+     * @return Owning Tensor<value_t> with contiguous storage.
      * @throws std::invalid_argument if this tensor is empty.
      * @throws std::bad_alloc on allocation failure.
      */
-    Tensor<float_t> clone() const;
+    Tensor<value_t> clone() const;
 
     /**
      * @brief Copy elements from another tensor into this tensor
@@ -1053,7 +1053,7 @@ public:
      *
      * @param axis_opt Axis to sum along, nullopt = flatten,
      * otherwise -rank..rank-1.
-     * @return Tensor<float_t> New tensor containing the sums;
+     * @return Tensor<value_t> New tensor containing the sums;
      * the returned tensor uses the same memory location as the input.
      * If the input tensor has no dimensions, a tensor
      * with shape {1} is returned.
@@ -1062,7 +1062,7 @@ public:
      * @throws std::runtime_error If NaN or non-finite values are encountered
      * in the inputs or the results.
      */
-    Tensor<float_t> sum(std::optional<int64_t> axis_opt = std::nullopt) const;
+    Tensor<value_t> sum(std::optional<int64_t> axis_opt = std::nullopt) const;
 
     /**
      * @brief Compute the cumulative sum of tensor elements (device scan).
@@ -1073,7 +1073,7 @@ public:
      *
      * @param axis_opt Axis to cumsum along, nullopt = flatten,
      * otherwise -rank..rank-1.
-     * @return Tensor<float_t> New tensor containing the cumulative sums;
+     * @return Tensor<value_t> New tensor containing the cumulative sums;
      * the returned tensor uses the same memory location as the input.
      * If the input tensor has no dimensions, a tensor
      * with shape {1} is returned.
@@ -1083,7 +1083,7 @@ public:
      * @throws std::runtime_error If NaN or non-finite values are encountered
      * in the inputs or the results.
      */
-    Tensor<float_t> cumsum(std::optional<int64_t> axis_opt = std::nullopt) const;
+    Tensor<value_t> cumsum(std::optional<int64_t> axis_opt = std::nullopt) const;
 
     /**
      * @brief Compute the mean (average) of tensor elements.
@@ -1093,7 +1093,7 @@ public:
      *
      * @param axis_opt Axis to compute mean along, nullopt = flatten,
      * otherwise -rank..rank-1.
-     * @return Tensor<float_t> Tensor with the specified axis reduced (result
+     * @return Tensor<value_t> Tensor with the specified axis reduced (result
      * uses the same memory location as the input).
      *
      * @throws std::invalid_argument If the input tensor has no elements,
@@ -1103,7 +1103,7 @@ public:
      * @throws std::runtime_error If NaN or non-finite values are encountered
      * in inputs or produced by the reduction/division.
      */
-    Tensor<float_t> mean(std::optional<int64_t> axis_opt = std::nullopt) const;
+    Tensor<value_t> mean(std::optional<int64_t> axis_opt = std::nullopt) const;
 
     /**
      * @brief Compute the variance of tensor elements.
@@ -1114,7 +1114,7 @@ public:
      * @param axis_opt Axis to reduce along, nullopt = flatten,
      * otherwise -rank..rank-1.
      * @param ddof Delta degrees of freedom (0 => population variance).
-     * @return Tensor<float_t> Tensor with the specified axis reduced.
+     * @return Tensor<value_t> Tensor with the specified axis reduced.
      *
      * @throws std::invalid_argument If the input tensor has no elements,
      * if @p axis is out of range, if the selected axis has zero length,
@@ -1122,7 +1122,7 @@ public:
      * @throws std::bad_alloc If required memory cannot be allocated.
      * @throws std::runtime_error If NaN or non-finite values are encountered.
      */
-    Tensor<float_t> var(std::optional<int64_t> axis_opt = std::nullopt,
+    Tensor<value_t> var(std::optional<int64_t> axis_opt = std::nullopt,
         int64_t ddof = 0) const;
 
     /**
@@ -1142,7 +1142,7 @@ public:
      *                    @p sample_axes, and in [-rank, rank-1].
      * @param ddof        Delta degrees of freedom (>= 0). Divisor is
      *                    (N - ddof) where N = product(lengths of sample axes).
-     * @return Tensor<float_t> Covariance matrices with shape
+     * @return Tensor<value_t> Covariance matrices with shape
      *         `{ <batch dims...>, event_total, event_total }`. Allocated in the
      *         same memory location (host/device) as the input where possible.
      *
@@ -1162,7 +1162,7 @@ public:
      * - NaN or non-finite values encountered, or device/kernel errors during
      *   reduction or matrix multiplication.
      */
-    Tensor<float_t> cov(std::vector<int64_t> sample_axes,
+    Tensor<value_t> cov(std::vector<int64_t> sample_axes,
                         std::vector<int64_t> event_axes,
                         int64_t ddof = 0) const;
 
@@ -1177,7 +1177,7 @@ public:
      *
      * @param ddof Delta degrees of freedom (>= 0). Must satisfy ddof < N,
      *             where N is the length of axis `rank-2`.
-     * @return Tensor<float_t> Covariance matrices for the last two axes.
+     * @return Tensor<value_t> Covariance matrices for the last two axes.
      *
      * @throws std::invalid_argument if:
      * - tensor rank < 2.
@@ -1188,7 +1188,7 @@ public:
      * @throws std::runtime_error if:
      * - NaN or non-finite values encountered, or device/kernel errors.
      */
-    Tensor<float_t> cov(int64_t ddof = 0) const;
+    Tensor<value_t> cov(int64_t ddof = 0) const;
 
     /**
      * @brief Compute the standard deviation of tensor elements.
@@ -1205,7 +1205,7 @@ public:
      * @param axis_opt Axis to reduce along, nullopt = flatten,
      * otherwise -rank..rank-1.
      * @param ddof Delta degrees of freedom (0 => population std).
-     * @return Tensor<float_t> Tensor with the specified axis reduced.
+     * @return Tensor<value_t> Tensor with the specified axis reduced.
      *
      * @throws std::invalid_argument If the input tensor has no elements,
      * if @p axis is out of range, if the selected axis has
@@ -1214,7 +1214,7 @@ public:
      * @throws std::runtime_error If NaN or non-finite values are encountered
      * in the inputs or produced during the sqrt computation.
      */
-    Tensor<float_t> stddev(std::optional<int64_t> axis_opt = std::nullopt,
+    Tensor<value_t> stddev(std::optional<int64_t> axis_opt = std::nullopt,
         int64_t ddof = 0) const;
 
     /**
@@ -1235,7 +1235,7 @@ public:
      *
      * @param max_iters Maximum number of full Jacobi sweeps to attempt.
      * @param tol Convergence threshold for the largest off–diagonal entry.
-     * @return std::pair<Tensor<float_t>, Tensor<float_t>>
+     * @return std::pair<Tensor<value_t>, Tensor<value_t>>
      *     First:  eigenvalues of shape `{B..., N}`.
      *     Second: eigenvectors of shape `{B..., N, N}`, stored by
      *     columns.
@@ -1247,8 +1247,8 @@ public:
      *     during computation, or a division by zero is encountered
      *     when forming Givens coefficients.
      */
-    std::pair<Tensor<float_t>, Tensor<float_t>> eig(uint64_t max_iters = 1000,
-        float_t tol = static_cast<float_t>(1e-4)) const;
+    std::pair<Tensor<value_t>, Tensor<value_t>> eig(uint64_t max_iters = 1000,
+        value_t tol = static_cast<value_t>(1e-4)) const;
 
     /**
      * @brief Returns a new tensor with axes reversed (full transpose).
@@ -1259,9 +1259,9 @@ public:
      * the original tensor, so no data is copied.
      *
      * @throws std::runtime_error if the tensor is empty (rank 0).
-     * @return Tensor<float_t> A new tensor view with reversed axes.
+     * @return Tensor<value_t> A new tensor view with reversed axes.
      */
-    Tensor<float_t> transpose() const;
+    Tensor<value_t> transpose() const;
 
     /**
      * @brief Returns a new tensor with permuted axes according to
@@ -1278,9 +1278,9 @@ public:
      *
      * @throws std::invalid_argument if `axes.size()` != rank or
      * if `axes` is not a valid permutation.
-     * @return Tensor<float_t> A new tensor view with permuted axes.
+     * @return Tensor<value_t> A new tensor view with permuted axes.
      */
-    Tensor<float_t> transpose(const std::vector<int64_t> & axes) const;
+    Tensor<value_t> transpose(const std::vector<int64_t> & axes) const;
 
     /**
      * @brief Prints the tensor elements to the provided output
@@ -1317,9 +1317,9 @@ public:
      * owned memory (for tensors that allocate their own storage)
      * or to an alias of another tensor's memory (for views).
      *
-     * @return const float_t* Pointer to the first element of tensor data.
+     * @return const value_t* Pointer to the first element of tensor data.
      */
-    const float_t * get_data() const noexcept;
+    const value_t * get_data() const noexcept;
 
     /**
      * @brief Returns a raw pointer to the underlying tensor data.
@@ -1328,9 +1328,9 @@ public:
      * Modifying elements through this pointer mutates the tensor's storage
      * (and will affect other views that alias the same storage).
      *
-     * @return const float_t* Pointer to the first element of tensor data.
+     * @return const value_t* Pointer to the first element of tensor data.
      */
-    float_t * get_data() noexcept;
+    value_t * get_data() noexcept;
 
     /**
      * @brief Returns the dimensions (shape) of the tensor.
@@ -1413,7 +1413,7 @@ public:
     /**
      * @brief Returns the size in bytes of a single tensor element.
      *
-     * Equivalent to `sizeof(float_t)`.
+     * Equivalent to `sizeof(value_t)`.
      *
      * @return uint64_t Element size in bytes.
      */
@@ -1465,7 +1465,7 @@ public:
      * @return Reference to element at flat index.
      * @throws std::out_of_range if flat >= total elements.
      */
-    Tensor<float_t> at(uint64_t flat);
+    Tensor<value_t> at(uint64_t flat);
 
     /**
      * @brief Access element at the given flat index (const version).
@@ -1478,7 +1478,7 @@ public:
      * @return Reference to element at flat index.
      * @throws std::out_of_range if flat >= total elements.
      */
-    const Tensor<float_t> at(uint64_t flat) const;
+    const Tensor<value_t> at(uint64_t flat) const;
 
     /**
      * @brief Implementation: iterator to first element (mutable).

@@ -27,8 +27,8 @@ namespace Test
  * @note  Uses proper shape-based strides to map linear indices
  *        back to multi-dimensional coords.
  */
-template <typename float_t>
-void copy_tensor_data(Tensor<float_t>& dest, const Tensor<float_t>& src)
+template <typename value_t>
+void copy_tensor_data(Tensor<value_t>& dest, const Tensor<value_t>& src)
 {
     ASSERT_EQ(dest.m_dimensions, src.m_dimensions);
 
@@ -63,8 +63,8 @@ void copy_tensor_data(Tensor<float_t>& dest, const Tensor<float_t>& src)
     std::memcpy(dest_strides, dest.m_strides.data(),    rank * sizeof(uint64_t));
     std::memcpy(shape_str,    shape_strides.data(),     rank * sizeof(uint64_t));
 
-    float_t* src_data  = src.m_p_data.get();
-    float_t* dest_data = dest.m_p_data.get();
+    value_t* src_data  = src.m_p_data.get();
+    value_t* dest_data = dest.m_p_data.get();
 
     if (!src_data || !dest_data)
     {
@@ -2080,8 +2080,8 @@ TEST(TENSOR, operator_equals_vector_assignment_view_size_mismatch_throws)
 
 /**
  * @test TENSOR.operator_equals_scalar_assignment_and_conversion
- * @brief Tests operator=(float_t)
- * and operator float_t() on 1-element tensors / views.
+ * @brief Tests operator=(value_t)
+ * and operator value_t() on 1-element tensors / views.
  */
 TEST(TENSOR, operator_equals_scalar_assignment_and_conversion)
 {
@@ -2295,10 +2295,10 @@ TEST(TENSOR, operator_float_valid_scalar)
 }
 
 /**
- * @test TENSOR.operator_float_throws_no_dimensions
+ * @test TENSOR.operator_value_throws_no_dimensions
  * @brief Tests that converting a moved-from tensor throws (no dimensions).
  */
-TEST(TENSOR, operator_float_throws_no_dimensions)
+TEST(TENSOR, operator_value_throws_no_dimensions)
 {
     Tensor<float> t1({1}, MemoryLocation::HOST);
     t1 = 3.14f;
@@ -2311,10 +2311,10 @@ TEST(TENSOR, operator_float_throws_no_dimensions)
 }
 
 /**
- * @test TENSOR.operator_float_throws_multiple_elements_rank1
+ * @test TENSOR.operator_value_throws_multiple_elements_rank1
  * @brief Tests that conversion throws for rank-1 tensor with size > 1.
  */
-TEST(TENSOR, operator_float_throws_multiple_elements_rank1)
+TEST(TENSOR, operator_value_throws_multiple_elements_rank1)
 {
     Tensor<float> t({3}, MemoryLocation::HOST);
     std::vector<float> vals = {1.0f, 2.0f, 3.0f};
@@ -2327,10 +2327,10 @@ TEST(TENSOR, operator_float_throws_multiple_elements_rank1)
 }
 
 /**
- * @test TENSOR.operator_float_throws_multi_dimensional
+ * @test TENSOR.operator_value_throws_multi_dimensional
  * @brief Tests that conversion throws for rank > 1 tensor.
  */
-TEST(TENSOR, operator_float_throws_multi_dimensional)
+TEST(TENSOR, operator_value_throws_multi_dimensional)
 {
     Tensor<float> t({2, 2}, MemoryLocation::HOST);
     std::vector<float> vals = {1, 2, 3, 4};

@@ -46,13 +46,13 @@ namespace temper::ml
  *         values.
  * @throws std::bad_alloc On allocation failure.
  */
-template <typename float_t>
-Tensor<float_t> one_hot_expand_at(const Tensor<float_t>& tensor,
+template <typename value_t>
+Tensor<value_t> one_hot_expand_at(const Tensor<value_t>& tensor,
     int64_t axis,
     uint64_t axis_index,
     uint64_t depth,
-    float_t on_value = static_cast<float_t>(1),
-    float_t off_value = static_cast<float_t>(0));
+    value_t on_value = static_cast<value_t>(1),
+    value_t off_value = static_cast<value_t>(0));
 /// Explicit instantiation of one_hot_expand_at for float
 extern template Tensor<float> one_hot_expand_at<float>
     (const Tensor<float>&, int64_t, uint64_t, uint64_t, float, float);
@@ -76,8 +76,8 @@ extern template Tensor<float> one_hot_expand_at<float>
  * @throws std::runtime_error If NaN or non-finite values are encountered
  * during computation.
  */
-template<typename float_t>
-Tensor<float_t> softmax(const Tensor<float_t> & tensor,
+template<typename value_t>
+Tensor<value_t> softmax(const Tensor<value_t> & tensor,
     std::optional<int64_t> axis_opt = std::nullopt);
 /// Explicit instantiation of softmax for float
 extern template Tensor<float> softmax<float>
@@ -107,16 +107,16 @@ extern template Tensor<float> softmax<float>
  * @param reduction_mean If true return mean scalar loss. If false return
  * loss reduced along the class axis (remaining shape preserved).
  *
- * @return Tensor<float_t> Scalar if @p reduction_mean is true; otherwise
+ * @return Tensor<value_t> Scalar if @p reduction_mean is true; otherwise
  * tensor with the class axis removed (or scalar when flattened).
  *
  * @throws std::invalid_argument If either input is empty, or if @p axis_opt
  * is outside [-max_rank, max_rank-1], or if @p from_logits is true and the
  * mapped logits-local axis does not exist on @p logits.
  */
-template<typename float_t>
-Tensor<float_t> cross_entropy(const Tensor<float_t> & logits,
-    const Tensor<float_t> & labels,
+template<typename value_t>
+Tensor<value_t> cross_entropy(const Tensor<value_t> & logits,
+    const Tensor<value_t> & labels,
     std::optional<int64_t> axis_opt = std::nullopt,
     bool from_logits = true,
     bool reduction_mean = true);
@@ -139,15 +139,15 @@ extern template Tensor<float> cross_entropy<float>
  * @param reduction_mean If true return mean scalar error. If false return
  * error reduced along the class axis (remaining shape preserved).
  *
- * @return Tensor<float_t> Scalar if @p reduction_mean is true; otherwise
+ * @return Tensor<value_t> Scalar if @p reduction_mean is true; otherwise
  * tensor with the class axis removed (or scalar when flattened).
  *
  * @throws std::invalid_argument If either input is empty, or if @p axis_opt
  * is outside [-max_rank, max_rank-1].
  */
-template<typename float_t>
-Tensor<float_t> mean_squared_error(const Tensor<float_t>& predictions,
-    const Tensor<float_t>& targets,
+template<typename value_t>
+Tensor<value_t> mean_squared_error(const Tensor<value_t>& predictions,
+    const Tensor<value_t>& targets,
     std::optional<int64_t> axis_opt,
     bool reduction_mean);
 /// Explicit instantiation of mean_squared_error for float

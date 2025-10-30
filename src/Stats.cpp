@@ -11,18 +11,18 @@
 namespace temper::stats
 {
 
-template<typename float_t>
-Tensor<float_t> randn(const std::vector<uint64_t>& out_shape,
+template<typename value_t>
+Tensor<value_t> randn(const std::vector<uint64_t>& out_shape,
     MemoryLocation res_loc,
     uint64_t seed)
 {
-    Tensor<float_t> loc({1}, res_loc);
-    loc = std::vector<float_t>{static_cast<float_t>(0.0)};
+    Tensor<value_t> loc({1}, res_loc);
+    loc = std::vector<value_t>{static_cast<value_t>(0.0)};
 
-    Tensor<float_t> scale({1}, res_loc);
-    scale = std::vector<float_t>{static_cast<float_t>(1.0)};
+    Tensor<value_t> scale({1}, res_loc);
+    scale = std::vector<value_t>{static_cast<value_t>(1.0)};
 
-    return norm::rvs<float_t>(loc, scale, out_shape, res_loc, seed);
+    return norm::rvs<value_t>(loc, scale, out_shape, res_loc, seed);
 }
 template Tensor<float> randn<float>
 (const std::vector<uint64_t>&, MemoryLocation, uint64_t);
@@ -30,10 +30,10 @@ template Tensor<float> randn<float>
 namespace norm
 {
 
-template<typename float_t>
-Tensor<float_t> ppf(const Tensor<float_t>& q,
-	const Tensor<float_t>& loc,
-	const Tensor<float_t>& scale)
+template<typename value_t>
+Tensor<value_t> ppf(const Tensor<value_t>& q,
+	const Tensor<value_t>& loc,
+	const Tensor<value_t>& scale)
 {
     const std::vector<uint64_t> q_shape = q.get_dimensions();
     const std::vector<uint64_t> loc_shape = loc.get_dimensions();
@@ -114,7 +114,7 @@ Tensor<float_t> ppf(const Tensor<float_t>& q,
 	    }
 	}
 
-    Tensor<float_t> result(out_shape, q.get_memory_location());
+    Tensor<value_t> result(out_shape, q.get_memory_location());
 
     uint64_t* p_out_divs = static_cast<uint64_t*>(
         sycl::malloc_device(sizeof(uint64_t) * out_rank, g_sycl_queue));
@@ -154,10 +154,10 @@ Tensor<float_t> ppf(const Tensor<float_t>& q,
 
     *p_error_flag = 0;
 
-    const float_t* p_q = q.get_data();
-    const float_t* p_loc = loc.get_data();
-    const float_t* p_scale = scale.get_data();
-    float_t* p_out = result.get_data();
+    const value_t* p_q = q.get_data();
+    const value_t* p_loc = loc.get_data();
+    const value_t* p_scale = scale.get_data();
+    value_t* p_out = result.get_data();
 
     // Coefficients for Acklam's inverse normal approximation.
     const double a1 = -3.969683028665376e+01;
@@ -267,7 +267,7 @@ Tensor<float_t> ppf(const Tensor<float_t>& q,
             double outv = locp + scalep * x;
             temper::sycl_utils::device_check_finite_and_set<double>
                 (outv, p_error_flag);
-            p_out[flat] = static_cast<float_t>(outv);
+            p_out[flat] = static_cast<value_t>(outv);
         });
     }).wait();
 
@@ -308,9 +308,9 @@ Tensor<float_t> ppf(const Tensor<float_t>& q,
 template Tensor<float> ppf<float>
 (const Tensor<float>&, const Tensor<float>&, const Tensor<float>&);
 
-template<typename float_t>
-Tensor<float_t> rvs(const Tensor<float_t>& loc,
-    const Tensor<float_t>& scale,
+template<typename value_t>
+Tensor<value_t> rvs(const Tensor<value_t>& loc,
+    const Tensor<value_t>& scale,
     const std::vector<uint64_t>& out_shape,
     MemoryLocation res_loc,
     uint64_t seed)
@@ -329,7 +329,7 @@ Tensor<float_t> rvs(const Tensor<float_t>& loc,
             scale tensor has no elements.)");
     }
 
-    Tensor<float_t> q(out_shape, res_loc);
+    Tensor<value_t> q(out_shape, res_loc);
     const uint64_t total_output_elems = q.get_num_elements();
 
     const int64_t out_rank = static_cast<int64_t>(out_shape.size());
@@ -352,7 +352,7 @@ Tensor<float_t> rvs(const Tensor<float_t>& loc,
         out_divs.data(), sizeof(uint64_t) * out_rank).wait();
     *p_error_flag = 0;
 
-    float_t* p_q = q.get_data();
+    value_t* p_q = q.get_data();
 
     if (seed == 0ULL)
     {
@@ -386,7 +386,7 @@ Tensor<float_t> rvs(const Tensor<float_t>& loc,
                 return;
             }
 
-            p_q[flat] = static_cast<float_t>(u);
+            p_q[flat] = static_cast<value_t>(u);
         });
     }).wait();
 
@@ -405,7 +405,7 @@ Tensor<float_t> rvs(const Tensor<float_t>& loc,
             numeric error during uniform generation.)");
     }
 
-    Tensor<float_t> result = ppf(q, loc, scale);
+    Tensor<value_t> result = ppf(q, loc, scale);
 
     return result;
 }

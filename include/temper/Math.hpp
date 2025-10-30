@@ -33,7 +33,7 @@ namespace temper::math
  *
  * @param first Left-hand side tensor.
  * @param second Right-hand side tensor.
- * @return Tensor<float_t> Result of the matrix multiplication.
+ * @return Tensor<value_t> Result of the matrix multiplication.
  *
  * @throws std::invalid_argument if:
  * - The last dimension of @p first does not match the second-to-last of @p second.
@@ -45,9 +45,9 @@ namespace temper::math
  * @throws std::bad_alloc if required device memory cannot be allocated.
 
  */
-template <typename float_t>
-Tensor<float_t> matmul(const Tensor<float_t> & first,
-                        const Tensor<float_t> & second);
+template <typename value_t>
+Tensor<value_t> matmul(const Tensor<value_t> & first,
+                        const Tensor<value_t> & second);
 /// Explicit instantiation of matmul for float
 extern template Tensor<float> matmul<float>
     (const Tensor<float>&, const Tensor<float>&);
@@ -61,7 +61,7 @@ extern template Tensor<float> matmul<float>
  *
  * @param tensor Input tensor.
  * @param new_dimensions New shape for the tensor.
- * @return Tensor<float_t> A new tensor with the specified shape.
+ * @return Tensor<value_t> A new tensor with the specified shape.
  *
  * @throws std::invalid_argument If:
  * - @p new_dimensions is empty
@@ -71,8 +71,8 @@ extern template Tensor<float> matmul<float>
  * @throws std::overflow_error If the product of @p new_dimensions
  * would overflow uint64_t.
  */
-template <typename float_t>
-Tensor<float_t> reshape(const Tensor<float_t> & tensor,
+template <typename value_t>
+Tensor<value_t> reshape(const Tensor<value_t> & tensor,
                         const std::vector<uint64_t>& new_dimensions);
 /// Explicit instantiation of reshape for float
 extern template Tensor<float> reshape<float>
@@ -93,8 +93,8 @@ extern template Tensor<float> reshape<float>
  * @throws std::invalid_argument if @p axis_opt is out of range.
  * @throws std::bad_alloc if required device memory cannot be allocated.
  */
-template <typename float_t>
-Tensor<float_t> sort(const Tensor<float_t> & tensor,
+template <typename value_t>
+Tensor<value_t> sort(const Tensor<value_t> & tensor,
     std::optional<int64_t> axis_opt = std::nullopt);
 /// Explicit instantiation of sort for float
 extern template Tensor<float> sort<float>
@@ -109,15 +109,15 @@ extern template Tensor<float> sort<float>
  * @param tensor Input tensor.
  * @param axis_opt Axis to sum along, nullopt = flatten,
  * otherwise -rank..rank-1.
- * @return Tensor<float_t> A new tensor containing the sums.
+ * @return Tensor<value_t> A new tensor containing the sums.
  *
  * @throws std::invalid_argument If axis is out of range.
  * @throws std::bad_alloc If required device memory cannot be allocated.
  * @throws std::runtime_error If NaN or non-finite values are encountered
  * in the inputs or the results.
  */
-template <typename float_t>
-Tensor<float_t> sum(const Tensor<float_t> & tensor,
+template <typename value_t>
+Tensor<value_t> sum(const Tensor<value_t> & tensor,
     std::optional<int64_t> axis_opt = std::nullopt);
 /// Explicit instantiation of sum for float
 extern template Tensor<float> sum<float>
@@ -132,15 +132,15 @@ extern template Tensor<float> sum<float>
  * @param tensor Input tensor.
  * @param axis_opt Axis to cumsum along, nullopt = flatten,
  * otherwise -rank..rank-1.
- * @return Tensor<float_t> A new tensor containing the cumulative sums.
+ * @return Tensor<value_t> A new tensor containing the cumulative sums.
  *
  * @throws std::invalid_argument If axis is not -1 and is out of range.
  * @throws std::bad_alloc If required device memory cannot be allocated.
  * @throws std::runtime_error If NaN or non-finite values are encountered
  * in the inputs or the results.
  */
-template <typename float_t>
-Tensor<float_t> cumsum(const Tensor<float_t> & tensor,
+template <typename value_t>
+Tensor<value_t> cumsum(const Tensor<value_t> & tensor,
     std::optional<int64_t> axis_opt = std::nullopt);
 /// Explicit instantiation of cumsum for float
 extern template Tensor<float> cumsum<float>
@@ -153,12 +153,12 @@ extern template Tensor<float> cumsum<float>
  * unmodified. Delegates to `Tensor::transpose()`.
  *
  * @param tensor Input tensor.
- * @return Tensor<float_t> A new tensor view with reversed axes.
+ * @return Tensor<value_t> A new tensor view with reversed axes.
  *
  * @throws std::runtime_error If the tensor is empty (rank 0).
  */
-template<typename float_t>
-Tensor<float_t> transpose(const Tensor<float_t> & tensor);
+template<typename value_t>
+Tensor<value_t> transpose(const Tensor<value_t> & tensor);
 /// Explicit instantiation of transpose() for float
 extern template Tensor<float> transpose<float>(const Tensor<float>&);
 
@@ -172,13 +172,13 @@ extern template Tensor<float> transpose<float>(const Tensor<float>&);
  * @param tensor Input tensor.
  * @param axes Vector specifying the new order of axes. Must be a permutation
  * of [-rank..rank-1].
- * @return Tensor<float_t> A new tensor view with permuted axes.
+ * @return Tensor<value_t> A new tensor view with permuted axes.
  *
  * @throws std::invalid_argument If `axes.size()` != rank or if `axes` is not
  * a valid permutation.
  */
-template<typename float_t>
-Tensor<float_t> transpose(const Tensor<float_t> & tensor,
+template<typename value_t>
+Tensor<value_t> transpose(const Tensor<value_t> & tensor,
                         const std::vector<int64_t> & axes);
 /// Explicit instantiation of transpose(axes) for float
 extern template Tensor<float> transpose<float>
@@ -193,19 +193,19 @@ extern template Tensor<float> transpose<float>
  * @param pad_left Columns to add before the left.
  * @param pad_right Columns to add after the right.
  * @param pad_value Value used to fill padded elements.
- * @return Tensor<float_t> New tensor with requested padding.
+ * @return Tensor<value_t> New tensor with requested padding.
  *
  * @throws std::invalid_argument If tensor is empty or rank < 2.
  * @throws std::overflow_error If shape/padding computations overflow.
  * @throws std::bad_alloc If device helper memory cannot be allocated.
  */
-template<typename float_t>
-Tensor<float_t> pad(const Tensor<float_t> & tensor,
+template<typename value_t>
+Tensor<value_t> pad(const Tensor<value_t> & tensor,
                     uint64_t pad_top,
                     uint64_t pad_bottom,
                     uint64_t pad_left,
                     uint64_t pad_right,
-                    float_t pad_value);
+                    value_t pad_value);
 /// Explicit instantiation of pad for float
 extern template Tensor<float> pad<float>
     (const Tensor<float>&, uint64_t, uint64_t, uint64_t, uint64_t, float);
@@ -220,13 +220,13 @@ extern template Tensor<float> pad<float>
  * @param pad_height Rows added to top and bottom.
  * @param pad_width  Columns added to left and right.
  * @param pad_value  Value to fill padded elements.
- * @return Tensor<float_t> New padded tensor.
+ * @return Tensor<value_t> New padded tensor.
  */
-template<typename float_t>
-Tensor<float_t> pad(const Tensor<float_t> & tensor,
+template<typename value_t>
+Tensor<value_t> pad(const Tensor<value_t> & tensor,
                     uint64_t pad_height,
                     uint64_t pad_width,
-                    float_t pad_value);
+                    value_t pad_value);
 /// Explicit instantiation of pad (height, width) for float
 extern template Tensor<float> pad<float>
     (const Tensor<float>&, uint64_t, uint64_t, float);
@@ -246,8 +246,8 @@ extern template Tensor<float> pad<float>
  * @throws std::runtime_error If any input is NaN or a numeric error occurs.
  * @throws std::bad_alloc If device memory allocation fails.
  */
-template<typename float_t>
-std::vector<uint64_t> argmax(const Tensor<float_t> & tensor,
+template<typename value_t>
+std::vector<uint64_t> argmax(const Tensor<value_t> & tensor,
     std::optional<int64_t> axis_opt = std::nullopt);
 /// Explicit instantiation of argmax for float
 extern template std::vector<uint64_t> argmax<float>
@@ -271,33 +271,33 @@ extern template std::vector<uint64_t> argmax<float>
  *        use a half-open interval that excludes `stop`.
  * @param step_out If non-null, moved a tensor of per-S step values into
  *        `*step_out` on return.
- * @return Tensor<float_t> Interpolated tensor (broadcasted shape with
+ * @return Tensor<value_t> Interpolated tensor (broadcasted shape with
  *         inserted axis).
  *
  * @throws std::invalid_argument For empty inputs or out-of-range axis.
  * @throws std::bad_alloc On device allocation failure.
  * @throws std::runtime_error If numeric errors (NaN/Inf/overflow) occur.
  */
-template<typename float_t>
-Tensor<float_t> linspace(const Tensor<float_t>& start,
-                        const Tensor<float_t>& stop,
+template<typename value_t>
+Tensor<value_t> linspace(const Tensor<value_t>& start,
+                        const Tensor<value_t>& stop,
                         uint64_t num,
                         MemoryLocation res_loc = MemoryLocation::DEVICE,
                         int64_t axis = 0,
                         bool endpoint = true,
-                        Tensor<float_t>* step_out = nullptr);
+                        Tensor<value_t>* step_out = nullptr);
 /// Explicit instantiation of linspace for float
 extern template Tensor<float> linspace<float>(const Tensor<float>&,
 const Tensor<float>&, uint64_t, MemoryLocation, int64_t, bool, Tensor<float>*);
 
-template<typename float_t>
-Tensor<float_t> linspace(float_t start,
-                        float_t stop,
+template<typename value_t>
+Tensor<value_t> linspace(value_t start,
+                        value_t stop,
                         uint64_t num,
                         MemoryLocation res_loc = MemoryLocation::DEVICE,
                         int64_t axis = 0,
                         bool endpoint = true,
-                        Tensor<float_t>* step_out = nullptr);
+                        Tensor<value_t>* step_out = nullptr);
 /// Explicit instantiation of linspace(scalars) for float
 extern template Tensor<float> linspace<float>(float,
 float, uint64_t, MemoryLocation, int64_t, bool, Tensor<float>*);
@@ -315,17 +315,17 @@ float, uint64_t, MemoryLocation, int64_t, bool, Tensor<float>*);
  * @param stop Upper bound of the sequence (exclusive).
  * @param step Increment between consecutive elements (non-zero).
  * @param res_loc Memory location for the resulting tensor.
- * @return Tensor<float_t> 1-D tensor containing the generated sequence.
+ * @return Tensor<value_t> 1-D tensor containing the generated sequence.
  *
  * @throws std::invalid_argument If @p step is zero.
  * @throws std::runtime_error If any input is NaN/Inf or if a numeric error
  * (NaN/Inf/overflow) occurs during generation.
  * @throws std::bad_alloc If device memory allocation fails.
  */
-template<typename float_t>
-Tensor<float_t> arange(float_t start,
-                       float_t stop,
-                       float_t step,
+template<typename value_t>
+Tensor<value_t> arange(value_t start,
+                       value_t stop,
+                       value_t step,
                        MemoryLocation res_loc);
 /// Explicit instantiation of arange for float
 extern template Tensor<float> arange<float>(float, float, float, MemoryLocation);
@@ -334,18 +334,18 @@ extern template Tensor<float> arange<float>(float, float, float, MemoryLocation)
  * @brief Generate a 1-D tensor with values from 0 up to stop-1.
  *
  * Equivalent to `arange(0, stop, 1)`. Produces a 1-D tensor with integer-like
- * increments cast to @p float_t type.
+ * increments cast to @p value_t type.
  *
  * @param stop Upper bound of the sequence (exclusive).
  * @param res_loc Memory location for the resulting tensor.
- * @return Tensor<float_t> 1-D tensor containing the generated sequence
+ * @return Tensor<value_t> 1-D tensor containing the generated sequence
  * from 0 to stop-1.
  *
  * @throws std::runtime_error If @p stop is NaN/Inf.
  * @throws std::bad_alloc If device memory allocation fails.
  */
-template<typename float_t>
-Tensor<float_t> arange(float_t stop,
+template<typename value_t>
+Tensor<value_t> arange(value_t stop,
     MemoryLocation res_loc = MemoryLocation::DEVICE);
 /// Explicit instantiation of arange(stop) for float
 extern template Tensor<float> arange<float>(float, MemoryLocation);
@@ -354,20 +354,20 @@ extern template Tensor<float> arange<float>(float, MemoryLocation);
  * @brief Create a tensor filled with zeros.
  *
  * Constructs a tensor with the given @p shape in which every element is
- * zero-initialized (value `0` converted to @p float_t). Memory for the
+ * zero-initialized (value `0` converted to @p value_t). Memory for the
  * tensor is allocated in the location specified by @p res_loc.
  *
  * @param shape Vector of dimension sizes for the tensor. The product of the
  *        entries defines the total number of elements.
  * @param res_loc Memory location for the resulting tensor (default: DEVICE).
- * @return Tensor<float_t> Tensor of the given shape with all elements equal to zero.
+ * @return Tensor<value_t> Tensor of the given shape with all elements equal to zero.
  *
  * @note The default Tensor builder used by this implementation already
  *       zero-initializes allocated memory.
  *
  */
-template<typename float_t>
-Tensor<float_t> zeros(const std::vector<uint64_t> & shape,
+template<typename value_t>
+Tensor<value_t> zeros(const std::vector<uint64_t> & shape,
     MemoryLocation res_loc = MemoryLocation::DEVICE);
 /// Explicit instantiation of zeros for float
 extern template Tensor<float> zeros<float>
@@ -387,10 +387,10 @@ extern template Tensor<float> zeros<float>
  *
  * @throws std::invalid_argument If @p n_bins is less than 1.
  */
-template <typename float_t>
-float_t integral(std::function<float_t(float_t)> f,
-                        float_t a,
-                        float_t b,
+template <typename value_t>
+value_t integral(std::function<value_t(value_t)> f,
+                        value_t a,
+                        value_t b,
                         uint64_t n_bins = 1000);
 /// Explicit instantiation of integral for float
 extern template float integral<float>
@@ -404,15 +404,15 @@ extern template float integral<float>
  *
  * @param tensor Input tensor (elements must be non-negative integers
  * within a small tolerance).
- * @return Tensor<float_t> Tensor of elementwise factorials.
+ * @return Tensor<value_t> Tensor of elementwise factorials.
  * @throws std::invalid_argument If tensor is empty or contains
  * negative/non-integer values.
  * @throws std::bad_alloc On device allocation failure.
  * @throws std::runtime_error On NaN/Inf/overflow during
  * input checks or accumulation.
  */
-template<typename float_t>
-Tensor<float_t> factorial(const Tensor<float_t> & tensor);
+template<typename value_t>
+Tensor<value_t> factorial(const Tensor<value_t> & tensor);
 /// Explicit instantiation of factorial for float
 extern template Tensor<float> factorial<float>(const Tensor<float>&);
 
@@ -423,15 +423,15 @@ extern template Tensor<float> factorial<float>(const Tensor<float>&);
  * the same shape and memory location.
  *
  * @param tensor Input tensor.
- * @return Tensor<float_t> Tensor containing elementwise natural logs.
+ * @return Tensor<value_t> Tensor containing elementwise natural logs.
  *
  * @throws std::invalid_argument If @p tensor is empty.
  * @throws std::bad_alloc On device allocation failure.
  * @throws std::runtime_error If inputs contain NaN, or if any computed
  * output is non-finite (Inf / -Inf / NaN) during computation.
  */
-template<typename float_t>
-Tensor<float_t> log(const Tensor<float_t> & tensor);
+template<typename value_t>
+Tensor<value_t> log(const Tensor<value_t> & tensor);
 /// Explicit instantiation of log for float
 extern template Tensor<float> log<float>(const Tensor<float>&);
 
@@ -444,15 +444,15 @@ extern template Tensor<float> log<float>(const Tensor<float>&);
  * @param tensor Input tensor.
  * @param axis_opt Axis to compute mean along, nullopt = flatten,
  * otherwise -rank..rank-1.
- * @return Tensor<float_t> A new tensor containing the means.
+ * @return Tensor<value_t> A new tensor containing the means.
  *
  * @throws std::invalid_argument If the tensor is empty or if @p axis
  * is out of range.
  * @throws std::bad_alloc If required device memory cannot be allocated.
  * @throws std::runtime_error If NaN or non-finite values are encountered.
  */
-template <typename float_t>
-Tensor<float_t> mean(const Tensor<float_t> & tensor,
+template <typename value_t>
+Tensor<value_t> mean(const Tensor<value_t> & tensor,
     std::optional<int64_t> axis_opt = std::nullopt);
 /// Explicit instantiation of mean for float
 extern template Tensor<float> mean<float>
@@ -470,7 +470,7 @@ extern template Tensor<float> mean<float>
  * @param axis_opt Axis to reduce along, nullopt = flatten,
  * otherwise -rank..rank-1.
  * @param ddof Delta degrees of freedom (0 => population variance).
- * @return Tensor<float_t> Tensor with the specified axis reduced.
+ * @return Tensor<value_t> Tensor with the specified axis reduced.
  *
  * @throws std::invalid_argument If the input tensor has no elements,
  * if @p axis is out of range, if the selected axis has zero length,
@@ -479,8 +479,8 @@ extern template Tensor<float> mean<float>
  * @throws std::runtime_error If NaN or non-finite values are encountered
  * in the inputs or in computed results.
  */
-template <typename float_t>
-Tensor<float_t> var(const Tensor<float_t> & tensor,
+template <typename value_t>
+Tensor<value_t> var(const Tensor<value_t> & tensor,
     std::optional<int64_t> axis_opt = std::nullopt,
     int64_t ddof = 0);
 /// Explicit instantiation of var for float
@@ -505,7 +505,7 @@ extern template Tensor<float> var<float>
  * @param ddof        Delta degrees of freedom (>= 0). Divisor is
  *                    (N - ddof) where N is product(lengths of sample axes).
  *
- * @return Tensor<float_t> Covariance matrices with shape
+ * @return Tensor<value_t> Covariance matrices with shape
  *         `{ <batch dims...>, event_total, event_total }`.
  *
  * @throws std::invalid_argument
@@ -524,8 +524,8 @@ extern template Tensor<float> var<float>
  * - NaN or non-finite values encountered, or device/kernel errors during
  *   reduction or matrix multiplication.
  */
-template <typename float_t>
-Tensor<float_t> cov(const Tensor<float_t> & tensor,
+template <typename value_t>
+Tensor<value_t> cov(const Tensor<value_t> & tensor,
                     std::vector<int64_t> sample_axes,
                     std::vector<int64_t> event_axes,
                     int64_t ddof = 0);
@@ -544,7 +544,7 @@ extern template Tensor<float> cov<float> (const Tensor<float>&,
  * @param ddof   Delta degrees of freedom (>= 0). Must satisfy ddof < N,
  *               where N is the length of axis `rank-2`.
  *
- * @return Tensor<float_t> Covariance matrices for the last two axes.
+ * @return Tensor<value_t> Covariance matrices for the last two axes.
  *
  * @throws std::invalid_argument
  * - tensor rank < 2.
@@ -557,8 +557,8 @@ extern template Tensor<float> cov<float> (const Tensor<float>&,
  * @throws std::runtime_error
  * - NaN or non-finite values encountered, or device/kernel errors.
  */
-template <typename float_t>
-Tensor<float_t> cov(const Tensor<float_t> & tensor, int64_t ddof = 0);
+template <typename value_t>
+Tensor<value_t> cov(const Tensor<value_t> & tensor, int64_t ddof = 0);
 /// Explicit instantiation of cov(no axes) for float
 extern template Tensor<float> cov<float> (const Tensor<float>&, int64_t);
 
@@ -574,7 +574,7 @@ extern template Tensor<float> cov<float> (const Tensor<float>&, int64_t);
  * @param axis_opt Axis to reduce along, nullopt = flatten,
  * otherwise -rank..rank-1.
  * @param ddof Delta degrees of freedom (0 => population std).
- * @return Tensor<float_t> Tensor with the specified axis reduced.
+ * @return Tensor<value_t> Tensor with the specified axis reduced.
  *
  * @throws std::invalid_argument If the input tensor has no elements,
  * if @p axis is not -1 and out of range, if the selected axis has zero length,
@@ -583,8 +583,8 @@ extern template Tensor<float> cov<float> (const Tensor<float>&, int64_t);
  * @throws std::runtime_error If NaN or non-finite values are encountered
  * in the inputs or during the sqrt computation.
  */
-template<typename float_t>
-Tensor<float_t> stddev(const Tensor<float_t>& input,
+template<typename value_t>
+Tensor<value_t> stddev(const Tensor<value_t>& input,
     std::optional<int64_t> axis_opt = std::nullopt,
     int64_t ddof = 0);
 /// Explicit instantiation of stddev for float
@@ -602,7 +602,7 @@ extern template Tensor<float> stddev<float>
  * @param max_iters Maximum iterations per power iteration (default 100).
  * @param tol       Convergence tolerance for the L2 iterate difference
  *                  (default 1e-4).
- * @return std::pair<Tensor<float_t>, Tensor<float_t>>
+ * @return std::pair<Tensor<value_t>, Tensor<value_t>>
  *         First: eigenvalues tensor of shape `{B..., N}`.
  *         Second: right eigenvectors tensor of shape `{B..., N, N}` (columns).
  *
@@ -610,10 +610,10 @@ extern template Tensor<float> stddev<float>
  * @throws std::runtime_error if random init vectors are zero, left/right inner
  *         product is zero, or device/kernel errors occur.
  */
-template <typename float_t>
-std::pair<Tensor<float_t>, Tensor<float_t>> eig(const Tensor<float_t> & input,
+template <typename value_t>
+std::pair<Tensor<value_t>, Tensor<value_t>> eig(const Tensor<value_t> & input,
     uint64_t max_iters = 100,
-    float_t tol = static_cast<float_t>(1e-4));
+    value_t tol = static_cast<value_t>(1e-4));
 /// Explicit instantiation of eig for float
 extern template std::pair<Tensor<float>, Tensor<float>> eig<float>
     (const Tensor<float>&, uint64_t, float);
@@ -625,15 +625,15 @@ extern template std::pair<Tensor<float>, Tensor<float>> eig<float>
  * corresponding input element. The input tensor is not modified.
  *
  * @param tensor Input tensor.
- * @return Tensor<float_t> New tensor with elementwise sqrt applied.
+ * @return Tensor<value_t> New tensor with elementwise sqrt applied.
  *
  * @throws std::invalid_argument If the tensor has no elements.
  * @throws std::bad_alloc If device memory allocation fails.
  * @throws std::runtime_error If NaN values are found in inputs or
  *         non-finite results are produced.
  */
-template <typename float_t>
-Tensor<float_t> sqrt(const Tensor<float_t>& tensor);
+template <typename value_t>
+Tensor<value_t> sqrt(const Tensor<value_t>& tensor);
 /// Explicit instantiation of sqrt for float
 extern template Tensor<float> sqrt<float>(const Tensor<float>& tensor);
 
@@ -644,7 +644,7 @@ extern template Tensor<float> sqrt<float>(const Tensor<float>& tensor);
  * with the same shape and memory location.
  *
  * @param tensor Input tensor.
- * @return Tensor<float_t> Tensor containing elementwise natural exponentials.
+ * @return Tensor<value_t> Tensor containing elementwise natural exponentials.
  *
  * @throws std::invalid_argument If @p tensor is empty.
  * @throws std::bad_alloc If required device helper memory cannot be allocated.
@@ -653,8 +653,8 @@ extern template Tensor<float> sqrt<float>(const Tensor<float>& tensor);
  * - A computed output is non-finite (Inf / -Inf / NaN), or
  * - A numeric error occurs during device/kernel execution.
  */
-template<typename float_t>
-Tensor<float_t> exp(const Tensor<float_t> & tensor);
+template<typename value_t>
+Tensor<value_t> exp(const Tensor<value_t> & tensor);
 /// Explicit instantiation of exp for float
 extern template Tensor<float> exp<float>(const Tensor<float>&);
 

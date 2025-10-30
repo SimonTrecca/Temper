@@ -10,13 +10,13 @@
 
 namespace temper::ml
 {
-template <typename float_t>
-Tensor<float_t> one_hot_expand_at(const Tensor<float_t>& tensor,
+template <typename value_t>
+Tensor<value_t> one_hot_expand_at(const Tensor<value_t>& tensor,
 	int64_t axis,
 	uint64_t axis_index,
 	uint64_t depth,
-	float_t on_value,
-	float_t off_value)
+	value_t on_value,
+	value_t off_value)
 {
     if (depth == 0)
     {
@@ -51,7 +51,7 @@ Tensor<float_t> one_hot_expand_at(const Tensor<float_t>& tensor,
     out_shape[axis] = (in_shape[axis] - 1) + depth;
 
     MemoryLocation res_loc = tensor.get_memory_location();
-    Tensor<float_t> result(out_shape, res_loc);
+    Tensor<value_t> result(out_shape, res_loc);
 
     const std::vector<uint64_t> in_divs =
     	temper::utils::compute_divisors(in_shape);
@@ -102,10 +102,10 @@ Tensor<float_t> one_hot_expand_at(const Tensor<float_t>& tensor,
     const uint64_t total_in_elems = tensor.get_num_elements();
     const uint64_t total_out_elems = result.get_num_elements();
 
-    const float_t integer_eps = static_cast<float_t>(1e-3);
+    const value_t integer_eps = static_cast<value_t>(1e-3);
 
-    const float_t* p_in_data = tensor.get_data();
-    float_t* p_out_data = result.get_data();
+    const value_t* p_in_data = tensor.get_data();
+    value_t* p_out_data = result.get_data();
 
     // Initialize output to off_value.
     g_sycl_queue.submit([&](sycl::handler& cgh)
@@ -128,9 +128,9 @@ Tensor<float_t> one_hot_expand_at(const Tensor<float_t>& tensor,
 
             uint64_t in_idx =
             	temper::sycl_utils::idx_of(flat, p_in_divs, p_in_strides, rank);
-            float_t in_val = p_in_data[in_idx];
+            value_t in_val = p_in_data[in_idx];
 
-            temper::sycl_utils::device_check_nan_and_set<float_t>
+            temper::sycl_utils::device_check_nan_and_set<value_t>
             	(in_val, p_error_flag);
             if (*p_error_flag != 0) { return; }
 
@@ -164,13 +164,13 @@ Tensor<float_t> one_hot_expand_at(const Tensor<float_t>& tensor,
             }
             else
             {
-                temper::sycl_utils::device_check_finite_and_set<float_t>
+                temper::sycl_utils::device_check_finite_and_set<value_t>
                 	(in_val, p_error_flag);
                 if (*p_error_flag != 0) { return; }
 
                 // Integer check.
-                float_t rounded = sycl::round(in_val);
-                float_t diff = sycl::fabs(in_val - rounded);
+                value_t rounded = sycl::round(in_val);
+                value_t diff = sycl::fabs(in_val - rounded);
                 if (diff > integer_eps)
                 {
                     p_error_flag[0] = 3;
@@ -241,8 +241,8 @@ Tensor<float_t> one_hot_expand_at(const Tensor<float_t>& tensor,
 template Tensor<float> one_hot_expand_at<float>
     (const Tensor<float>&, int64_t, uint64_t, uint64_t, float, float);
 
-template<typename float_t>
-Tensor<float_t> softmax(const Tensor<float_t> & tensor,
+template<typename value_t>
+Tensor<value_t> softmax(const Tensor<value_t> & tensor,
     std::optional<int64_t> axis_opt)
 {
     const int64_t rank = tensor.get_rank();
@@ -266,18 +266,18 @@ Tensor<float_t> softmax(const Tensor<float_t> & tensor,
         }
     }
 
-    Tensor<float_t> ex = math::exp(tensor);
-    Tensor<float_t> denom = math::sum(ex, axis_opt);
-    Tensor<float_t> out = ex / denom;
+    Tensor<value_t> ex = math::exp(tensor);
+    Tensor<value_t> denom = math::sum(ex, axis_opt);
+    Tensor<value_t> out = ex / denom;
 
     return out;
 }
 template Tensor<float> softmax<float>
     (const Tensor<float>&, std::optional<int64_t>);
 
-template<typename float_t>
-Tensor<float_t> cross_entropy(const Tensor<float_t> & logits,
-    const Tensor<float_t> & labels,
+template<typename value_t>
+Tensor<value_t> cross_entropy(const Tensor<value_t> & logits,
+    const Tensor<value_t> & labels,
     std::optional<int64_t> axis_opt,
     bool from_logits,
     bool reduction_mean)
@@ -340,7 +340,7 @@ Tensor<float_t> cross_entropy(const Tensor<float_t> & logits,
         }
     }
 
-    Tensor<float_t> probs;
+    Tensor<value_t> probs;
     if (from_logits)
     {
         probs = softmax(logits, axis_norm);
@@ -350,11 +350,11 @@ Tensor<float_t> cross_entropy(const Tensor<float_t> & logits,
         probs = logits;
     }
 
-    Tensor<float_t> logp = temper::math::log(probs);
-    Tensor<float_t> mul = labels * logp;
+    Tensor<value_t> logp = temper::math::log(probs);
+    Tensor<value_t> mul = labels * logp;
 
-    Tensor<float_t> summed = temper::math::sum(mul, axis_aligned);
-    Tensor<float_t> loss = -summed;
+    Tensor<value_t> summed = temper::math::sum(mul, axis_aligned);
+    Tensor<value_t> loss = -summed;
 
     if (reduction_mean)
     {
@@ -368,9 +368,9 @@ Tensor<float_t> cross_entropy(const Tensor<float_t> & logits,
 template Tensor<float> cross_entropy<float>
 (const Tensor<float>&, const Tensor<float>&, std::optional<int64_t>, bool, bool);
 
-template<typename float_t>
-Tensor<float_t> mean_squared_error(const Tensor<float_t>& predictions,
-    const Tensor<float_t>& targets,
+template<typename value_t>
+Tensor<value_t> mean_squared_error(const Tensor<value_t>& predictions,
+    const Tensor<value_t>& targets,
     std::optional<int64_t> axis_opt,
     bool reduction_mean)
 {
@@ -410,10 +410,10 @@ Tensor<float_t> mean_squared_error(const Tensor<float_t>& predictions,
         axis_aligned = axis;
     }
 
-    Tensor<float_t> diff = predictions - targets;
-    Tensor<float_t> sq = diff * diff;
+    Tensor<value_t> diff = predictions - targets;
+    Tensor<value_t> sq = diff * diff;
 
-    Tensor<float_t> summed = temper::math::sum(sq, axis_aligned);
+    Tensor<value_t> summed = temper::math::sum(sq, axis_aligned);
 
     if (reduction_mean)
     {

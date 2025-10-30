@@ -10,9 +10,9 @@
 namespace temper::math
 {
 
-template <typename float_t>
-temper::Tensor<float_t> matmul(const temper::Tensor<float_t> & first,
-                               const temper::Tensor<float_t> & second)
+template <typename value_t>
+temper::Tensor<value_t> matmul(const temper::Tensor<value_t> & first,
+                               const temper::Tensor<value_t> & second)
 {
     if (first.get_dimensions().empty() || second.get_dimensions().empty())
     {
@@ -152,7 +152,7 @@ temper::Tensor<float_t> matmul(const temper::Tensor<float_t> & first,
         res_loc = MemoryLocation::HOST;
     }
 
-    Tensor<float_t> result(out_shape, res_loc);
+    Tensor<value_t> result(out_shape, res_loc);
 
     std::vector<uint64_t> out_divs =
         temper::utils::compute_divisors(out_full_shape);
@@ -299,9 +299,9 @@ temper::Tensor<float_t> matmul(const temper::Tensor<float_t> & first,
 
     *p_error_flag = 0;
 
-    const float_t* p_a_data = first.get_data();
-    const float_t* p_b_data = second.get_data();
-    float_t* p_r_data = result.get_data();
+    const value_t* p_a_data = first.get_data();
+    const value_t* p_b_data = second.get_data();
+    value_t* p_r_data = result.get_data();
 
 
     g_sycl_queue.submit([&](sycl::handler& cgh)
@@ -313,19 +313,19 @@ temper::Tensor<float_t> matmul(const temper::Tensor<float_t> & first,
 
             if (a_rank_orig == 1 && b_rank_orig == 1)
             {
-                float_t acc = float_t{0};
+                value_t acc = value_t{0};
                 for (uint64_t t = 0; t < K; ++t)
                 {
-                    float_t av = p_a_data[t * a_stride_k];
-                    float_t bv = p_b_data[t * b_stride_k];
+                    value_t av = p_a_data[t * a_stride_k];
+                    value_t bv = p_b_data[t * b_stride_k];
 
-                    temper::sycl_utils::device_check_nan_and_set<float_t>
+                    temper::sycl_utils::device_check_nan_and_set<value_t>
                             (av, p_error_flag);
-                    temper::sycl_utils::device_check_nan_and_set<float_t>
+                    temper::sycl_utils::device_check_nan_and_set<value_t>
                         (bv, p_error_flag);
                     acc += av * bv;
                 }
-                temper::sycl_utils::device_check_finite_and_set<float_t>
+                temper::sycl_utils::device_check_finite_and_set<value_t>
                     (acc, p_error_flag);
                 p_r_data[0] = acc;
                 return;
@@ -347,19 +347,19 @@ temper::Tensor<float_t> matmul(const temper::Tensor<float_t> & first,
             const uint64_t a_offset_base = base_a + i * a_stride_m;
             const uint64_t b_offset_base = base_b + j * b_stride_n;
 
-            float_t acc = float_t{0};
+            value_t acc = value_t{0};
             for (uint64_t t = 0; t < K; ++t)
             {
-                float_t a_val = p_a_data[a_offset_base + t * a_stride_k];
-                float_t b_val = p_b_data[b_offset_base + t * b_stride_k];
+                value_t a_val = p_a_data[a_offset_base + t * a_stride_k];
+                value_t b_val = p_b_data[b_offset_base + t * b_stride_k];
 
-                temper::sycl_utils::device_check_nan_and_set<float_t>
+                temper::sycl_utils::device_check_nan_and_set<value_t>
                     (a_val, p_error_flag);
-                temper::sycl_utils::device_check_nan_and_set<float_t>
+                temper::sycl_utils::device_check_nan_and_set<value_t>
                     (b_val, p_error_flag);
                 acc += a_val * b_val;
             }
-            temper::sycl_utils::device_check_finite_and_set<float_t>
+            temper::sycl_utils::device_check_finite_and_set<value_t>
                 (acc, p_error_flag);
 
             p_r_data[base_r] = acc;
@@ -393,58 +393,58 @@ temper::Tensor<float_t> matmul(const temper::Tensor<float_t> & first,
 template Tensor<float> matmul<float>
 	(const Tensor<float>&, const Tensor<float>&);
 
-template <typename float_t>
-Tensor<float_t> reshape(const Tensor<float_t> & tensor,
+template <typename value_t>
+Tensor<value_t> reshape(const Tensor<value_t> & tensor,
                         const std::vector<uint64_t>& new_dimensions)
 {
-    Tensor<float_t> t = tensor.clone();
+    Tensor<value_t> t = tensor.clone();
     t.reshape(new_dimensions);
     return t;
 }
 template Tensor<float> reshape<float>
     (const Tensor<float>&, const std::vector<uint64_t>&);
 
-template <typename float_t>
-Tensor<float_t> sort(const Tensor<float_t> & tensor,
+template <typename value_t>
+Tensor<value_t> sort(const Tensor<value_t> & tensor,
     std::optional<int64_t> axis_opt)
 {
-    Tensor<float_t> t = tensor.clone();
+    Tensor<value_t> t = tensor.clone();
     t.sort(axis_opt);
     return t;
 }
 template Tensor<float> sort<float>
     (const Tensor<float>&, std::optional<int64_t>);
 
-template <typename float_t>
-Tensor<float_t> sum(const Tensor<float_t> & tensor,
+template <typename value_t>
+Tensor<value_t> sum(const Tensor<value_t> & tensor,
     std::optional<int64_t> axis_opt)
 {
-    Tensor<float_t> t = tensor.sum(axis_opt);
+    Tensor<value_t> t = tensor.sum(axis_opt);
     return t;
 }
 template Tensor<float> sum<float>
     (const Tensor<float>&, std::optional<int64_t>);
 
-template <typename float_t>
-Tensor<float_t> cumsum(const Tensor<float_t> & tensor,
+template <typename value_t>
+Tensor<value_t> cumsum(const Tensor<value_t> & tensor,
     std::optional<int64_t> axis_opt)
 {
-    Tensor<float_t> t = tensor.cumsum(axis_opt);
+    Tensor<value_t> t = tensor.cumsum(axis_opt);
     return t;
 }
 template Tensor<float> cumsum<float>
     (const Tensor<float>&, std::optional<int64_t>);
 
-template<typename float_t>
-Tensor<float_t> transpose(const Tensor<float_t> & tensor)
+template<typename value_t>
+Tensor<value_t> transpose(const Tensor<value_t> & tensor)
 {
     Tensor t = tensor.transpose();
     return t;
 }
 template Tensor<float> transpose<float>(const Tensor<float>&);
 
-template<typename float_t>
-Tensor<float_t> transpose(const Tensor<float_t> & tensor,
+template<typename value_t>
+Tensor<value_t> transpose(const Tensor<value_t> & tensor,
                         const std::vector<int64_t> & axes)
 {
     Tensor t = tensor.transpose(axes);
@@ -453,13 +453,13 @@ Tensor<float_t> transpose(const Tensor<float_t> & tensor,
 template Tensor<float> transpose<float>
     (const Tensor<float>&, const std::vector<int64_t>&);
 
-template<typename float_t>
-Tensor<float_t> pad(const Tensor<float_t> & tensor,
+template<typename value_t>
+Tensor<value_t> pad(const Tensor<value_t> & tensor,
                     uint64_t pad_top,
                     uint64_t pad_bottom,
                     uint64_t pad_left,
                     uint64_t pad_right,
-                    float_t pad_value)
+                    value_t pad_value)
 {
 
     const std::vector<uint64_t> & input_shape = tensor.get_dimensions();
@@ -506,7 +506,7 @@ Tensor<float_t> pad(const Tensor<float_t> & tensor,
 
     MemoryLocation res_loc = tensor.get_memory_location();
 
-    Tensor<float_t> result (res_shape, res_loc);
+    Tensor<value_t> result (res_shape, res_loc);
     (void) pad_value;
 
     uint64_t* p_divs = static_cast<uint64_t*>(
@@ -546,8 +546,8 @@ Tensor<float_t> pad(const Tensor<float_t> & tensor,
     g_sycl_queue.memcpy(p_divs,
         res_divs.data(), sizeof(uint64_t) * rank).wait();
 
-    const float_t* p_in_data = tensor.get_data();
-    float_t* p_res_data = result.get_data();
+    const value_t* p_in_data = tensor.get_data();
+    value_t* p_res_data = result.get_data();
 
     const uint64_t pad_t = pad_top;
     const uint64_t pad_l = pad_left;
@@ -561,7 +561,7 @@ Tensor<float_t> pad(const Tensor<float_t> & tensor,
             [=](sycl::id<1> id)
         {
             const uint64_t flat = static_cast<uint64_t>(id[0]);
-            float_t val = pad_value;
+            value_t val = pad_value;
 
             uint64_t res_col = (flat / p_divs[rank - 1]) % p_res_shape[rank - 1];
             uint64_t res_row = (flat / p_divs[rank - 2]) % p_res_shape[rank - 2];
@@ -593,19 +593,19 @@ Tensor<float_t> pad(const Tensor<float_t> & tensor,
 template Tensor<float> pad<float>
     (const Tensor<float>&, uint64_t, uint64_t, uint64_t, uint64_t, float);
 
-template<typename float_t>
-Tensor<float_t> pad(const Tensor<float_t> & tensor,
+template<typename value_t>
+Tensor<value_t> pad(const Tensor<value_t> & tensor,
                     uint64_t pad_height,
                     uint64_t pad_width,
-                    float_t pad_value)
+                    value_t pad_value)
 {
     return pad(tensor, pad_height, pad_height, pad_width, pad_width, pad_value);
 }
 template Tensor<float> pad<float>
     (const Tensor<float>&, uint64_t, uint64_t, float);
 
-template<typename float_t>
-std::vector<uint64_t> argmax(const Tensor<float_t> & tensor,
+template<typename value_t>
+std::vector<uint64_t> argmax(const Tensor<value_t> & tensor,
     std::optional<int64_t> axis_opt)
 {
     const std::vector<uint64_t> & in_shape = tensor.get_dimensions();
@@ -709,7 +709,7 @@ std::vector<uint64_t> argmax(const Tensor<float_t> & tensor,
 
     *p_error_flag = 0;
 
-    const float_t* p_in_data = tensor.get_data();
+    const value_t* p_in_data = tensor.get_data();
     uint64_t axis_dim = 0;
     uint64_t axis_stride = 0;
     if (!flatten)
@@ -730,16 +730,16 @@ std::vector<uint64_t> argmax(const Tensor<float_t> & tensor,
                 uint64_t best_idx = 0;
                 uint64_t first_offset = temper::sycl_utils::idx_of(
                     0, p_in_divs, p_in_strides, rank);
-                float_t best_val = p_in_data[first_offset];
-                temper::sycl_utils::device_check_nan_and_set<float_t>
+                value_t best_val = p_in_data[first_offset];
+                temper::sycl_utils::device_check_nan_and_set<value_t>
                     (best_val, p_error_flag);
 
                 for (uint64_t t = 1; t < total_input_elems; ++t)
                 {
                     uint64_t off = temper::sycl_utils::idx_of(
                         t, p_in_divs, p_in_strides, rank);
-                    float_t v = p_in_data[off];
-                    temper::sycl_utils::device_check_nan_and_set<float_t>
+                    value_t v = p_in_data[off];
+                    temper::sycl_utils::device_check_nan_and_set<value_t>
                         (v, p_error_flag);
                     if (v > best_val)
                     {
@@ -755,14 +755,14 @@ std::vector<uint64_t> argmax(const Tensor<float_t> & tensor,
                 out_flat, p_res_full_divs, p_in_strides, rank);
 
             uint64_t best_rel = 0;
-            float_t best_val = p_in_data[base + 0 * axis_stride];
-            temper::sycl_utils::device_check_nan_and_set<float_t>
+            value_t best_val = p_in_data[base + 0 * axis_stride];
+            temper::sycl_utils::device_check_nan_and_set<value_t>
                 (best_val, p_error_flag);
 
             for (uint64_t t = 1; t < axis_dim; ++t)
             {
-                float_t v = p_in_data[base + t * axis_stride];
-                temper::sycl_utils::device_check_nan_and_set<float_t>
+                value_t v = p_in_data[base + t * axis_stride];
+                temper::sycl_utils::device_check_nan_and_set<value_t>
                     (v, p_error_flag);
                 if (v > best_val)
                 {
@@ -803,14 +803,14 @@ std::vector<uint64_t> argmax(const Tensor<float_t> & tensor,
 template std::vector<uint64_t> argmax<float>
     (const Tensor<float>&, std::optional<int64_t>);
 
-template<typename float_t>
-Tensor<float_t> linspace(const Tensor<float_t>& start,
-                        const Tensor<float_t>& stop,
+template<typename value_t>
+Tensor<value_t> linspace(const Tensor<value_t>& start,
+                        const Tensor<value_t>& stop,
                         uint64_t num,
                         MemoryLocation res_loc,
                         int64_t axis,
                         bool endpoint,
-                        Tensor<float_t>* step_out)
+                        Tensor<value_t>* step_out)
 {
     const std::vector<uint64_t> & start_shape = start.get_dimensions();
     const std::vector<uint64_t> & stop_shape = stop.get_dimensions();
@@ -829,8 +829,8 @@ Tensor<float_t> linspace(const Tensor<float_t>& start,
 
     if (num == 0)
     {
-        Tensor<float_t> result({1}, res_loc);
-        Tensor<float_t> step_tensor({1}, res_loc);
+        Tensor<value_t> result({1}, res_loc);
+        Tensor<value_t> step_tensor({1}, res_loc);
         if (step_out != nullptr)
         {
             *step_out = std::move(step_tensor);
@@ -904,10 +904,10 @@ Tensor<float_t> linspace(const Tensor<float_t>& start,
         }
     }
 
-    Tensor<float_t> result(out_shape, res_loc);
+    Tensor<value_t> result(out_shape, res_loc);
 
     std::vector<uint64_t> step_shape = res_shape;
-    Tensor<float_t> step_tensor(step_shape, res_loc);
+    Tensor<value_t> step_tensor(step_shape, res_loc);
 
     std::vector<uint64_t> out_divs = temper::utils::compute_divisors(out_shape);
     std::vector<uint64_t> res_divs = temper::utils::compute_divisors(res_shape);
@@ -984,10 +984,10 @@ Tensor<float_t> linspace(const Tensor<float_t>& start,
 
     *p_error_flag = 0;
 
-    const float_t* p_a_data = start.get_data();
-    const float_t* p_b_data = stop.get_data();
-    float_t* p_out = result.get_data();
-    float_t* p_step_out = step_tensor.get_data();
+    const value_t* p_a_data = start.get_data();
+    const value_t* p_b_data = stop.get_data();
+    value_t* p_out = result.get_data();
+    value_t* p_step_out = step_tensor.get_data();
 
     const uint64_t total_output_elems = result.get_num_elements();
 
@@ -1013,30 +1013,30 @@ Tensor<float_t> linspace(const Tensor<float_t>& start,
                 p_res_strides_expanded,
                 out_rank);
 
-            float_t a_val = p_a_data[a_idx];
-            float_t b_val = p_b_data[b_idx];
-            temper::sycl_utils::device_check_nan_and_set<float_t>
+            value_t a_val = p_a_data[a_idx];
+            value_t b_val = p_b_data[b_idx];
+            temper::sycl_utils::device_check_nan_and_set<value_t>
                 (a_val, p_error_flag);
-            temper::sycl_utils::device_check_nan_and_set<float_t>
+            temper::sycl_utils::device_check_nan_and_set<value_t>
                 (b_val, p_error_flag);
 
-            float_t step;
+            value_t step;
             if (num == 1)
             {
-                step = float_t{0};
+                step = value_t{0};
             }
             else
             {
                 if (endpoint)
                 {
-                    step = (b_val - a_val) / static_cast<float_t>(num - 1);
+                    step = (b_val - a_val) / static_cast<value_t>(num - 1);
                 }
                 else
                 {
-                    step = (b_val - a_val) / static_cast<float_t>(num);
+                    step = (b_val - a_val) / static_cast<value_t>(num);
                 }
             }
-            temper::sycl_utils::device_check_finite_and_set<float_t>
+            temper::sycl_utils::device_check_finite_and_set<value_t>
                 (step, p_error_flag);
 
             if (pos_axis == 0)
@@ -1044,16 +1044,16 @@ Tensor<float_t> linspace(const Tensor<float_t>& start,
                 p_step_out[res_flat] = step;
             }
 
-            float_t val;
+            value_t val;
             if (num == 1)
             {
                 val = a_val;
             }
             else
             {
-                val = a_val + step * static_cast<float_t>(pos_axis);
+                val = a_val + step * static_cast<value_t>(pos_axis);
             }
-            temper::sycl_utils::device_check_finite_and_set<float_t>
+            temper::sycl_utils::device_check_finite_and_set<value_t>
                 (val, p_error_flag);
             p_out[flat] = val;
         });
@@ -1094,31 +1094,31 @@ Tensor<float_t> linspace(const Tensor<float_t>& start,
 template Tensor<float> linspace<float>(const Tensor<float>&,
 const Tensor<float>&, uint64_t, MemoryLocation, int64_t, bool, Tensor<float>*);
 
-template<typename float_t>
-Tensor<float_t> linspace(float_t start,
-                        float_t stop,
+template<typename value_t>
+Tensor<value_t> linspace(value_t start,
+                        value_t stop,
                         uint64_t num,
                         MemoryLocation res_loc,
                         int64_t axis,
                         bool endpoint,
-                        Tensor<float_t>* step_out)
+                        Tensor<value_t>* step_out)
 {
-    Tensor<float_t> start_t;
+    Tensor<value_t> start_t;
     start_t = start;
-    Tensor<float_t> stop_t;
+    Tensor<value_t> stop_t;
     stop_t = stop;
     return linspace(start_t, stop_t, num, res_loc, axis, endpoint, step_out);
 }
 template Tensor<float> linspace<float>(float,
 float, uint64_t, MemoryLocation, int64_t, bool, Tensor<float>*);
 
-template<typename float_t>
-Tensor<float_t> arange(float_t start,
-                       float_t stop,
-                       float_t step,
+template<typename value_t>
+Tensor<value_t> arange(value_t start,
+                       value_t stop,
+                       value_t step,
                        MemoryLocation res_loc)
 {
-    if (step == static_cast<float_t>(0))
+    if (step == static_cast<value_t>(0))
     {
         throw std::invalid_argument(R"(arange: step must be non-zero.)");
     }
@@ -1135,7 +1135,7 @@ Tensor<float_t> arange(float_t start,
     double ratio = raw / static_cast<double>(step);
 
     uint64_t num = 0;
-    if (step > static_cast<float_t>(0))
+    if (step > static_cast<value_t>(0))
     {
         if (ratio > 0.0)
         {
@@ -1152,12 +1152,12 @@ Tensor<float_t> arange(float_t start,
 
     if (num == 0)
     {
-        Tensor<float_t> result({1}, res_loc);
+        Tensor<value_t> result({1}, res_loc);
         return result;
     }
 
     std::vector<uint64_t> out_shape = { num };
-    Tensor<float_t> result(out_shape, res_loc);
+    Tensor<value_t> result(out_shape, res_loc);
 
     int32_t* p_error_flag = static_cast<int32_t*>(
         sycl::malloc_shared(sizeof(int32_t), g_sycl_queue));
@@ -1167,7 +1167,7 @@ Tensor<float_t> arange(float_t start,
     }
     *p_error_flag = 0;
 
-    float_t* p_out = result.get_data();
+    value_t* p_out = result.get_data();
     const uint64_t total_output_elems = result.get_num_elements();
 
     g_sycl_queue.submit([&](sycl::handler& cgh) {
@@ -1175,12 +1175,12 @@ Tensor<float_t> arange(float_t start,
             [=](sycl::id<1> id)
         {
             const uint64_t idx = static_cast<uint64_t>(id[0]);
-            float_t val = static_cast<float_t>
+            value_t val = static_cast<value_t>
                 (start + static_cast<double>(idx) * static_cast<double>(step));
 
-            temper::sycl_utils::device_check_nan_and_set<float_t>
+            temper::sycl_utils::device_check_nan_and_set<value_t>
                 (val, p_error_flag);
-            temper::sycl_utils::device_check_finite_and_set<float_t>
+            temper::sycl_utils::device_check_finite_and_set<value_t>
                 (val, p_error_flag);
 
             p_out[idx] = val;
@@ -1210,16 +1210,16 @@ Tensor<float_t> arange(float_t start,
 }
 template Tensor<float> arange<float>(float, float, float, MemoryLocation);
 
-template<typename float_t>
-Tensor<float_t> arange(float_t stop, MemoryLocation res_loc)
+template<typename value_t>
+Tensor<value_t> arange(value_t stop, MemoryLocation res_loc)
 {
-    return arange<float_t>
-        (static_cast<float_t>(0), stop, static_cast<float_t>(1), res_loc);
+    return arange<value_t>
+        (static_cast<value_t>(0), stop, static_cast<value_t>(1), res_loc);
 }
 template Tensor<float> arange<float>(float, MemoryLocation);
 
-template<typename float_t>
-Tensor<float_t> zeros(const std::vector<uint64_t> & shape,
+template<typename value_t>
+Tensor<value_t> zeros(const std::vector<uint64_t> & shape,
     MemoryLocation res_loc)
 {
     // Default builder already zero-initializes.
@@ -1228,10 +1228,10 @@ Tensor<float_t> zeros(const std::vector<uint64_t> & shape,
 template Tensor<float> zeros<float>
     (const std::vector<uint64_t>&, MemoryLocation);
 
-template <typename float_t>
-float_t integral(std::function<float_t(float_t)> f,
-                        float_t a,
-                        float_t b,
+template <typename value_t>
+value_t integral(std::function<value_t(value_t)> f,
+                        value_t a,
+                        value_t b,
                         uint64_t n_bins)
 {
     if (n_bins < 1)
@@ -1240,28 +1240,28 @@ float_t integral(std::function<float_t(float_t)> f,
             there need to be at least 1 interval)");
     }
 
-    const float_t delta = (b - a) / static_cast<float_t>(n_bins);
-    float_t x = a;
-    float_t result = static_cast<float_t>(0);
+    const value_t delta = (b - a) / static_cast<value_t>(n_bins);
+    value_t x = a;
+    value_t result = static_cast<value_t>(0);
 
     for (uint64_t i = 0; i < n_bins; ++i)
     {
-        const float_t x_left  = x;
-        const float_t x_right = x + delta;
-        const float_t x_mid   = static_cast<float_t>(0.5) * (x_left + x_right);
+        const value_t x_left  = x;
+        const value_t x_right = x + delta;
+        const value_t x_mid   = static_cast<value_t>(0.5) * (x_left + x_right);
 
-        result += f(x_left) + static_cast<float_t>(4) * f(x_mid) + f(x_right);
+        result += f(x_left) + static_cast<value_t>(4) * f(x_mid) + f(x_right);
         x = x_right;
     }
 
-    result *= (delta / static_cast<float_t>(6));
+    result *= (delta / static_cast<value_t>(6));
     return result;
 }
 template float integral<float>
     (std::function<float(float)>, float, float, uint64_t);
 
-template<typename float_t>
-Tensor<float_t> factorial(const Tensor<float_t> & tensor)
+template<typename value_t>
+Tensor<value_t> factorial(const Tensor<value_t> & tensor)
 {
     const std::vector<uint64_t> & in_shape = tensor.get_dimensions();
     const uint64_t arr_len = static_cast<uint64_t>(in_shape.size());
@@ -1274,7 +1274,7 @@ Tensor<float_t> factorial(const Tensor<float_t> & tensor)
 
     const uint64_t total_output_elems = tensor.get_num_elements();
     MemoryLocation res_loc = tensor.get_memory_location();
-    Tensor<float_t> result(in_shape, res_loc);
+    Tensor<value_t> result(in_shape, res_loc);
 
     const std::vector<uint64_t> in_divs =
         temper::utils::compute_divisors(in_shape);
@@ -1302,10 +1302,10 @@ Tensor<float_t> factorial(const Tensor<float_t> & tensor)
         in_strides.data(), sizeof(uint64_t) * arr_len).wait();
     *p_error_flag = 0;
 
-    const float_t* p_in_data = tensor.get_data();
-    float_t* p_out = result.get_data();
+    const value_t* p_in_data = tensor.get_data();
+    value_t* p_out = result.get_data();
 
-    const float_t eps = static_cast<float_t>(1e-6);
+    const value_t eps = static_cast<value_t>(1e-6);
 
     g_sycl_queue.submit([&](sycl::handler& cgh) {
         cgh.parallel_for(sycl::range<1>(static_cast<size_t>(total_output_elems)),
@@ -1315,42 +1315,42 @@ Tensor<float_t> factorial(const Tensor<float_t> & tensor)
 
             uint64_t in_idx = temper::sycl_utils::idx_of
                 (flat, p_in_divs, p_in_strides, arr_len);
-            float_t v = p_in_data[in_idx];
+            value_t v = p_in_data[in_idx];
 
-            temper::sycl_utils::device_check_nan_and_set<float_t>
+            temper::sycl_utils::device_check_nan_and_set<value_t>
                 (v, p_error_flag);
-            temper::sycl_utils::device_check_finite_and_set<float_t>
+            temper::sycl_utils::device_check_finite_and_set<value_t>
                 (v, p_error_flag);
             if (*p_error_flag != 0)
             {
-                p_out[flat] = static_cast<float_t>(0);
+                p_out[flat] = static_cast<value_t>(0);
                 return;
             }
 
-            if (v < static_cast<float_t>(0))
+            if (v < static_cast<value_t>(0))
             {
                 p_error_flag[0] = 3;
-                p_out[flat] = static_cast<float_t>(0);
+                p_out[flat] = static_cast<value_t>(0);
                 return;
             }
 
-            float_t rounded = sycl::floor(v + static_cast<float_t>(0.5));
-            float_t diff = sycl::fabs(v - rounded);
+            value_t rounded = sycl::floor(v + static_cast<value_t>(0.5));
+            value_t diff = sycl::fabs(v - rounded);
             if (diff > eps)
             {
                 p_error_flag[0] = 3;
-                p_out[flat] = static_cast<float_t>(0);
+                p_out[flat] = static_cast<value_t>(0);
                 return;
             }
 
             const uint64_t n = static_cast<uint64_t>(rounded);
 
-            float_t acc = static_cast<float_t>(1);
+            value_t acc = static_cast<value_t>(1);
             for (uint64_t t = 1; t <= n; ++t)
             {
-                acc = acc * static_cast<float_t>(t);
+                acc = acc * static_cast<value_t>(t);
             }
-            temper::sycl_utils::device_check_finite_and_set<float_t>
+            temper::sycl_utils::device_check_finite_and_set<value_t>
                     (acc, p_error_flag);
             p_out[flat] = acc;
         });
@@ -1386,8 +1386,8 @@ Tensor<float_t> factorial(const Tensor<float_t> & tensor)
 }
 template Tensor<float> factorial<float>(const Tensor<float>&);
 
-template<typename float_t>
-Tensor<float_t> log(const Tensor<float_t> & tensor)
+template<typename value_t>
+Tensor<value_t> log(const Tensor<value_t> & tensor)
 {
     const std::vector<uint64_t> & in_shape = tensor.get_dimensions();
     if (in_shape.empty())
@@ -1398,7 +1398,7 @@ Tensor<float_t> log(const Tensor<float_t> & tensor)
     const uint64_t arr_len = static_cast<uint64_t>(in_shape.size());
     const uint64_t total_output_elems = tensor.get_num_elements();
     MemoryLocation res_loc = tensor.get_memory_location();
-    Tensor<float_t> result(in_shape, res_loc);
+    Tensor<value_t> result(in_shape, res_loc);
 
     const std::vector<uint64_t> in_divs =
         temper::utils::compute_divisors(in_shape);
@@ -1428,8 +1428,8 @@ Tensor<float_t> log(const Tensor<float_t> & tensor)
         sizeof(uint64_t) * arr_len).wait();
     *p_error_flag = 0;
 
-    const float_t* p_in_data = tensor.get_data();
-    float_t* p_out = result.get_data();
+    const value_t* p_in_data = tensor.get_data();
+    value_t* p_out = result.get_data();
 
     g_sycl_queue.submit([&](sycl::handler& cgh) {
         cgh.parallel_for(sycl::range<1>(static_cast<size_t>(total_output_elems)),
@@ -1441,13 +1441,13 @@ Tensor<float_t> log(const Tensor<float_t> & tensor)
                                                     p_in_divs,
                                                     p_in_strides,
                                                     arr_len);
-            float_t v = p_in_data[in_idx];
+            value_t v = p_in_data[in_idx];
 
-            temper::sycl_utils::device_check_nan_and_set<float_t>
+            temper::sycl_utils::device_check_nan_and_set<value_t>
                 (v, p_error_flag);
-            float_t outv = sycl::log(v);
+            value_t outv = sycl::log(v);
 
-            temper::sycl_utils::device_check_finite_and_set<float_t>
+            temper::sycl_utils::device_check_finite_and_set<value_t>
                 (outv, p_error_flag);
             p_out[flat] = outv;
         });
@@ -1478,29 +1478,29 @@ Tensor<float_t> log(const Tensor<float_t> & tensor)
 }
 template Tensor<float> log<float>(const Tensor<float>&);
 
-template <typename float_t>
-Tensor<float_t> mean(const Tensor<float_t> & tensor,
+template <typename value_t>
+Tensor<value_t> mean(const Tensor<value_t> & tensor,
     std::optional<int64_t> axis_opt)
 {
-    Tensor<float_t> t = tensor.mean(axis_opt);
+    Tensor<value_t> t = tensor.mean(axis_opt);
     return t;
 }
 template Tensor<float> mean<float>
     (const Tensor<float>&, std::optional<int64_t> axis_opt);
 
-template <typename float_t>
-Tensor<float_t> var(const Tensor<float_t> & tensor,
+template <typename value_t>
+Tensor<value_t> var(const Tensor<value_t> & tensor,
     std::optional<int64_t> axis_opt,
     int64_t ddof)
 {
-    Tensor<float_t> t = tensor.var(axis_opt, ddof);
+    Tensor<value_t> t = tensor.var(axis_opt, ddof);
     return t;
 }
 template Tensor<float> var<float>
     (const Tensor<float>&, std::optional<int64_t>, int64_t);
 
-template <typename float_t>
-Tensor<float_t> cov(const Tensor<float_t> & tensor,
+template <typename value_t>
+Tensor<value_t> cov(const Tensor<value_t> & tensor,
                     std::vector<int64_t> sample_axes,
                     std::vector<int64_t> event_axes,
                     int64_t ddof)
@@ -1510,15 +1510,15 @@ Tensor<float_t> cov(const Tensor<float_t> & tensor,
 template Tensor<float> cov<float> (const Tensor<float>&,
     std::vector<int64_t>, std::vector<int64_t>, int64_t);
 
-template <typename float_t>
-Tensor<float_t> cov(const Tensor<float_t> & tensor, int64_t ddof)
+template <typename value_t>
+Tensor<value_t> cov(const Tensor<value_t> & tensor, int64_t ddof)
 {
     return tensor.cov(ddof);
 }
 template Tensor<float> cov<float> (const Tensor<float>&, int64_t);
 
-template <typename float_t>
-Tensor<float_t> stddev(const Tensor<float_t> & tensor,
+template <typename value_t>
+Tensor<value_t> stddev(const Tensor<value_t> & tensor,
     std::optional<int64_t> axis_opt,
     int64_t ddof)
 {
@@ -1527,18 +1527,18 @@ Tensor<float_t> stddev(const Tensor<float_t> & tensor,
 template Tensor<float> stddev<float>
     (const Tensor<float>&, std::optional<int64_t>, int64_t);
 
-template <typename float_t>
-std::pair<Tensor<float_t>, Tensor<float_t>> eig(const Tensor<float_t> & input,
+template <typename value_t>
+std::pair<Tensor<value_t>, Tensor<value_t>> eig(const Tensor<value_t> & input,
                                                 uint64_t max_iters,
-                                                float_t tol)
+                                                value_t tol)
 {
     return input.eig(max_iters, tol);
 }
 template std::pair<Tensor<float>, Tensor<float>> eig<float>
     (const Tensor<float>&, uint64_t, float);
 
-template <typename float_t>
-Tensor<float_t> sqrt(const Tensor<float_t>& tensor)
+template <typename value_t>
+Tensor<value_t> sqrt(const Tensor<value_t>& tensor)
 {
     const int64_t rank = tensor.get_rank();
     if (rank == 0)
@@ -1549,7 +1549,7 @@ Tensor<float_t> sqrt(const Tensor<float_t>& tensor)
 
     const uint64_t total_elems = tensor.get_num_elements();
     MemoryLocation mem_loc = tensor.get_memory_location();
-    Tensor<float_t> result(dims, mem_loc);
+    Tensor<value_t> result(dims, mem_loc);
 
     const std::vector<uint64_t> divisors =
         temper::utils::compute_divisors(dims);
@@ -1576,8 +1576,8 @@ Tensor<float_t> sqrt(const Tensor<float_t>& tensor)
                         sizeof(uint64_t) * rank).wait();
     *p_error_flag = 0;
 
-    const float_t* p_in = tensor.get_data();
-    float_t* p_out = result.get_data();
+    const value_t* p_in = tensor.get_data();
+    value_t* p_out = result.get_data();
 
     g_sycl_queue.submit([&](sycl::handler& cgh) {
         cgh.parallel_for(sycl::range<1>(static_cast<size_t>(total_elems)),
@@ -1587,12 +1587,12 @@ Tensor<float_t> sqrt(const Tensor<float_t>& tensor)
             uint64_t idx = temper::sycl_utils::idx_of(
                 flat, p_divs, p_strides, rank);
 
-            float_t val = p_in[idx];
-            temper::sycl_utils::device_check_nan_and_set<float_t>
+            value_t val = p_in[idx];
+            temper::sycl_utils::device_check_nan_and_set<value_t>
                 (val, p_error_flag);
 
-            float_t outv = sycl::sqrt(val);
-            temper::sycl_utils::device_check_finite_and_set<float_t>
+            value_t outv = sycl::sqrt(val);
+            temper::sycl_utils::device_check_finite_and_set<value_t>
                 (outv, p_error_flag);
             p_out[flat] = outv;
         });
@@ -1620,8 +1620,8 @@ Tensor<float_t> sqrt(const Tensor<float_t>& tensor)
 }
 template Tensor<float> sqrt<float>(const Tensor<float>& tensor);
 
-template<typename float_t>
-Tensor<float_t> exp(const Tensor<float_t> & tensor)
+template<typename value_t>
+Tensor<value_t> exp(const Tensor<value_t> & tensor)
 {
     const std::vector<uint64_t> & in_shape = tensor.get_dimensions();
     if (in_shape.empty())
@@ -1632,7 +1632,7 @@ Tensor<float_t> exp(const Tensor<float_t> & tensor)
     const uint64_t arr_len = static_cast<uint64_t>(in_shape.size());
     const uint64_t total_output_elems = tensor.get_num_elements();
     MemoryLocation res_loc = tensor.get_memory_location();
-    Tensor<float_t> result(in_shape, res_loc);
+    Tensor<value_t> result(in_shape, res_loc);
 
     const std::vector<uint64_t> in_divs =
         temper::utils::compute_divisors(in_shape);
@@ -1662,8 +1662,8 @@ Tensor<float_t> exp(const Tensor<float_t> & tensor)
         sizeof(uint64_t) * arr_len).wait();
     *p_error_flag = 0;
 
-    const float_t* p_in_data = tensor.get_data();
-    float_t* p_out = result.get_data();
+    const value_t* p_in_data = tensor.get_data();
+    value_t* p_out = result.get_data();
 
     g_sycl_queue.submit([&](sycl::handler& cgh) {
         cgh.parallel_for(sycl::range<1>(static_cast<size_t>(total_output_elems)),
@@ -1675,14 +1675,14 @@ Tensor<float_t> exp(const Tensor<float_t> & tensor)
                                                     p_in_divs,
                                                     p_in_strides,
                                                     arr_len);
-            float_t v = p_in_data[in_idx];
+            value_t v = p_in_data[in_idx];
 
-            temper::sycl_utils::device_check_nan_and_set<float_t>
+            temper::sycl_utils::device_check_nan_and_set<value_t>
                 (v, p_error_flag);
 
-            float_t outv = sycl::exp(v);
+            value_t outv = sycl::exp(v);
 
-            temper::sycl_utils::device_check_finite_and_set<float_t>
+            temper::sycl_utils::device_check_finite_and_set<value_t>
                 (outv, p_error_flag);
             p_out[flat] = outv;
         });

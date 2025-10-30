@@ -53,8 +53,8 @@ inline uint64_t idx_of(uint64_t logical_idx,
  * Error codes:
  *   1 -> NaN detected
  */
-template<typename float_t>
-inline void device_check_nan_and_set(float_t v, int32_t* p_err)
+template<typename value_t>
+inline void device_check_nan_and_set(value_t v, int32_t* p_err)
 {
     if (sycl::isnan(v))
     {
@@ -76,8 +76,8 @@ inline void device_check_nan_and_set(float_t v, int32_t* p_err)
  * Error codes:
  *   2 -> non-finite detected (Inf/overflow/result)
  */
-template<typename float_t>
-inline void device_check_finite_and_set(float_t v, int32_t* p_err)
+template<typename value_t>
+inline void device_check_finite_and_set(value_t v, int32_t* p_err)
 {
     if (!sycl::isfinite(v))
     {
@@ -93,17 +93,17 @@ inline void device_check_finite_and_set(float_t v, int32_t* p_err)
 /**
  * @brief Atomically set an error flag if divisor is zero.
  *
- * @tparam float_t Floating-point type
+ * @tparam value_t Floating-point type
  * @param b_val Divisor value
  * @param p_err Pointer to int32_t error flag in shared/global memory
  *
  * Error codes:
  *   3 -> division by zero detected
  */
-template<typename float_t>
-inline void device_check_divzero_and_set(float_t b_val, int32_t* p_err)
+template<typename value_t>
+inline void device_check_divzero_and_set(value_t b_val, int32_t* p_err)
 {
-    if (b_val == static_cast<float_t>(0))
+    if (b_val == static_cast<value_t>(0))
     {
         auto atomic_err = sycl::atomic_ref<int32_t,
             sycl::memory_order::relaxed,
@@ -133,7 +133,7 @@ inline void device_check_divzero_and_set(float_t b_val, int32_t* p_err)
  * @param merge_input pointer to data buffer
  * @return partition index i inside A (0..len_left)
  */
-template<typename float_t>
+template<typename value_t>
 inline uint64_t merge_path_partition(uint64_t k,
                                      uint64_t left,
                                      uint64_t mid,
@@ -141,7 +141,7 @@ inline uint64_t merge_path_partition(uint64_t k,
                                      const uint64_t* p_divs,
                                      const uint64_t* p_strides,
                                      int64_t rank,
-                                     const float_t* merge_input)
+                                     const value_t* merge_input)
 {
     const uint64_t len_left  = mid - left;
     const uint64_t len_right = right - mid;
@@ -174,8 +174,8 @@ inline uint64_t merge_path_partition(uint64_t k,
         uint64_t off_a = idx_of(left + i_mid, p_divs, p_strides, rank);
         uint64_t off_b = idx_of(mid + j_mid - 1, p_divs, p_strides, rank);
 
-        float_t a = merge_input[off_a];
-        float_t b = merge_input[off_b];
+        value_t a = merge_input[off_a];
+        value_t b = merge_input[off_b];
 
         bool a_is_nan = sycl::isnan(a);
         bool b_is_nan = sycl::isnan(b);
