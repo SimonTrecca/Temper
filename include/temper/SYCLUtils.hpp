@@ -45,6 +45,102 @@ inline uint64_t idx_of(uint64_t logical_idx,
 }
 
 /**
+ * @brief Safe isnan wrapper that is valid for both floating and integer types.
+ *
+ * For floating types it forwards to sycl::isnan(). For integral types it
+ * returns false (integers can't be NaN).
+ */
+template <typename value_t>
+inline bool is_nan(value_t v)
+{
+    if constexpr (std::is_floating_point_v<value_t>)
+    {
+        return sycl::isnan(v);
+    }
+    else
+    {
+        (void)v;
+        return false;
+    }
+}
+
+/**
+ * @brief Safe isfinite wrapper for floating/integral types.
+ *
+ * For floating types it forwards to sycl::isfinite(). For integral types it
+ * returns true (integers are always finite).
+ */
+template <typename value_t>
+inline bool is_finite(value_t v)
+{
+    if constexpr (std::is_floating_point_v<value_t>)
+    {
+        return sycl::isfinite(v);
+    }
+    else
+    {
+        (void)v;
+        return true;
+    }
+}
+
+
+/**
+ * @brief Safe sqrt wrapper.
+ *
+ * For floating types it forwards to sycl::sqrt(). For integral types it casts
+ * to a floating type, computes the sqrt, then casts back (flooring the result).
+ * If you prefer other semantics for integers, change the cast or behavior.
+ */
+template <typename value_t>
+inline value_t sqrt(value_t v)
+{
+    if constexpr (std::is_floating_point_v<value_t>)
+    {
+        return sycl::sqrt(v);
+    }
+    else
+    {
+        float tmp = sycl::sqrt(static_cast<double>(v));
+        return static_cast<value_t>(tmp);
+    }
+}
+
+/**
+ * @brief Safe fabs wrapper.
+ *
+ * For floating types forwards to sycl::fabs; for integral types returns the
+ * absolute value using ordinary integer ops.
+ */
+template <typename value_t>
+inline value_t fabs(value_t v)
+{
+    if constexpr (std::is_floating_point_v<value_t>)
+    {
+        return sycl::fabs(v);
+    }
+    else
+    {
+        if constexpr (std::is_signed_v<value_t>)
+        {
+            if (v < 0)
+            {
+                return -v;
+            }
+            else
+            {
+                return v;
+            }
+        }
+        else
+        {
+            return v;
+        }
+    }
+}
+
+
+/**
  * @brief Atomically set an error flag if a NaN is observed.
  *
  * @param v value to test
@@ -56,7 +152,7 @@ inline uint64_t idx_of(uint64_t logical_idx,
 template<typename value_t>
 inline void device_check_nan_and_set(value_t v, int32_t* p_err)
 {
-    if (sycl::isnan(v))
+    if (sycl_utils::is_nan(v))
     {
         auto atomic_err = sycl::atomic_ref<int32_t,
             sycl::memory_order::relaxed,
@@ -79,7 +175,7 @@ inline void device_check_nan_and_set(value_t v, int32_t* p_err)
 template<typename value_t>
 inline void device_check_finite_and_set(value_t v, int32_t* p_err)
 {
-    if (!sycl::isfinite(v))
+    if (!sycl_utils::is_finite(v))
     {
         auto atomic_err = sycl::atomic_ref<int32_t,
             sycl::memory_order::relaxed,
@@ -135,13 +231,13 @@ inline void device_check_divzero_and_set(value_t b_val, int32_t* p_err)
  */
 template<typename value_t>
 inline uint64_t merge_path_partition(uint64_t k,
-                                     uint64_t left,
-                                     uint64_t mid,
-                                     uint64_t right,
-                                     const uint64_t* p_divs,
-                                     const uint64_t* p_strides,
-                                     int64_t rank,
-                                     const value_t* merge_input)
+    uint64_t left,
+    uint64_t mid,
+    uint64_t right,
+    const uint64_t* p_divs,
+    const uint64_t* p_strides,
+    int64_t rank,
+    const value_t* merge_input)
 {
     const uint64_t len_left  = mid - left;
     const uint64_t len_right = right - mid;
@@ -177,8 +273,8 @@ inline uint64_t merge_path_partition(uint64_t k,
         value_t a = merge_input[off_a];
         value_t b = merge_input[off_b];
 
-        bool a_is_nan = sycl::isnan(a);
-        bool b_is_nan = sycl::isnan(b);
+        bool a_is_nan = sycl_utils::is_nan(a);
+        bool b_is_nan = sycl_utils::is_nan(b);
 
         bool cmp;
         if (!a_is_nan && b_is_nan)
@@ -206,7 +302,6 @@ inline uint64_t merge_path_partition(uint64_t k,
 
     return i_min;
 }
-
 
 } // namespace temper::sycl_utils
 

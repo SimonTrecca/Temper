@@ -78,7 +78,6 @@ Tensor<value_t> reshape(const Tensor<value_t> & tensor,
 extern template Tensor<float> reshape<float>
     (const Tensor<float>&, const std::vector<uint64_t>&);
 
-
 /**
  * @brief Sort tensor elements (free function wrapper).
  *
@@ -201,11 +200,11 @@ extern template Tensor<float> transpose<float>
  */
 template<typename value_t>
 Tensor<value_t> pad(const Tensor<value_t> & tensor,
-                    uint64_t pad_top,
-                    uint64_t pad_bottom,
-                    uint64_t pad_left,
-                    uint64_t pad_right,
-                    value_t pad_value);
+    uint64_t pad_top,
+    uint64_t pad_bottom,
+    uint64_t pad_left,
+    uint64_t pad_right,
+    value_t pad_value);
 /// Explicit instantiation of pad for float
 extern template Tensor<float> pad<float>
     (const Tensor<float>&, uint64_t, uint64_t, uint64_t, uint64_t, float);
@@ -224,9 +223,9 @@ extern template Tensor<float> pad<float>
  */
 template<typename value_t>
 Tensor<value_t> pad(const Tensor<value_t> & tensor,
-                    uint64_t pad_height,
-                    uint64_t pad_width,
-                    value_t pad_value);
+    uint64_t pad_height,
+    uint64_t pad_width,
+    value_t pad_value);
 /// Explicit instantiation of pad (height, width) for float
 extern template Tensor<float> pad<float>
     (const Tensor<float>&, uint64_t, uint64_t, float);
@@ -280,24 +279,24 @@ extern template std::vector<uint64_t> argmax<float>
  */
 template<typename value_t>
 Tensor<value_t> linspace(const Tensor<value_t>& start,
-                        const Tensor<value_t>& stop,
-                        uint64_t num,
-                        MemoryLocation res_loc = MemoryLocation::DEVICE,
-                        int64_t axis = 0,
-                        bool endpoint = true,
-                        Tensor<value_t>* step_out = nullptr);
+    const Tensor<value_t>& stop,
+    uint64_t num,
+    MemoryLocation res_loc = MemoryLocation::DEVICE,
+    int64_t axis = 0,
+    bool endpoint = true,
+    Tensor<value_t>* step_out = nullptr);
 /// Explicit instantiation of linspace for float
 extern template Tensor<float> linspace<float>(const Tensor<float>&,
 const Tensor<float>&, uint64_t, MemoryLocation, int64_t, bool, Tensor<float>*);
 
 template<typename value_t>
 Tensor<value_t> linspace(value_t start,
-                        value_t stop,
-                        uint64_t num,
-                        MemoryLocation res_loc = MemoryLocation::DEVICE,
-                        int64_t axis = 0,
-                        bool endpoint = true,
-                        Tensor<value_t>* step_out = nullptr);
+    value_t stop,
+    uint64_t num,
+    MemoryLocation res_loc = MemoryLocation::DEVICE,
+    int64_t axis = 0,
+    bool endpoint = true,
+    Tensor<value_t>* step_out = nullptr);
 /// Explicit instantiation of linspace(scalars) for float
 extern template Tensor<float> linspace<float>(float,
 float, uint64_t, MemoryLocation, int64_t, bool, Tensor<float>*);
@@ -324,9 +323,9 @@ float, uint64_t, MemoryLocation, int64_t, bool, Tensor<float>*);
  */
 template<typename value_t>
 Tensor<value_t> arange(value_t start,
-                       value_t stop,
-                       value_t step,
-                       MemoryLocation res_loc);
+    value_t stop,
+    value_t step,
+    MemoryLocation res_loc);
 /// Explicit instantiation of arange for float
 extern template Tensor<float> arange<float>(float, float, float, MemoryLocation);
 
@@ -389,9 +388,9 @@ extern template Tensor<float> zeros<float>
  */
 template <typename value_t>
 value_t integral(std::function<value_t(value_t)> f,
-                        value_t a,
-                        value_t b,
-                        uint64_t n_bins = 1000);
+    value_t a,
+    value_t b,
+    uint64_t n_bins = 1000);
 /// Explicit instantiation of integral for float
 extern template float integral<float>
     (std::function<float(float)>, float, float, uint64_t);
@@ -436,20 +435,23 @@ Tensor<value_t> log(const Tensor<value_t> & tensor);
 extern template Tensor<float> log<float>(const Tensor<float>&);
 
 /**
- * @brief Compute the mean of tensor elements (free function wrapper).
+ * @brief Compute the mean (average) of tensor elements.
  *
- * Returns a new tensor containing the arithmetic means of @p tensor along the
- * specified axis. Delegates to `Tensor::mean`.
+ * Reduces the tensor by computing the arithmetic mean either over all
+ * elements (axis = nullopt) or independently along a single axis.
  *
  * @param tensor Input tensor.
  * @param axis_opt Axis to compute mean along, nullopt = flatten,
  * otherwise -rank..rank-1.
- * @return Tensor<value_t> A new tensor containing the means.
+ * @return Tensor<value_t> Tensor with the specified axis reduced (result
+ * uses the same memory location as the input).
  *
- * @throws std::invalid_argument If the tensor is empty or if @p axis
- * is out of range.
- * @throws std::bad_alloc If required device memory cannot be allocated.
- * @throws std::runtime_error If NaN or non-finite values are encountered.
+ * @throws std::invalid_argument If the input tensor has no elements,
+ * if @p axis is out of range, or if the selected axis
+ * has zero length.
+ * @throws std::bad_alloc If required device/host memory cannot be allocated.
+ * @throws std::runtime_error If NaN or non-finite values are encountered
+ * in inputs or produced by the reduction/division.
  */
 template <typename value_t>
 Tensor<value_t> mean(const Tensor<value_t> & tensor,
@@ -459,12 +461,10 @@ extern template Tensor<float> mean<float>
     (const Tensor<float>&, std::optional<int64_t>);
 
 /**
- * @brief Compute the variance of tensor elements (free function wrapper).
+ * @brief Compute the variance of tensor elements.
  *
- * Functional wrapper around `Tensor::var()`. Reduces the input tensor by
- * computing the arithmetic variance either over all elements (axis = nullopt)
- * or independently along a single axis. The divisor uses (N - ddof),
- * where N is the number of elements being reduced.
+ * Reduces the tensor by computing the arithmetic variance either over all
+ * elements (axis = nullopt) or independently along a single axis.
  *
  * @param tensor Input tensor.
  * @param axis_opt Axis to reduce along, nullopt = flatten,
@@ -476,8 +476,7 @@ extern template Tensor<float> mean<float>
  * if @p axis is out of range, if the selected axis has zero length,
  * or if (N - ddof) <= 0.
  * @throws std::bad_alloc If required memory cannot be allocated.
- * @throws std::runtime_error If NaN or non-finite values are encountered
- * in the inputs or in computed results.
+ * @throws std::runtime_error If NaN or non-finite values are encountered.
  */
 template <typename value_t>
 Tensor<value_t> var(const Tensor<value_t> & tensor,
@@ -488,27 +487,28 @@ extern template Tensor<float> var<float>
     (const Tensor<float>&, std::optional<int64_t>, int64_t);
 
 /**
- * @brief Compute covariance (free function wrapper).
+ * @brief Compute covariance matrices over specified sample and event axes.
  *
- * Functional wrapper that delegates to `Tensor::cov(sample_axes,
- * event_axes, ddof)`. Treats @p sample_axes as sample dimensions and
- * @p event_axes as event (feature) dimensions; remaining axes are batch
- * axes. Result shape is `{ <batch dims...>, event_total, event_total }`.
+ * Treats axes in @p sample_axes as sample dimensions and axes in
+ * @p event_axes as event (feature) dimensions. Remaining axes are batch
+ * axes. Result shape is:
+ *   { <batch dims...>, event_total, event_total }
+ * where event_total = product(lengths of @p event_axes).
  *
  * @param tensor      Input tensor.
- * @param sample_axes Non-empty vector of axis indices to flatten as
- *                    samples. Order matters; entries must be distinct and
- *                    in [-rank, rank-1].
- * @param event_axes  Non-empty vector of axis indices to flatten as
- *                    events. Order matters; entries must be distinct,
- *                    disjoint from @p sample_axes, and in [-rank, rank-1].
+ * @param sample_axes Non-empty vector of axis indices to flatten as samples.
+ *                    Order matters. Entries must be distinct and in
+ *                    [-rank, rank-1].
+ * @param event_axes  Non-empty vector of axis indices to flatten as events.
+ *                    Order matters. Entries must be distinct, disjoint from
+ *                    @p sample_axes, and in [-rank, rank-1].
  * @param ddof        Delta degrees of freedom (>= 0). Divisor is
- *                    (N - ddof) where N is product(lengths of sample axes).
- *
+ *                    (N - ddof) where N = product(lengths of sample axes).
  * @return Tensor<value_t> Covariance matrices with shape
- *         `{ <batch dims...>, event_total, event_total }`.
+ *         `{ <batch dims...>, event_total, event_total }`. Allocated in the
+ *         same memory location (host/device) as the input where possible.
  *
- * @throws std::invalid_argument
+ * @throws std::invalid_argument if:
  * - input tensor has no elements.
  * - @p sample_axes or @p event_axes is empty.
  * - @p ddof is negative.
@@ -516,11 +516,11 @@ extern template Tensor<float> var<float>
  * - any axis index is out of range.
  * - the same axis appears more than once (within or across vectors).
  * - ddof >= number of samples (N).
- * @throws std::out_of_range
+ * @throws std::out_of_range if:
  * - internal view/alias construction would exceed the owner's bounds.
- * @throws std::bad_alloc
+ * @throws std::bad_alloc if:
  * - required host/device memory allocation failed.
- * @throws std::runtime_error
+ * @throws std::runtime_error if:
  * - NaN or non-finite values encountered, or device/kernel errors during
  *   reduction or matrix multiplication.
  */
@@ -534,27 +534,26 @@ extern template Tensor<float> cov<float> (const Tensor<float>&,
     std::vector<int64_t>, std::vector<int64_t>, int64_t);
 
 /**
- * @brief Convenience covariance wrapper using last two axes.
+ * @brief Convenience overload — covariance for the last two axes.
  *
- * Delegates to `Tensor::cov(ddof)` which is equivalent to
- * `cov(tensor, {rank-2}, {rank-1}, ddof)`. For shape {N, M} returns the
- * M×M covariance of the N samples; for {B1,...,N,M} returns {B1,...,M,M}.
+ * Equivalent to:
+ *   cov(tensor, { rank-2 }, { rank-1 }, ddof)
+ *
+ * For a 2-D tensor of shape {N, M} this returns the M×M covariance of the
+ * N samples. For shape {B1,..., N, M} it returns {B1,..., M, M}.
  *
  * @param tensor Input tensor.
- * @param ddof   Delta degrees of freedom (>= 0). Must satisfy ddof < N,
- *               where N is the length of axis `rank-2`.
- *
+ * @param ddof Delta degrees of freedom (>= 0). Must satisfy ddof < N,
+ *             where N is the length of axis `rank-2`.
  * @return Tensor<value_t> Covariance matrices for the last two axes.
  *
- * @throws std::invalid_argument
+ * @throws std::invalid_argument if:
  * - tensor rank < 2.
  * - @p ddof is negative.
  * - ddof is invalid for the sample count (ddof >= N).
- *
- * @throws std::bad_alloc
+ * @throws std::bad_alloc if:
  * - required memory allocation failed.
- *
- * @throws std::runtime_error
+ * @throws std::runtime_error if:
  * - NaN or non-finite values encountered, or device/kernel errors.
  */
 template <typename value_t>
@@ -563,12 +562,16 @@ Tensor<value_t> cov(const Tensor<value_t> & tensor, int64_t ddof = 0);
 extern template Tensor<float> cov<float> (const Tensor<float>&, int64_t);
 
 /**
- * @brief Compute the standard deviation of
- * tensor elements (free function wrapper).
+ * @brief Compute the standard deviation of tensor elements.
  *
- * Functional wrapper around `Tensor::stddev()`. Reduces the input tensor by
- * computing the square root of its variance, either across all elements
- * (axis = nullopt) or independently along a single axis.
+ * Reduces the tensor by computing the square root of the variance,
+ * either over all elements (axis = nullopt)or independently
+ * along a single axis.
+ *
+ * The computation follows the same semantics as `var()`, using the given
+ * delta degrees of freedom (ddof) to adjust the divisor (N - ddof). When
+ * ddof = 0, the result is the population standard deviation; when ddof = 1,
+ * the result is the sample standard deviation.
  *
  * @param input Input tensor.
  * @param axis_opt Axis to reduce along, nullopt = flatten,
@@ -577,11 +580,11 @@ extern template Tensor<float> cov<float> (const Tensor<float>&, int64_t);
  * @return Tensor<value_t> Tensor with the specified axis reduced.
  *
  * @throws std::invalid_argument If the input tensor has no elements,
- * if @p axis is not -1 and out of range, if the selected axis has zero length,
- * or if (N - ddof) <= 0.
+ * if @p axis is out of range, if the selected axis has
+ * zero length, or if (N - ddof) <= 0.
  * @throws std::bad_alloc If required memory cannot be allocated.
  * @throws std::runtime_error If NaN or non-finite values are encountered
- * in the inputs or during the sqrt computation.
+ * in the inputs or produced during the sqrt computation.
  */
 template<typename value_t>
 Tensor<value_t> stddev(const Tensor<value_t>& input,
@@ -592,26 +595,39 @@ extern template Tensor<float> stddev<float>
     (const Tensor<float>&, std::optional<int64_t>, int64_t);
 
 /**
- * @brief Compute eigenvalues and right eigenvectors for the last two axes.
+ * @brief Compute the eigenvalues and right eigenvectors of the last
+ * two axes using a batched Jacobi method.
  *
- * For each square matrix in `input` shaped `{B..., N, N}` this routine
- * computes up to `N` eigenpairs using power-iteration + rank-1 deflation.
+ * This routine interprets the last two dimensions of the tensor as a
+ * stack of square matrices `{B..., N, N}` and applies a Jacobi
+ * (Givens-rotation) diagonalization to each of them in parallel. It
+ * produces all `N` eigenvalues and a full orthonormal set of right
+ * eigenvectors for every matrix in the batch.
  *
- * @param input     Input tensor containing one or more square matrices in
- *                  the last two axes.
- * @param max_iters Maximum iterations per power iteration (default 100).
- * @param tol       Convergence tolerance for the L2 iterate difference
- *                  (default 1e-4).
+ * The diagonalization is iterative. For each sweep over the matrix
+ * entries, a sequence of Givens rotations progressively reduces the
+ * off–diagonal elements. The process stops when either the largest
+ * off–diagonal magnitude falls below `tol`, or `max_iters` sweeps
+ * have completed, or a numerical/device error is detected.
+ *
+ * @param tensor Input tensor containing one or more square matrices in
+ * the last two axes.
+ * @param max_iters Maximum number of full Jacobi sweeps to attempt.
+ * @param tol Convergence threshold for the largest off–diagonal entry.
  * @return std::pair<Tensor<value_t>, Tensor<value_t>>
- *         First: eigenvalues tensor of shape `{B..., N}`.
- *         Second: right eigenvectors tensor of shape `{B..., N, N}` (columns).
+ *     First:  eigenvalues of shape `{B..., N}`.
+ *     Second: eigenvectors of shape `{B..., N, N}`, stored by
+ *     columns.
  *
- * @throws std::invalid_argument if input rank < 2 or last two dims are not equal.
- * @throws std::runtime_error if random init vectors are zero, left/right inner
- *         product is zero, or device/kernel errors occur.
+ * @throws std::invalid_argument
+ *     If `rank < 2` or the last two dimensions are not square.
+ * @throws std::runtime_error
+ *     If NaN or non-finite values are detected in the input or
+ *     during computation, or a division by zero is encountered
+ *     when forming Givens coefficients.
  */
 template <typename value_t>
-std::pair<Tensor<value_t>, Tensor<value_t>> eig(const Tensor<value_t> & input,
+std::pair<Tensor<value_t>, Tensor<value_t>> eig(const Tensor<value_t> & tensor,
     uint64_t max_iters = 100,
     value_t tol = static_cast<value_t>(1e-4));
 /// Explicit instantiation of eig for float

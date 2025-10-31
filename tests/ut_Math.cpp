@@ -832,7 +832,7 @@ TEST(CUMSUM, cumsum_all_elements_flatten)
     std::vector<float> vals = {1.0f, 2.0f, 3.0f};
     t = vals;
 
-    Tensor<float> res = t.cumsum();
+    Tensor<float> res = math::cumsum(t);
 
     std::vector<float> host(3);
     g_sycl_queue.memcpy

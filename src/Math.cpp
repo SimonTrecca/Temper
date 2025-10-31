@@ -1482,8 +1482,41 @@ template <typename value_t>
 Tensor<value_t> mean(const Tensor<value_t> & tensor,
     std::optional<int64_t> axis_opt)
 {
-    Tensor<value_t> t = tensor.mean(axis_opt);
-    return t;
+    const int64_t rank = tensor.get_rank();
+    if (rank == 0)
+    {
+        throw std::invalid_argument(R"(Tensor(mean):
+            input tensor has no elements.)");
+    }
+    const bool flatten = !axis_opt.has_value();
+
+    uint64_t denom_u = 1;
+    if (flatten)
+    {
+        denom_u = tensor.get_num_elements();
+    }
+    else
+    {
+        int64_t axis = axis_opt.value();
+        if (axis < 0)
+        {
+            axis += rank;
+        }
+        if (axis < 0 || axis >= rank)
+        {
+            throw std::invalid_argument("Tensor(mean): axis out of bounds");
+        }
+        denom_u = tensor.get_dimensions()[axis];
+    }
+    Tensor<value_t> s = math::sum(tensor, axis_opt);
+
+    value_t denom_val = static_cast<value_t>(denom_u);
+    MemoryLocation loc = tensor.get_memory_location();
+    Tensor<value_t> denom_t({1}, loc);
+    denom_t = denom_val;
+
+    Tensor<value_t> result = s / denom_t;
+    return result;
 }
 template Tensor<float> mean<float>
     (const Tensor<float>&, std::optional<int64_t> axis_opt);
@@ -1493,8 +1526,66 @@ Tensor<value_t> var(const Tensor<value_t> & tensor,
     std::optional<int64_t> axis_opt,
     int64_t ddof)
 {
-    Tensor<value_t> t = tensor.var(axis_opt, ddof);
-    return t;
+    const uint64_t total_elems = tensor.get_num_elements();
+    if (total_elems == 0)
+    {
+        throw std::invalid_argument(R"(Tensor(var):
+            input tensor has no elements.)");
+    }
+
+    if (ddof < 0)
+    {
+        throw std::invalid_argument(R"(Tensor(var):
+            ddof must be non-negative.)");
+    }
+
+    const bool flatten = !axis_opt.has_value();
+
+    uint64_t N = 0;
+    if (flatten)
+    {
+        if (static_cast<uint64_t>(ddof) >= total_elems)
+        {
+            throw std::invalid_argument
+                (R"(Tensor(var): ddof >= number of elements.)");
+        }
+        N = total_elems;
+    }
+    else
+    {
+        const int64_t rank = tensor.get_rank();
+        int64_t axis = axis_opt.value();
+        if (axis < 0)
+        {
+            axis += rank;
+        }
+        if (axis < 0 || axis >= rank)
+        {
+            throw std::invalid_argument("Tensor(var): axis out of bounds");
+        }
+        const uint64_t axis_len = tensor.get_dimensions()[axis];
+        if (static_cast<uint64_t>(ddof) >= axis_len)
+        {
+            throw std::invalid_argument(R"(Tensor(var):
+                ddof >= axis length.)");
+        }
+        N = axis_len;
+    }
+
+    uint64_t denom_u = N - static_cast<uint64_t>(ddof);
+    Tensor<value_t> m = math::mean(tensor, axis_opt);
+
+    Tensor<value_t> diff = tensor - m;
+    Tensor<value_t> sq = diff * diff;
+    Tensor<value_t> sumsq = math::sum(sq, axis_opt);
+
+    value_t denom_val = static_cast<value_t>(denom_u);
+    MemoryLocation loc = tensor.get_memory_location();
+    Tensor<value_t> denom_t({1}, loc);
+    denom_t = denom_val;
+
+    Tensor<value_t> result = sumsq / denom_t;
+    return result;
 }
 template Tensor<float> var<float>
     (const Tensor<float>&, std::optional<int64_t>, int64_t);
@@ -1505,7 +1596,150 @@ Tensor<value_t> cov(const Tensor<value_t> & tensor,
                     std::vector<int64_t> event_axes,
                     int64_t ddof)
 {
-    return tensor.cov(sample_axes, event_axes, ddof);
+    const uint64_t total_elems = tensor.get_num_elements();
+    const std::vector<uint64_t> & original_shape = tensor.get_dimensions();
+    const int64_t rank = tensor.get_rank();
+    if (total_elems == 0)
+    {
+        throw std::invalid_argument(R"(Tensor(cov):
+            input tensor has no elements.)");
+    }
+
+    if(sample_axes.empty() || event_axes.empty())
+    {
+        throw std::invalid_argument(R"(Tensor(cov):
+            axes arguments cannot be empty.)");
+    }
+
+    if (ddof < 0)
+    {
+        throw std::invalid_argument(R"(Tensor(cov):
+            ddof must be non-negative.)");
+    }
+
+    if (rank < 2)
+    {
+        throw std::invalid_argument(R"(Tensor(cov):
+            rank must be >= 2.)");
+    }
+
+    const uint64_t num_sample_axes = static_cast<int64_t>(sample_axes.size());
+    const uint64_t num_event_axes  = static_cast<int64_t>(event_axes.size());
+    // Check if the sample axes are regular
+    // (within tensor range, not replicated).
+    std::vector<bool> seen(rank, false);
+    for (uint64_t i = 0; i < sample_axes.size(); ++i)
+    {
+        int64_t axis = sample_axes[i];
+        if (axis < 0)
+        {
+            axis += rank;
+        }
+        if (axis < 0 || axis >= rank)
+        {
+            throw std::invalid_argument("Tensor(cov): axis out of bounds");
+        }
+        if (seen[axis])
+        {
+            throw std::invalid_argument(R"(Tensor(cov):
+                the same axis cannot be used twice)");
+        }
+        seen[axis] = true;
+        sample_axes[i] = axis;
+    }
+
+    // We do the same for event axes.
+    for (uint64_t i = 0; i < event_axes.size(); ++i)
+    {
+        int64_t axis = event_axes[i];
+        if (axis < 0)
+        {
+            axis += rank;
+        }
+        if (axis < 0 || axis >= rank)
+        {
+            throw std::invalid_argument("Tensor(cov): axis out of bounds");
+        }
+        if (seen[axis])
+        {
+            throw std::invalid_argument(R"(Tensor(cov):
+                the same axis cannot be used twice)");
+        }
+        seen[axis] = true;
+        event_axes[i] = axis;
+    }
+
+    // Build the tensor shape: batch axes -> sample axes -> event axes.
+    std::vector<int64_t> t_shape;
+    t_shape.reserve(rank);
+    for (int64_t i = 0; i < rank; ++i)
+    {
+        if (seen[i])
+        {
+            continue;
+        }
+        t_shape.push_back(i);
+    }
+    t_shape.insert(t_shape.end(), sample_axes.begin(), sample_axes.end());
+    t_shape.insert(t_shape.end(), event_axes.begin(), event_axes.end());
+
+    Tensor<value_t> t_tensor = tensor.transpose(t_shape);
+
+    // We clone the transposed tensor because reshape does not work on views.
+    Tensor<value_t> t_tensor_clone = t_tensor.clone();
+
+    uint64_t sample_total = 1, event_total = 1;
+    // Compute the final shape of the tensor we need to operate on.
+    for (int64_t axis : sample_axes)
+    {
+        sample_total *= original_shape[axis];
+    }
+    if (static_cast<uint64_t>(ddof) >= sample_total)
+    {
+        throw std::invalid_argument(R"(Tensor(cov):
+                not enough samples for ddof.)");
+    }
+    for (int64_t axis : event_axes)
+    {
+        event_total *= original_shape[axis];
+    }
+
+    const std::vector<uint64_t> & transposed_shape =
+        t_tensor_clone.get_dimensions();
+
+    const int64_t batch_len = rank - (num_sample_axes + num_event_axes);
+
+    std::vector<uint64_t> final_shape;
+    final_shape.reserve(batch_len + 2);
+    for (int64_t i = 0; i < batch_len; ++i)
+    {
+        final_shape.push_back(transposed_shape[i]);
+    }
+    final_shape.push_back(sample_total);
+    final_shape.push_back(event_total);
+
+    t_tensor_clone.reshape(final_shape);
+
+    Tensor<value_t> mu = math::mean(t_tensor_clone, batch_len);
+    Tensor<value_t> centered = t_tensor_clone - mu;
+
+    Tensor<value_t> denom({1}, tensor.get_memory_location());
+    denom = 1.0f / (sample_total - ddof);
+
+    std::vector<int64_t> transpose_order;
+    transpose_order.reserve(centered.get_rank());
+    for (int64_t i = 0; i < batch_len; ++i)
+    {
+        transpose_order.push_back(i);
+    }
+    transpose_order.push_back(batch_len + 1);
+    transpose_order.push_back(batch_len);
+
+    Tensor<value_t> centered_t = centered.transpose(transpose_order);
+
+    Tensor<value_t> result = denom * math::matmul(centered_t, centered);
+
+    return result;
 }
 template Tensor<float> cov<float> (const Tensor<float>&,
     std::vector<int64_t>, std::vector<int64_t>, int64_t);
@@ -1513,7 +1747,14 @@ template Tensor<float> cov<float> (const Tensor<float>&,
 template <typename value_t>
 Tensor<value_t> cov(const Tensor<value_t> & tensor, int64_t ddof)
 {
-    return tensor.cov(ddof);
+    const int64_t rank = tensor.get_rank();
+    if (rank < 2)
+    {
+        throw std::invalid_argument(R"(Tensor(cov):
+            rank must be >= 2.)");
+    }
+
+    return math::cov(tensor, {rank - 2}, {rank - 1}, ddof);
 }
 template Tensor<float> cov<float> (const Tensor<float>&, int64_t);
 
@@ -1522,17 +1763,441 @@ Tensor<value_t> stddev(const Tensor<value_t> & tensor,
     std::optional<int64_t> axis_opt,
     int64_t ddof)
 {
-    return tensor.stddev(axis_opt, ddof);
+    const int64_t rank = tensor.get_rank();
+    if (rank == 0)
+    {
+        throw std::invalid_argument(R"(Tensor(std):
+            input tensor has no elements.)");
+    }
+    Tensor<value_t> v = math::var(tensor, axis_opt, ddof);
+
+    const std::vector<uint64_t> & in_shape = v.get_dimensions();
+
+    const uint64_t total_output_elems = v.get_num_elements();
+    MemoryLocation res_loc = v.get_memory_location();
+    Tensor<value_t> result(in_shape, res_loc);
+
+    const std::vector<uint64_t> in_divs =
+        temper::utils::compute_divisors(in_shape);
+    const std::vector<uint64_t> in_strides = v.get_strides();
+
+    uint64_t* p_in_divs = static_cast<uint64_t*>(
+        sycl::malloc_device(sizeof(uint64_t) * rank, g_sycl_queue));
+    uint64_t* p_in_strides = static_cast<uint64_t*>(
+        sycl::malloc_device(sizeof(uint64_t) * rank, g_sycl_queue));
+    int32_t* p_error_flag = static_cast<int32_t*>(
+        sycl::malloc_shared(sizeof(int32_t), g_sycl_queue));
+
+    bool alloc_ok = (p_in_divs && p_in_strides && p_error_flag);
+    if (!alloc_ok)
+    {
+        sycl::free(p_in_divs, g_sycl_queue);
+        sycl::free(p_in_strides, g_sycl_queue);
+        sycl::free(p_error_flag, g_sycl_queue);
+        throw std::bad_alloc();
+    }
+
+    g_sycl_queue.memcpy(p_in_divs, in_divs.data(),
+        sizeof(uint64_t) * rank).wait();
+    g_sycl_queue.memcpy(p_in_strides, in_strides.data(),
+        sizeof(uint64_t) * rank).wait();
+    *p_error_flag = 0;
+
+    const value_t* p_in_data = v.get_data();
+    value_t* p_out = result.get_data();
+
+    g_sycl_queue.submit([&](sycl::handler& cgh) {
+        cgh.parallel_for(sycl::range<1>(static_cast<size_t>(total_output_elems)),
+            [=](sycl::id<1> id)
+        {
+            const uint64_t flat = static_cast<uint64_t>(id[0]);
+            uint64_t in_idx = temper::sycl_utils::idx_of(flat,
+                                                    p_in_divs,
+                                                    p_in_strides,
+                                                    rank);
+            value_t val = p_in_data[in_idx];
+            temper::sycl_utils::device_check_nan_and_set<value_t>
+                (val, p_error_flag);
+            value_t outv = sycl_utils::sqrt(val);
+            temper::sycl_utils::device_check_finite_and_set<value_t>
+                (outv, p_error_flag);
+            p_out[flat] = outv;
+        });
+    }).wait();
+
+    int32_t err = *p_error_flag;
+    sycl::free(p_error_flag, g_sycl_queue);
+    sycl::free(p_in_divs, g_sycl_queue);
+    sycl::free(p_in_strides, g_sycl_queue);
+
+    if (err != 0)
+    {
+        if (err == 1)
+        {
+            throw std::runtime_error(R"(Tensor(std): NaN detected in inputs.)");
+        }
+        if (err == 2)
+        {
+            throw std::runtime_error(R"(Tensor(std):
+                non-finite result (Inf/overflow/NaN) produced.)");
+        }
+        throw std::runtime_error(R"(Tensor(std):
+            numeric error during sqrt computation.)");
+    }
+
+    return result;
 }
 template Tensor<float> stddev<float>
     (const Tensor<float>&, std::optional<int64_t>, int64_t);
 
 template <typename value_t>
-std::pair<Tensor<value_t>, Tensor<value_t>> eig(const Tensor<value_t> & input,
-                                                uint64_t max_iters,
-                                                value_t tol)
+std::pair<Tensor<value_t>, Tensor<value_t>> eig(const Tensor<value_t> & tensor,
+    uint64_t max_iters,
+    value_t tol)
 {
-    return input.eig(max_iters, tol);
+    const int64_t rank = tensor.get_rank();
+    if (rank < 2)
+    {
+        throw std::invalid_argument("Tensor(eig): rank must be >= 2.");
+    }
+
+    const std::vector<uint64_t> tensor_dims = tensor.get_dimensions();
+    const std::vector<uint64_t> tensor_strides = tensor.get_strides();
+
+    if (tensor_dims[rank - 1] != tensor_dims[rank - 2])
+    {
+        throw std::invalid_argument(R"(Tensor(eig):
+            last two dims must be square.)");
+    }
+    const uint64_t n = tensor_dims[rank - 1];
+
+    std::vector<uint64_t> batch_shape;
+    for (int64_t i = 0; i + 2 < rank; ++i)
+    {
+        batch_shape.push_back(tensor_dims[i]);
+    }
+
+    uint64_t batch_count = 1;
+    for (uint64_t d : batch_shape)
+    {
+        batch_count *= d;
+    }
+
+    std::vector<uint64_t> eigvals_shape = batch_shape;
+    eigvals_shape.push_back(n);
+    std::vector<uint64_t> eigvecs_shape = batch_shape;
+    eigvecs_shape.push_back(n);
+    eigvecs_shape.push_back(n);
+
+    MemoryLocation res_loc = tensor.get_memory_location();
+    Tensor<value_t> eigvals_tensor(eigvals_shape, res_loc);
+    Tensor<value_t> eigvecs_tensor(eigvecs_shape, res_loc);
+
+    const uint64_t matrix_size = n * n;
+    const uint64_t total_matrix_elems = batch_count * matrix_size;
+
+    std::vector<uint64_t> batch_divisors;
+    if (!batch_shape.empty())
+    {
+        batch_divisors = utils::compute_divisors(batch_shape);
+    }
+
+    std::vector<uint64_t> batch_strides;
+    for (int64_t i = 0; i < static_cast<int64_t>(batch_shape.size()); ++i)
+    {
+        batch_strides.push_back(tensor_strides[i]);
+    }
+
+    value_t* p_A = nullptr;
+    value_t* p_Q = nullptr;
+    value_t* p_temp = nullptr;
+    int32_t* p_error_flag = nullptr;
+    uint64_t* p_batch_divisors = nullptr;
+    uint64_t* p_batch_strides = nullptr;
+
+    p_A = static_cast<value_t*>(sycl::malloc_device(
+        sizeof(value_t) * total_matrix_elems, g_sycl_queue));
+    p_Q = static_cast<value_t*>(sycl::malloc_device(
+        sizeof(value_t) * total_matrix_elems, g_sycl_queue));
+    p_temp = static_cast<value_t*>(sycl::malloc_device(
+        sizeof(value_t) * total_matrix_elems, g_sycl_queue));
+
+    p_error_flag = static_cast<int32_t*>(
+        sycl::malloc_shared(sizeof(int32_t), g_sycl_queue));
+
+    if (!batch_shape.empty())
+    {
+        p_batch_divisors = static_cast<uint64_t*>( sycl::malloc_device
+            (sizeof(uint64_t) * batch_shape.size(), g_sycl_queue));
+        p_batch_strides = static_cast<uint64_t*>(sycl::malloc_device
+            (sizeof(uint64_t) * batch_shape.size(), g_sycl_queue));
+    }
+
+    if (!p_A || !p_Q || !p_temp || !p_error_flag ||
+        (!batch_shape.empty() && (!p_batch_divisors || !p_batch_strides)))
+    {
+        sycl::free(p_A, g_sycl_queue);
+        sycl::free(p_Q, g_sycl_queue);
+        sycl::free(p_temp, g_sycl_queue);
+        sycl::free(p_error_flag, g_sycl_queue);
+        sycl::free(p_batch_divisors, g_sycl_queue);
+        sycl::free(p_batch_strides, g_sycl_queue);
+        throw std::bad_alloc();
+    }
+
+    *p_error_flag = 0;
+
+    const value_t* p_src = tensor.get_data();
+    const uint64_t stride_row = tensor_strides[rank - 2];
+    const uint64_t stride_col = tensor_strides[rank - 1];
+    const int64_t batch_rank = static_cast<int64_t>(batch_shape.size());
+
+    if (!batch_shape.empty())
+    {
+        g_sycl_queue.memcpy(p_batch_divisors, batch_divisors.data(),
+                            sizeof(uint64_t) * batch_rank).wait();
+        g_sycl_queue.memcpy(p_batch_strides, batch_strides.data(),
+                            sizeof(uint64_t) * batch_rank).wait();
+    }
+
+    g_sycl_queue.submit([&](sycl::handler& cgh)
+    {
+        cgh.parallel_for(sycl::range<1>(total_matrix_elems),
+            [=](sycl::id<1> idx)
+        {
+            uint64_t flat = static_cast<uint64_t>(idx[0]);
+            uint64_t batch_idx = flat / matrix_size;
+            uint64_t in_mat = flat % matrix_size;
+            uint64_t row = in_mat / n;
+            uint64_t col = in_mat % n;
+            uint64_t batch_offset = 0;
+            if (batch_rank > 0)
+            {
+                batch_offset = sycl_utils::idx_of(batch_idx,
+                    p_batch_divisors, p_batch_strides, batch_rank);
+            }
+            uint64_t src_offset = batch_offset +
+                row * stride_row + col * stride_col;
+            value_t v = p_src[src_offset];
+
+            sycl_utils::device_check_nan_and_set(v, p_error_flag);
+            sycl_utils::device_check_finite_and_set(v, p_error_flag);
+
+            p_A[flat] = v;
+        });
+    }).wait();
+
+    g_sycl_queue.submit([&](sycl::handler& cgh)
+    {
+        cgh.parallel_for(sycl::range<1>(total_matrix_elems),
+            [=](sycl::id<1> idx)
+        {
+            uint64_t flat = static_cast<uint64_t>(idx[0]);
+            uint64_t in_mat = flat % matrix_size;
+            uint64_t row = in_mat / n;
+            uint64_t col = in_mat % n;
+            if (row == col)
+            {
+                // Diagonal entry of identity.
+                p_Q[flat] = value_t{1};
+            }
+            else
+            {
+                // Off-diagonal entry of identity.
+                p_Q[flat] = value_t{0};
+            }
+        });
+    }).wait();
+
+    for (uint64_t iter = 0; iter < max_iters; ++iter)
+    {
+        for (uint64_t col = 0; col < n - 1; ++col)
+        {
+            for (uint64_t row = col + 1; row < n; ++row)
+            {
+                g_sycl_queue.submit([&](sycl::handler& cgh)
+                {
+                    cgh.parallel_for(sycl::range<1>(batch_count),
+                        [=](sycl::id<1> b_id)
+                    {
+                        uint64_t b = static_cast<uint64_t>(b_id[0]);
+                        uint64_t base = b * matrix_size;
+                        value_t a = p_A[base + col * n + col];
+                        value_t b_val = p_A[base + row * n + col];
+
+                        value_t r = sycl_utils::sqrt(a * a + b_val * b_val);
+
+                        sycl_utils::device_check_divzero_and_set
+                            (r, p_error_flag);
+                        if (r == value_t{0}) return;
+
+                        value_t c = a / r;
+                        value_t s = -b_val / r;
+
+                        for (uint64_t k = col; k < n; ++k)
+                        {
+                            value_t a_ck = p_A[base + col * n + k];
+                            value_t a_rk = p_A[base + row * n + k];
+                            value_t new_ck = c * a_ck - s * a_rk;
+                            value_t new_rk = s * a_ck + c * a_rk;
+                            p_A[base + col * n + k] = new_ck;
+                            p_A[base + row * n + k] = new_rk;
+                        }
+
+                        for (uint64_t k = 0; k < n; ++k)
+                        {
+                            value_t q_kc = p_Q[base + k * n + col];
+                            value_t q_kr = p_Q[base + k * n + row];
+                            value_t new_qc = c * q_kc - s * q_kr;
+                            value_t new_qr = s * q_kc + c * q_kr;
+                            p_Q[base + k * n + col] = new_qc;
+                            p_Q[base + k * n + row] = new_qr;
+                        }
+                    });
+                }).wait();
+            }
+        }
+
+        g_sycl_queue.submit([&](sycl::handler& cgh)
+        {
+            cgh.parallel_for(sycl::range<1>(total_matrix_elems),
+                [=](sycl::id<1> idx)
+            {
+                uint64_t flat = static_cast<uint64_t>(idx[0]);
+                uint64_t b = flat / matrix_size;
+                uint64_t in_mat = flat % matrix_size;
+                uint64_t row = in_mat / n;
+                uint64_t col = in_mat % n;
+                uint64_t base = b * matrix_size;
+
+                value_t sum = value_t{0};
+                for (uint64_t k = 0; k < n; ++k)
+                {
+                    sum += p_A[base + row * n + k] * p_Q[base + col * n + k];
+                }
+                sycl_utils::device_check_finite_and_set(sum, p_error_flag);
+                p_temp[flat] = sum;
+            });
+        }).wait();
+
+        g_sycl_queue.memcpy(p_A, p_temp,
+            sizeof(value_t) * total_matrix_elems).wait();
+
+        if (iter % 10 == 9)
+        {
+            value_t* p_max_off_diag = static_cast<value_t*>(
+                sycl::malloc_device(sizeof(value_t), g_sycl_queue));
+
+            g_sycl_queue.memset(p_max_off_diag, 0, sizeof(value_t)).wait();
+            // Compute maximum off-diagonal value on device.
+            g_sycl_queue.submit([&](sycl::handler& cgh)
+            {
+                cgh.parallel_for(sycl::range<1>(batch_count * matrix_size),
+                    [=](sycl::id<1> idx)
+                {
+                    uint64_t flat = static_cast<uint64_t>(idx[0]);
+                    uint64_t b = flat / matrix_size;
+                    uint64_t in_mat = flat % matrix_size;
+                    uint64_t i = in_mat / n;
+                    uint64_t j = in_mat % n;
+                    if (i != j)
+                    {
+                        value_t val = sycl_utils::fabs
+                            (p_A[b * matrix_size + i * n + j]);
+
+                        sycl_utils::device_check_nan_and_set
+                            (val, p_error_flag);
+                        sycl_utils::device_check_finite_and_set
+                            (val, p_error_flag);
+
+                        sycl::atomic_ref<value_t,
+                            sycl::memory_order::relaxed,
+                            sycl::memory_scope::device,
+                            sycl::access::address_space::global_space>
+                            atomic_max(*p_max_off_diag);
+
+                        value_t old_max = atomic_max.load();
+                        while (val > old_max &&
+                            !atomic_max.compare_exchange_strong(old_max, val))
+                        {
+                            old_max = atomic_max.load();
+                        }
+                    }
+                });
+            }).wait();
+
+            value_t max_off_diag;
+            g_sycl_queue.memcpy(&max_off_diag,
+                p_max_off_diag, sizeof(value_t)).wait();
+
+            sycl::free(p_max_off_diag, g_sycl_queue);
+
+            if (max_off_diag < tol) break;
+            if (*p_error_flag != 0) break;
+        }
+    }
+
+    value_t* p_eigvals = eigvals_tensor.get_data();
+    value_t* p_eigvecs = eigvecs_tensor.get_data();
+
+    g_sycl_queue.submit([&](sycl::handler& cgh)
+    {
+        cgh.parallel_for(sycl::range<1>(batch_count * n),
+            [=](sycl::id<1> idx)
+        {
+            uint64_t flat = static_cast<uint64_t>(idx[0]);
+            uint64_t b = flat / n;
+            uint64_t i = flat % n;
+            value_t v = p_A[b * matrix_size + i * n + i];
+            sycl_utils::device_check_nan_and_set(v, p_error_flag);
+            sycl_utils::device_check_finite_and_set(v, p_error_flag);
+            p_eigvals[flat] = v;
+        });
+    }).wait();
+
+    g_sycl_queue.submit([&](sycl::handler& cgh)
+    {
+        cgh.parallel_for(sycl::range<1>(total_matrix_elems),
+            [=](sycl::id<1> idx)
+        {
+            uint64_t flat = static_cast<uint64_t>(idx[0]);
+            value_t v = p_Q[flat];
+            sycl_utils::device_check_nan_and_set(v, p_error_flag);
+            sycl_utils::device_check_finite_and_set(v, p_error_flag);
+            p_eigvecs[flat] = v;
+        });
+    }).wait();
+
+    int32_t err = *p_error_flag;
+    sycl::free(p_A, g_sycl_queue);
+    sycl::free(p_Q, g_sycl_queue);
+    sycl::free(p_temp, g_sycl_queue);
+    sycl::free(p_error_flag, g_sycl_queue);
+    sycl::free(p_batch_divisors, g_sycl_queue);
+    sycl::free(p_batch_strides, g_sycl_queue);
+
+    if (err != 0)
+    {
+        if (err == 1)
+        {
+            throw std::runtime_error(R"(Tensor(eig):
+                NaN detected in inputs or during computation.)");
+        }
+        if (err == 2)
+        {
+            throw std::runtime_error(R"(Tensor(eig):
+                non-finite result (overflow or Inf) during computation.)");
+        }
+        if (err == 3)
+        {
+            throw std::runtime_error(R"(Tensor(eig):
+                division by zero detected during computation.)");
+        }
+        throw std::runtime_error(R"(Tensor(eig):
+            numeric error during eigendecomposition.)");
+    }
+
+    return std::make_pair(eigvals_tensor, eigvecs_tensor);
 }
 template std::pair<Tensor<float>, Tensor<float>> eig<float>
     (const Tensor<float>&, uint64_t, float);

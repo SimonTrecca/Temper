@@ -1086,171 +1086,6 @@ public:
     Tensor<value_t> cumsum(std::optional<int64_t> axis_opt = std::nullopt) const;
 
     /**
-     * @brief Compute the mean (average) of tensor elements.
-     *
-     * Reduces the tensor by computing the arithmetic mean either over all
-     * elements (axis = nullopt) or independently along a single axis.
-     *
-     * @param axis_opt Axis to compute mean along, nullopt = flatten,
-     * otherwise -rank..rank-1.
-     * @return Tensor<value_t> Tensor with the specified axis reduced (result
-     * uses the same memory location as the input).
-     *
-     * @throws std::invalid_argument If the input tensor has no elements,
-     * if @p axis is out of range, or if the selected axis
-     * has zero length.
-     * @throws std::bad_alloc If required device/host memory cannot be allocated.
-     * @throws std::runtime_error If NaN or non-finite values are encountered
-     * in inputs or produced by the reduction/division.
-     */
-    Tensor<value_t> mean(std::optional<int64_t> axis_opt = std::nullopt) const;
-
-    /**
-     * @brief Compute the variance of tensor elements.
-     *
-     * Reduces the tensor by computing the arithmetic variance either over all
-     * elements (axis = nullopt) or independently along a single axis.
-     *
-     * @param axis_opt Axis to reduce along, nullopt = flatten,
-     * otherwise -rank..rank-1.
-     * @param ddof Delta degrees of freedom (0 => population variance).
-     * @return Tensor<value_t> Tensor with the specified axis reduced.
-     *
-     * @throws std::invalid_argument If the input tensor has no elements,
-     * if @p axis is out of range, if the selected axis has zero length,
-     * or if (N - ddof) <= 0.
-     * @throws std::bad_alloc If required memory cannot be allocated.
-     * @throws std::runtime_error If NaN or non-finite values are encountered.
-     */
-    Tensor<value_t> var(std::optional<int64_t> axis_opt = std::nullopt,
-        int64_t ddof = 0) const;
-
-    /**
-     * @brief Compute covariance matrices over specified sample and event axes.
-     *
-     * Treats axes in @p sample_axes as sample dimensions and axes in
-     * @p event_axes as event (feature) dimensions. Remaining axes are batch
-     * axes. Result shape is:
-     *   { <batch dims...>, event_total, event_total }
-     * where event_total = product(lengths of @p event_axes).
-     *
-     * @param sample_axes Non-empty vector of axis indices to flatten as samples.
-     *                    Order matters. Entries must be distinct and in
-     *                    [-rank, rank-1].
-     * @param event_axes  Non-empty vector of axis indices to flatten as events.
-     *                    Order matters. Entries must be distinct, disjoint from
-     *                    @p sample_axes, and in [-rank, rank-1].
-     * @param ddof        Delta degrees of freedom (>= 0). Divisor is
-     *                    (N - ddof) where N = product(lengths of sample axes).
-     * @return Tensor<value_t> Covariance matrices with shape
-     *         `{ <batch dims...>, event_total, event_total }`. Allocated in the
-     *         same memory location (host/device) as the input where possible.
-     *
-     * @throws std::invalid_argument if:
-     * - input tensor has no elements.
-     * - @p sample_axes or @p event_axes is empty.
-     * - @p ddof is negative.
-     * - tensor rank < 2.
-     * - any axis index is out of range.
-     * - the same axis appears more than once (within or across vectors).
-     * - ddof >= number of samples (N).
-     * @throws std::out_of_range if:
-     * - internal view/alias construction would exceed the owner's bounds.
-     * @throws std::bad_alloc if:
-     * - required host/device memory allocation failed.
-     * @throws std::runtime_error if:
-     * - NaN or non-finite values encountered, or device/kernel errors during
-     *   reduction or matrix multiplication.
-     */
-    Tensor<value_t> cov(std::vector<int64_t> sample_axes,
-                        std::vector<int64_t> event_axes,
-                        int64_t ddof = 0) const;
-
-    /**
-     * @brief Convenience overload — covariance for the last two axes.
-     *
-     * Equivalent to:
-     *   cov({ rank-2 }, { rank-1 }, ddof)
-     *
-     * For a 2-D tensor of shape {N, M} this returns the M×M covariance of the
-     * N samples. For shape {B1,..., N, M} it returns {B1,..., M, M}.
-     *
-     * @param ddof Delta degrees of freedom (>= 0). Must satisfy ddof < N,
-     *             where N is the length of axis `rank-2`.
-     * @return Tensor<value_t> Covariance matrices for the last two axes.
-     *
-     * @throws std::invalid_argument if:
-     * - tensor rank < 2.
-     * - @p ddof is negative.
-     * - ddof is invalid for the sample count (ddof >= N).
-     * @throws std::bad_alloc if:
-     * - required memory allocation failed.
-     * @throws std::runtime_error if:
-     * - NaN or non-finite values encountered, or device/kernel errors.
-     */
-    Tensor<value_t> cov(int64_t ddof = 0) const;
-
-    /**
-     * @brief Compute the standard deviation of tensor elements.
-     *
-     * Reduces the tensor by computing the square root of the variance,
-     * either over all elements (axis = nullopt)or independently
-     * along a single axis.
-     *
-     * The computation follows the same semantics as `var()`, using the given
-     * delta degrees of freedom (ddof) to adjust the divisor (N - ddof). When
-     * ddof = 0, the result is the population standard deviation; when ddof = 1,
-     * the result is the sample standard deviation.
-     *
-     * @param axis_opt Axis to reduce along, nullopt = flatten,
-     * otherwise -rank..rank-1.
-     * @param ddof Delta degrees of freedom (0 => population std).
-     * @return Tensor<value_t> Tensor with the specified axis reduced.
-     *
-     * @throws std::invalid_argument If the input tensor has no elements,
-     * if @p axis is out of range, if the selected axis has
-     * zero length, or if (N - ddof) <= 0.
-     * @throws std::bad_alloc If required memory cannot be allocated.
-     * @throws std::runtime_error If NaN or non-finite values are encountered
-     * in the inputs or produced during the sqrt computation.
-     */
-    Tensor<value_t> stddev(std::optional<int64_t> axis_opt = std::nullopt,
-        int64_t ddof = 0) const;
-
-    /**
-     * @brief Compute the eigenvalues and right eigenvectors of the last
-     * two axes using a batched Jacobi method.
-     *
-     * This routine interprets the last two dimensions of the tensor as a
-     * stack of square matrices `{B..., N, N}` and applies a Jacobi
-     * (Givens-rotation) diagonalization to each of them in parallel. It
-     * produces all `N` eigenvalues and a full orthonormal set of right
-     * eigenvectors for every matrix in the batch.
-     *
-     * The diagonalization is iterative. For each sweep over the matrix
-     * entries, a sequence of Givens rotations progressively reduces the
-     * off–diagonal elements. The process stops when either the largest
-     * off–diagonal magnitude falls below `tol`, or `max_iters` sweeps
-     * have completed, or a numerical/device error is detected.
-     *
-     * @param max_iters Maximum number of full Jacobi sweeps to attempt.
-     * @param tol Convergence threshold for the largest off–diagonal entry.
-     * @return std::pair<Tensor<value_t>, Tensor<value_t>>
-     *     First:  eigenvalues of shape `{B..., N}`.
-     *     Second: eigenvectors of shape `{B..., N, N}`, stored by
-     *     columns.
-     *
-     * @throws std::invalid_argument
-     *     If `rank < 2` or the last two dimensions are not square.
-     * @throws std::runtime_error
-     *     If NaN or non-finite values are detected in the input or
-     *     during computation, or a division by zero is encountered
-     *     when forming Givens coefficients.
-     */
-    std::pair<Tensor<value_t>, Tensor<value_t>> eig(uint64_t max_iters = 1000,
-        value_t tol = static_cast<value_t>(1e-4)) const;
-
-    /**
      * @brief Returns a new tensor with axes reversed (full transpose).
      *
      * This function returns a view of the tensor with its axes reversed.
@@ -1301,6 +1136,16 @@ public:
      */
     void print(std::ostream & os = std::cout) const;
 
+    /**
+     * @brief Prints the tensor shape as a bracketed list of dimensions.
+     *
+     * Example:
+     * @code
+     * [2, 3, 4]
+     * @endcode
+     *
+     * @param os Output stream to print to. Defaults to std::cout.
+     */
     void print_shape(std::ostream& os = std::cout) const;
 
 	/**
@@ -1526,6 +1371,8 @@ public:
 
 /// Explicit instantiation for float
 extern template class Tensor<float>;
+/// Explicit instantiation for uint64_t
+extern template class Tensor<uint64_t>;
 
 } // namespace temper
 
