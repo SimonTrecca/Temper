@@ -630,7 +630,7 @@ std::vector<uint64_t> argmax(const Tensor<value_t> & tensor,
         }
         if (axis < 0 || axis >= rank)
         {
-            throw std::invalid_argument("Tensor(argmax): axis out of bounds");
+            throw std::invalid_argument("argmax: axis out of bounds");
         }
     }
 
@@ -1485,7 +1485,7 @@ Tensor<value_t> mean(const Tensor<value_t> & tensor,
     const int64_t rank = tensor.get_rank();
     if (rank == 0)
     {
-        throw std::invalid_argument(R"(Tensor(mean):
+        throw std::invalid_argument(R"(mean:
             input tensor has no elements.)");
     }
     const bool flatten = !axis_opt.has_value();
@@ -1504,7 +1504,7 @@ Tensor<value_t> mean(const Tensor<value_t> & tensor,
         }
         if (axis < 0 || axis >= rank)
         {
-            throw std::invalid_argument("Tensor(mean): axis out of bounds");
+            throw std::invalid_argument("mean: axis out of bounds");
         }
         denom_u = tensor.get_dimensions()[axis];
     }
@@ -1529,13 +1529,13 @@ Tensor<value_t> var(const Tensor<value_t> & tensor,
     const uint64_t total_elems = tensor.get_num_elements();
     if (total_elems == 0)
     {
-        throw std::invalid_argument(R"(Tensor(var):
+        throw std::invalid_argument(R"(var:
             input tensor has no elements.)");
     }
 
     if (ddof < 0)
     {
-        throw std::invalid_argument(R"(Tensor(var):
+        throw std::invalid_argument(R"(var:
             ddof must be non-negative.)");
     }
 
@@ -1547,7 +1547,7 @@ Tensor<value_t> var(const Tensor<value_t> & tensor,
         if (static_cast<uint64_t>(ddof) >= total_elems)
         {
             throw std::invalid_argument
-                (R"(Tensor(var): ddof >= number of elements.)");
+                (R"(var: ddof >= number of elements.)");
         }
         N = total_elems;
     }
@@ -1561,12 +1561,12 @@ Tensor<value_t> var(const Tensor<value_t> & tensor,
         }
         if (axis < 0 || axis >= rank)
         {
-            throw std::invalid_argument("Tensor(var): axis out of bounds");
+            throw std::invalid_argument("var: axis out of bounds");
         }
         const uint64_t axis_len = tensor.get_dimensions()[axis];
         if (static_cast<uint64_t>(ddof) >= axis_len)
         {
-            throw std::invalid_argument(R"(Tensor(var):
+            throw std::invalid_argument(R"(var:
                 ddof >= axis length.)");
         }
         N = axis_len;
@@ -1601,25 +1601,25 @@ Tensor<value_t> cov(const Tensor<value_t> & tensor,
     const int64_t rank = tensor.get_rank();
     if (total_elems == 0)
     {
-        throw std::invalid_argument(R"(Tensor(cov):
+        throw std::invalid_argument(R"(cov:
             input tensor has no elements.)");
     }
 
     if(sample_axes.empty() || event_axes.empty())
     {
-        throw std::invalid_argument(R"(Tensor(cov):
+        throw std::invalid_argument(R"(cov:
             axes arguments cannot be empty.)");
     }
 
     if (ddof < 0)
     {
-        throw std::invalid_argument(R"(Tensor(cov):
+        throw std::invalid_argument(R"(cov:
             ddof must be non-negative.)");
     }
 
     if (rank < 2)
     {
-        throw std::invalid_argument(R"(Tensor(cov):
+        throw std::invalid_argument(R"(cov:
             rank must be >= 2.)");
     }
 
@@ -1637,11 +1637,11 @@ Tensor<value_t> cov(const Tensor<value_t> & tensor,
         }
         if (axis < 0 || axis >= rank)
         {
-            throw std::invalid_argument("Tensor(cov): axis out of bounds");
+            throw std::invalid_argument("cov: axis out of bounds");
         }
         if (seen[axis])
         {
-            throw std::invalid_argument(R"(Tensor(cov):
+            throw std::invalid_argument(R"(cov:
                 the same axis cannot be used twice)");
         }
         seen[axis] = true;
@@ -1658,11 +1658,11 @@ Tensor<value_t> cov(const Tensor<value_t> & tensor,
         }
         if (axis < 0 || axis >= rank)
         {
-            throw std::invalid_argument("Tensor(cov): axis out of bounds");
+            throw std::invalid_argument("cov: axis out of bounds");
         }
         if (seen[axis])
         {
-            throw std::invalid_argument(R"(Tensor(cov):
+            throw std::invalid_argument(R"(cov:
                 the same axis cannot be used twice)");
         }
         seen[axis] = true;
@@ -1696,7 +1696,7 @@ Tensor<value_t> cov(const Tensor<value_t> & tensor,
     }
     if (static_cast<uint64_t>(ddof) >= sample_total)
     {
-        throw std::invalid_argument(R"(Tensor(cov):
+        throw std::invalid_argument(R"(cov:
                 not enough samples for ddof.)");
     }
     for (int64_t axis : event_axes)
@@ -1750,7 +1750,7 @@ Tensor<value_t> cov(const Tensor<value_t> & tensor, int64_t ddof)
     const int64_t rank = tensor.get_rank();
     if (rank < 2)
     {
-        throw std::invalid_argument(R"(Tensor(cov):
+        throw std::invalid_argument(R"(cov:
             rank must be >= 2.)");
     }
 
@@ -1766,7 +1766,7 @@ Tensor<value_t> stddev(const Tensor<value_t> & tensor,
     const int64_t rank = tensor.get_rank();
     if (rank == 0)
     {
-        throw std::invalid_argument(R"(Tensor(std):
+        throw std::invalid_argument(R"(std:
             input tensor has no elements.)");
     }
     Tensor<value_t> v = math::var(tensor, axis_opt, ddof);
@@ -1834,14 +1834,14 @@ Tensor<value_t> stddev(const Tensor<value_t> & tensor,
     {
         if (err == 1)
         {
-            throw std::runtime_error(R"(Tensor(std): NaN detected in inputs.)");
+            throw std::runtime_error(R"(std: NaN detected in inputs.)");
         }
         if (err == 2)
         {
-            throw std::runtime_error(R"(Tensor(std):
+            throw std::runtime_error(R"(std:
                 non-finite result (Inf/overflow/NaN) produced.)");
         }
-        throw std::runtime_error(R"(Tensor(std):
+        throw std::runtime_error(R"(std:
             numeric error during sqrt computation.)");
     }
 
@@ -1858,7 +1858,7 @@ std::pair<Tensor<value_t>, Tensor<value_t>> eig(const Tensor<value_t> & tensor,
     const int64_t rank = tensor.get_rank();
     if (rank < 2)
     {
-        throw std::invalid_argument("Tensor(eig): rank must be >= 2.");
+        throw std::invalid_argument("eig: rank must be >= 2.");
     }
 
     const std::vector<uint64_t> tensor_dims = tensor.get_dimensions();
@@ -1866,7 +1866,7 @@ std::pair<Tensor<value_t>, Tensor<value_t>> eig(const Tensor<value_t> & tensor,
 
     if (tensor_dims[rank - 1] != tensor_dims[rank - 2])
     {
-        throw std::invalid_argument(R"(Tensor(eig):
+        throw std::invalid_argument(R"(eig:
             last two dims must be square.)");
     }
     const uint64_t n = tensor_dims[rank - 1];
@@ -2180,20 +2180,20 @@ std::pair<Tensor<value_t>, Tensor<value_t>> eig(const Tensor<value_t> & tensor,
     {
         if (err == 1)
         {
-            throw std::runtime_error(R"(Tensor(eig):
+            throw std::runtime_error(R"(eig:
                 NaN detected in inputs or during computation.)");
         }
         if (err == 2)
         {
-            throw std::runtime_error(R"(Tensor(eig):
+            throw std::runtime_error(R"(eig:
                 non-finite result (overflow or Inf) during computation.)");
         }
         if (err == 3)
         {
-            throw std::runtime_error(R"(Tensor(eig):
+            throw std::runtime_error(R"(eig:
                 division by zero detected during computation.)");
         }
-        throw std::runtime_error(R"(Tensor(eig):
+        throw std::runtime_error(R"(eig:
             numeric error during eigendecomposition.)");
     }
 
