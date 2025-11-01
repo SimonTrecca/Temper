@@ -6,8 +6,6 @@
 #include "temper/Tensor.hpp"
 #include "temper/SYCLUtils.hpp"
 #include "temper/Utils.hpp"
-#include "temper/Math.hpp"
-#include "temper/Stats.hpp"
 
 #include <iostream>
 
