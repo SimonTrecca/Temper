@@ -161,6 +161,26 @@ inline value_t floor(value_t v)
     }
 }
 
+/**
+ * @brief Safe round wrapper.
+ *
+ * For floating types it forwards to sycl::round(). For integral types it
+ * returns the input unchanged (round of an integer is itself). Adjust if you
+ * want different semantics for integers.
+ */
+template <typename value_t>
+inline value_t round(value_t v)
+{
+    if constexpr (std::is_floating_point_v<value_t>)
+    {
+        return sycl::round(v);
+    }
+    else
+    {
+        (void)v;
+        return v;
+    }
+}
 
 /**
  * @brief Atomically set an error flag if a NaN is observed.

@@ -169,8 +169,8 @@ Tensor<value_t> one_hot_expand_at(const Tensor<value_t>& tensor,
                 if (*p_error_flag != 0) { return; }
 
                 // Integer check.
-                value_t rounded = sycl::round(in_val);
-                value_t diff = sycl::fabs(in_val - rounded);
+                value_t rounded = sycl_utils::round(in_val);
+                value_t diff = sycl_utils::fabs(in_val - rounded);
                 if (diff > integer_eps)
                 {
                     p_error_flag[0] = 3;
@@ -240,6 +240,8 @@ Tensor<value_t> one_hot_expand_at(const Tensor<value_t>& tensor,
 }
 template Tensor<float> one_hot_expand_at<float>
     (const Tensor<float>&, int64_t, uint64_t, uint64_t, float, float);
+template Tensor<uint64_t> one_hot_expand_at<uint64_t>
+    (const Tensor<uint64_t>&, int64_t, uint64_t, uint64_t, uint64_t, uint64_t);
 
 template<typename value_t>
 Tensor<value_t> softmax(const Tensor<value_t> & tensor,

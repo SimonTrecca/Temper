@@ -56,6 +56,9 @@ Tensor<value_t> one_hot_expand_at(const Tensor<value_t>& tensor,
 /// Explicit instantiation of one_hot_expand_at for float
 extern template Tensor<float> one_hot_expand_at<float>
     (const Tensor<float>&, int64_t, uint64_t, uint64_t, float, float);
+/// Explicit instantiation of one_hot_expand_at for uint64_t
+extern template Tensor<uint64_t> one_hot_expand_at<uint64_t>
+    (const Tensor<uint64_t>&, int64_t, uint64_t, uint64_t, uint64_t, uint64_t);
 
 /**
  * @brief Compute the softmax along a single axis.
@@ -148,8 +151,8 @@ extern template Tensor<float> cross_entropy<float>
 template<typename value_t>
 Tensor<value_t> mean_squared_error(const Tensor<value_t>& predictions,
     const Tensor<value_t>& targets,
-    std::optional<int64_t> axis_opt,
-    bool reduction_mean);
+    std::optional<int64_t> axis_opt = std::nullopt,
+    bool reduction_mean = true);
 /// Explicit instantiation of mean_squared_error for float
 extern template Tensor<float> mean_squared_error<float>
 (const Tensor<float>&, const Tensor<float>&, std::optional<int64_t>, bool);
