@@ -716,13 +716,15 @@ Tensor<value_t> & Tensor<value_t>::operator=(value_t val)
                 sycl::malloc_device(sizeof(value_t), g_sycl_queue));
         }
 
+        if (!raw_ptr)
+        {
+            throw std::bad_alloc();
+        }
+
         m_p_data = std::shared_ptr<value_t>(raw_ptr,
             [](value_t* p)
             {
-                if (p)
-                {
-                    sycl::free(p, g_sycl_queue);
-                }
+                if (p) { sycl::free(p, g_sycl_queue); }
             }
         );
 
@@ -737,9 +739,17 @@ Tensor<value_t> & Tensor<value_t>::operator=(value_t val)
             scalar assignment only allowed for tensors with single element.)");
     }
 
-    g_sycl_queue.memcpy(m_p_data.get(), &val, sizeof(value_t)).wait();
+    if (m_mem_loc == MemoryLocation::HOST)
+    {
+        *m_p_data.get() = val;
+    }
+    else
+    {
+        g_sycl_queue.memcpy(m_p_data.get(), &val, sizeof(value_t)).wait();
+    }
     return *this;
 }
+
 
 template<typename value_t>
 Tensor<value_t> Tensor<value_t>::operator[](uint64_t idx)
@@ -821,9 +831,18 @@ Tensor<value_t>::operator value_t() const
 
     value_t tmp;
 
-    g_sycl_queue.memcpy(&tmp, m_p_data.get(), sizeof(value_t)).wait();
+    if (m_mem_loc == MemoryLocation::HOST)
+    {
+        tmp = *m_p_data.get();
+    }
+    else
+    {
+        g_sycl_queue.memcpy(&tmp, m_p_data.get(), sizeof(value_t)).wait();
+    }
+
     return tmp;
 }
+
 
 template<typename value_t>
 Tensor<value_t> Tensor<value_t>::operator+(const Tensor & other) const
