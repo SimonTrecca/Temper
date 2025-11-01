@@ -51,6 +51,9 @@ Tensor<value_t> matmul(const Tensor<value_t> & first,
 /// Explicit instantiation of matmul for float
 extern template Tensor<float> matmul<float>
     (const Tensor<float>&, const Tensor<float>&);
+/// Explicit instantiation of matmul for uint64_t
+extern template Tensor<uint64_t> matmul<uint64_t>
+    (const Tensor<uint64_t>&, const Tensor<uint64_t>&);
 
 /**
  * @brief Reshape a tensor (free function wrapper).
@@ -77,6 +80,9 @@ Tensor<value_t> reshape(const Tensor<value_t> & tensor,
 /// Explicit instantiation of reshape for float
 extern template Tensor<float> reshape<float>
     (const Tensor<float>&, const std::vector<uint64_t>&);
+/// Explicit instantiation of reshape for uint64_t
+extern template Tensor<uint64_t> reshape<uint64_t>
+    (const Tensor<uint64_t>&, const std::vector<uint64_t>&);
 
 /**
  * @brief Sort tensor elements (free function wrapper).
@@ -98,6 +104,9 @@ Tensor<value_t> sort(const Tensor<value_t> & tensor,
 /// Explicit instantiation of sort for float
 extern template Tensor<float> sort<float>
     (const Tensor<float>&, std::optional<int64_t>);
+/// Explicit instantiation of sort for uint64_t
+extern template Tensor<uint64_t> sort<uint64_t>
+    (const Tensor<uint64_t>&, std::optional<int64_t>);
 
 /**
  * @brief Compute the sum of tensor elements (free function wrapper).
@@ -121,6 +130,9 @@ Tensor<value_t> sum(const Tensor<value_t> & tensor,
 /// Explicit instantiation of sum for float
 extern template Tensor<float> sum<float>
     (const Tensor<float>&, std::optional<int64_t>);
+/// Explicit instantiation of sum for uint64_t
+extern template Tensor<uint64_t> sum<uint64_t>
+    (const Tensor<uint64_t>&, std::optional<int64_t>);
 
 /**
  * @brief Compute the cumulative sum of tensor elements (free function wrapper).
@@ -144,6 +156,9 @@ Tensor<value_t> cumsum(const Tensor<value_t> & tensor,
 /// Explicit instantiation of cumsum for float
 extern template Tensor<float> cumsum<float>
     (const Tensor<float>&, std::optional<int64_t>);
+/// Explicit instantiation of cumsum for uint64_t
+extern template Tensor<uint64_t> cumsum<uint64_t>
+    (const Tensor<uint64_t>&, std::optional<int64_t>);
 
 /**
  * @brief Transpose a tensor (free function wrapper, full reversal).
@@ -160,6 +175,8 @@ template<typename value_t>
 Tensor<value_t> transpose(const Tensor<value_t> & tensor);
 /// Explicit instantiation of transpose() for float
 extern template Tensor<float> transpose<float>(const Tensor<float>&);
+/// Explicit instantiation of transpose() for uint64_t
+extern template Tensor<uint64_t> transpose<uint64_t>(const Tensor<uint64_t>&);
 
 /**
  * @brief Transpose a tensor with a custom axis order (free function wrapper).
@@ -182,6 +199,9 @@ Tensor<value_t> transpose(const Tensor<value_t> & tensor,
 /// Explicit instantiation of transpose(axes) for float
 extern template Tensor<float> transpose<float>
     (const Tensor<float>&, const std::vector<int64_t>&);
+/// Explicit instantiation of transpose(axes) for uint64_t
+extern template Tensor<uint64_t> transpose<uint64_t>
+    (const Tensor<uint64_t>&, const std::vector<int64_t>&);
 
 /**
  * @brief Pad the last two dimensions (height, width) with a constant.
@@ -208,6 +228,9 @@ Tensor<value_t> pad(const Tensor<value_t> & tensor,
 /// Explicit instantiation of pad for float
 extern template Tensor<float> pad<float>
     (const Tensor<float>&, uint64_t, uint64_t, uint64_t, uint64_t, float);
+/// Explicit instantiation of pad for uint64_t
+extern template Tensor<uint64_t> pad<uint64_t>
+    (const Tensor<uint64_t>&, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
 
 /**
  * @brief Symmetric pad helper: pad height/width on both sides.
@@ -229,6 +252,9 @@ Tensor<value_t> pad(const Tensor<value_t> & tensor,
 /// Explicit instantiation of pad (height, width) for float
 extern template Tensor<float> pad<float>
     (const Tensor<float>&, uint64_t, uint64_t, float);
+/// Explicit instantiation of pad (height, width) for uint64_t
+extern template Tensor<uint64_t> pad<uint64_t>
+    (const Tensor<uint64_t>&, uint64_t, uint64_t, uint64_t);
 
 /**
  * @brief Compute indices of maximum values along a specified axis.
@@ -251,6 +277,9 @@ std::vector<uint64_t> argmax(const Tensor<value_t> & tensor,
 /// Explicit instantiation of argmax for float
 extern template std::vector<uint64_t> argmax<float>
     (const Tensor<float>&, std::optional<int64_t>);
+/// Explicit instantiation of argmax for uint64_t
+extern template std::vector<uint64_t> argmax<uint64_t>
+    (const Tensor<uint64_t>&, std::optional<int64_t>);
 
 /**
  * @brief Elementwise linear interpolation between two tensors.
@@ -328,6 +357,9 @@ Tensor<value_t> arange(value_t start,
     MemoryLocation res_loc);
 /// Explicit instantiation of arange for float
 extern template Tensor<float> arange<float>(float, float, float, MemoryLocation);
+/// Explicit instantiation of arange for uint64_t
+extern template Tensor<uint64_t> arange<uint64_t>
+(uint64_t, uint64_t, uint64_t, MemoryLocation);
 
 /**
  * @brief Generate a 1-D tensor with values from 0 up to stop-1.
@@ -348,6 +380,8 @@ Tensor<value_t> arange(value_t stop,
     MemoryLocation res_loc = MemoryLocation::DEVICE);
 /// Explicit instantiation of arange(stop) for float
 extern template Tensor<float> arange<float>(float, MemoryLocation);
+/// Explicit instantiation of arange(stop) for uint64_t
+extern template Tensor<uint64_t> arange<uint64_t>(uint64_t, MemoryLocation);
 
 /**
  * @brief Create a tensor filled with zeros.
@@ -370,6 +404,9 @@ Tensor<value_t> zeros(const std::vector<uint64_t> & shape,
     MemoryLocation res_loc = MemoryLocation::DEVICE);
 /// Explicit instantiation of zeros for float
 extern template Tensor<float> zeros<float>
+    (const std::vector<uint64_t>&, MemoryLocation);
+/// Explicit instantiation of zeros for uint64_t
+extern template Tensor<uint64_t> zeros<uint64_t>
     (const std::vector<uint64_t>&, MemoryLocation);
 
 /**
@@ -414,6 +451,8 @@ template<typename value_t>
 Tensor<value_t> factorial(const Tensor<value_t> & tensor);
 /// Explicit instantiation of factorial for float
 extern template Tensor<float> factorial<float>(const Tensor<float>&);
+/// Explicit instantiation of factorial for uint64_t
+extern template Tensor<uint64_t> factorial<uint64_t>(const Tensor<uint64_t>&);
 
 /**
  * @brief Elementwise natural logarithm computed on the device.

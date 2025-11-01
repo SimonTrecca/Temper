@@ -139,6 +139,28 @@ inline value_t fabs(value_t v)
     }
 }
 
+/**
+ * @brief Safe floor wrapper.
+ *
+ * For floating types it forwards to sycl::floor(). For integral types it
+ * returns the input unchanged (floor of an integer is itself). If you prefer
+ * different semantics (e.g. cast to floating and floor), change accordingly.
+ */
+template <typename value_t>
+inline value_t floor(value_t v)
+{
+    if constexpr (std::is_floating_point_v<value_t>)
+    {
+        return sycl::floor(v);
+    }
+    else
+    {
+
+        (void)v;
+        return v;
+    }
+}
+
 
 /**
  * @brief Atomically set an error flag if a NaN is observed.

@@ -392,6 +392,8 @@ temper::Tensor<value_t> matmul(const temper::Tensor<value_t> & first,
 }
 template Tensor<float> matmul<float>
 	(const Tensor<float>&, const Tensor<float>&);
+template Tensor<uint64_t> matmul<uint64_t>
+    (const Tensor<uint64_t>&, const Tensor<uint64_t>&);
 
 template <typename value_t>
 Tensor<value_t> reshape(const Tensor<value_t> & tensor,
@@ -403,6 +405,8 @@ Tensor<value_t> reshape(const Tensor<value_t> & tensor,
 }
 template Tensor<float> reshape<float>
     (const Tensor<float>&, const std::vector<uint64_t>&);
+template Tensor<uint64_t> reshape<uint64_t>
+    (const Tensor<uint64_t>&, const std::vector<uint64_t>&);
 
 template <typename value_t>
 Tensor<value_t> sort(const Tensor<value_t> & tensor,
@@ -414,6 +418,8 @@ Tensor<value_t> sort(const Tensor<value_t> & tensor,
 }
 template Tensor<float> sort<float>
     (const Tensor<float>&, std::optional<int64_t>);
+template Tensor<uint64_t> sort<uint64_t>
+    (const Tensor<uint64_t>&, std::optional<int64_t>);
 
 template <typename value_t>
 Tensor<value_t> sum(const Tensor<value_t> & tensor,
@@ -424,6 +430,8 @@ Tensor<value_t> sum(const Tensor<value_t> & tensor,
 }
 template Tensor<float> sum<float>
     (const Tensor<float>&, std::optional<int64_t>);
+template Tensor<uint64_t> sum<uint64_t>
+    (const Tensor<uint64_t>&, std::optional<int64_t>);
 
 template <typename value_t>
 Tensor<value_t> cumsum(const Tensor<value_t> & tensor,
@@ -434,6 +442,8 @@ Tensor<value_t> cumsum(const Tensor<value_t> & tensor,
 }
 template Tensor<float> cumsum<float>
     (const Tensor<float>&, std::optional<int64_t>);
+template Tensor<uint64_t> cumsum<uint64_t>
+    (const Tensor<uint64_t>&, std::optional<int64_t>);
 
 template<typename value_t>
 Tensor<value_t> transpose(const Tensor<value_t> & tensor)
@@ -442,6 +452,7 @@ Tensor<value_t> transpose(const Tensor<value_t> & tensor)
     return t;
 }
 template Tensor<float> transpose<float>(const Tensor<float>&);
+template Tensor<uint64_t> transpose<uint64_t>(const Tensor<uint64_t>&);
 
 template<typename value_t>
 Tensor<value_t> transpose(const Tensor<value_t> & tensor,
@@ -452,6 +463,8 @@ Tensor<value_t> transpose(const Tensor<value_t> & tensor,
 }
 template Tensor<float> transpose<float>
     (const Tensor<float>&, const std::vector<int64_t>&);
+template Tensor<uint64_t> transpose<uint64_t>
+    (const Tensor<uint64_t>&, const std::vector<int64_t>&);
 
 template<typename value_t>
 Tensor<value_t> pad(const Tensor<value_t> & tensor,
@@ -592,6 +605,8 @@ Tensor<value_t> pad(const Tensor<value_t> & tensor,
 }
 template Tensor<float> pad<float>
     (const Tensor<float>&, uint64_t, uint64_t, uint64_t, uint64_t, float);
+template Tensor<uint64_t> pad<uint64_t>
+    (const Tensor<uint64_t>&, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
 
 template<typename value_t>
 Tensor<value_t> pad(const Tensor<value_t> & tensor,
@@ -603,6 +618,8 @@ Tensor<value_t> pad(const Tensor<value_t> & tensor,
 }
 template Tensor<float> pad<float>
     (const Tensor<float>&, uint64_t, uint64_t, float);
+template Tensor<uint64_t> pad<uint64_t>
+    (const Tensor<uint64_t>&, uint64_t, uint64_t, uint64_t);
 
 template<typename value_t>
 std::vector<uint64_t> argmax(const Tensor<value_t> & tensor,
@@ -802,15 +819,17 @@ std::vector<uint64_t> argmax(const Tensor<value_t> & tensor,
 }
 template std::vector<uint64_t> argmax<float>
     (const Tensor<float>&, std::optional<int64_t>);
+template std::vector<uint64_t> argmax<uint64_t>
+    (const Tensor<uint64_t>&, std::optional<int64_t>);
 
 template<typename value_t>
 Tensor<value_t> linspace(const Tensor<value_t>& start,
-                        const Tensor<value_t>& stop,
-                        uint64_t num,
-                        MemoryLocation res_loc,
-                        int64_t axis,
-                        bool endpoint,
-                        Tensor<value_t>* step_out)
+    const Tensor<value_t>& stop,
+    uint64_t num,
+    MemoryLocation res_loc,
+    int64_t axis,
+    bool endpoint,
+    Tensor<value_t>* step_out)
 {
     const std::vector<uint64_t> & start_shape = start.get_dimensions();
     const std::vector<uint64_t> & stop_shape = stop.get_dimensions();
@@ -1209,6 +1228,8 @@ Tensor<value_t> arange(value_t start,
     return result;
 }
 template Tensor<float> arange<float>(float, float, float, MemoryLocation);
+template Tensor<uint64_t> arange<uint64_t>
+(uint64_t, uint64_t, uint64_t, MemoryLocation);
 
 template<typename value_t>
 Tensor<value_t> arange(value_t stop, MemoryLocation res_loc)
@@ -1217,22 +1238,25 @@ Tensor<value_t> arange(value_t stop, MemoryLocation res_loc)
         (static_cast<value_t>(0), stop, static_cast<value_t>(1), res_loc);
 }
 template Tensor<float> arange<float>(float, MemoryLocation);
+template Tensor<uint64_t> arange<uint64_t>(uint64_t, MemoryLocation);
 
 template<typename value_t>
 Tensor<value_t> zeros(const std::vector<uint64_t> & shape,
     MemoryLocation res_loc)
 {
     // Default builder already zero-initializes.
-    return Tensor<float>(shape, res_loc);
+    return Tensor<value_t>(shape, res_loc);
 }
 template Tensor<float> zeros<float>
+    (const std::vector<uint64_t>&, MemoryLocation);
+template Tensor<uint64_t> zeros<uint64_t>
     (const std::vector<uint64_t>&, MemoryLocation);
 
 template <typename value_t>
 value_t integral(std::function<value_t(value_t)> f,
-                        value_t a,
-                        value_t b,
-                        uint64_t n_bins)
+    value_t a,
+    value_t b,
+    uint64_t n_bins)
 {
     if (n_bins < 1)
     {
@@ -1334,8 +1358,8 @@ Tensor<value_t> factorial(const Tensor<value_t> & tensor)
                 return;
             }
 
-            value_t rounded = sycl::floor(v + static_cast<value_t>(0.5));
-            value_t diff = sycl::fabs(v - rounded);
+            value_t rounded = sycl_utils::floor(v + static_cast<value_t>(0.5));
+            value_t diff = sycl_utils::fabs(v - rounded);
             if (diff > eps)
             {
                 p_error_flag[0] = 3;
@@ -1385,6 +1409,8 @@ Tensor<value_t> factorial(const Tensor<value_t> & tensor)
     return result;
 }
 template Tensor<float> factorial<float>(const Tensor<float>&);
+template Tensor<uint64_t> factorial<uint64_t>(const Tensor<uint64_t>&);
+
 
 template<typename value_t>
 Tensor<value_t> log(const Tensor<value_t> & tensor)
