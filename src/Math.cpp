@@ -811,6 +811,428 @@ template Tensor<uint64_t> argmax<uint64_t>
     (const Tensor<uint64_t>&, std::optional<int64_t>);
 
 template<typename value_t>
+Tensor<uint64_t> argsort(const Tensor<value_t> & tensor,
+    std::optional<int64_t> axis_opt,
+    bool descending)
+{
+    const std::vector<uint64_t> & in_shape = tensor.get_dimensions();
+    const int64_t rank = tensor.get_rank();
+
+    if (in_shape.empty())
+    {
+        throw std::invalid_argument(R"(argsort:
+            input tensor has no elements.)");
+    }
+
+    const bool flatten = !axis_opt.has_value();
+    int64_t axis = -1;
+
+    if (!flatten)
+    {
+        axis = axis_opt.value();
+        if (axis < 0)
+        {
+            axis += rank;
+        }
+        if (axis < 0 || axis >= rank)
+        {
+            throw std::invalid_argument("argsort: axis out of bounds");
+        }
+    }
+
+    const uint64_t total_size = tensor.get_num_elements();
+
+    uint64_t effective_axis_size = 0;
+    uint64_t slice_count = 1;
+    uint64_t axis_stride = 1;
+
+    if (flatten)
+    {
+        effective_axis_size = total_size;
+        slice_count = 1;
+        axis_stride = 1;
+    }
+    else
+    {
+        slice_count = 1;
+        const auto & strides = tensor.get_strides();
+        for (int64_t i = 0; i < rank; ++i)
+        {
+            if (i == axis)
+            {
+                effective_axis_size = in_shape[i];
+                axis_stride = strides[i];
+            }
+            else
+            {
+                slice_count *= in_shape[i];
+            }
+        }
+    }
+
+    const uint64_t total_output_elems = slice_count * effective_axis_size;
+
+    std::vector<uint64_t> res_full_shape;
+    if (flatten)
+    {
+        res_full_shape = { total_size };
+    }
+    else
+    {
+        res_full_shape = in_shape;
+    }
+
+    Tensor<uint64_t> result(res_full_shape, tensor.get_memory_location());
+    uint64_t* p_out_data = result.get_data();
+
+    std::vector<uint64_t> divisors = temper::utils::compute_divisors(in_shape);
+
+    std::vector<uint64_t> host_slice_base(static_cast<size_t>(slice_count), 0);
+    if (!flatten)
+    {
+        std::vector<uint64_t> dims;
+        std::vector<uint64_t> strides_for_dims;
+        for (int64_t i = 0; i < rank; ++i)
+        {
+            if (i == axis) continue;
+            dims.push_back(in_shape[i]);
+            strides_for_dims.push_back(tensor.get_strides()[i]);
+        }
+        std::vector<uint64_t> index_factors =
+            temper::utils::compute_divisors(dims);
+        const uint64_t D = static_cast<uint64_t>(dims.size());
+
+        for (uint64_t s = 0; s < slice_count; ++s)
+        {
+            host_slice_base[s] = temper::sycl_utils::
+                idx_of(s, index_factors.data(), strides_for_dims.data(), D);
+        }
+    }
+
+    uint64_t* p_slice_base = static_cast<uint64_t*>(
+        sycl::malloc_device(static_cast<size_t>(slice_count) * sizeof(uint64_t),
+                            g_sycl_queue));
+    uint64_t* p_divisors = static_cast<uint64_t*>(
+        sycl::malloc_device(sizeof(uint64_t) * rank, g_sycl_queue));
+    uint64_t* p_strides = static_cast<uint64_t*>(
+        sycl::malloc_device(sizeof(uint64_t) * rank, g_sycl_queue));
+
+    uint64_t* indices_buffer = static_cast<uint64_t*>(sycl::malloc_device
+        (static_cast<size_t>(total_output_elems) * sizeof(uint64_t),
+            g_sycl_queue));
+    uint64_t* merge_buffer = static_cast<uint64_t*>(sycl::malloc_device
+        (static_cast<size_t>(total_output_elems) * sizeof(uint64_t),
+            g_sycl_queue));
+
+    bool alloc_ok = (p_slice_base && p_divisors && p_strides &&
+                     indices_buffer && merge_buffer);
+
+    if (!alloc_ok)
+    {
+        if (p_slice_base)    sycl::free(p_slice_base, g_sycl_queue);
+        if (p_divisors)      sycl::free(p_divisors, g_sycl_queue);
+        if (p_strides)       sycl::free(p_strides, g_sycl_queue);
+        if (indices_buffer)  sycl::free(indices_buffer, g_sycl_queue);
+        if (merge_buffer)    sycl::free(merge_buffer, g_sycl_queue);
+        throw std::bad_alloc();
+    }
+
+    if (!host_slice_base.empty())
+    {
+        g_sycl_queue.memcpy(p_slice_base, host_slice_base.data(),
+            static_cast<size_t>(slice_count) * sizeof(uint64_t)).wait();
+    }
+    if (!divisors.empty())
+    {
+        g_sycl_queue.memcpy(p_divisors, divisors.data(),
+                            sizeof(uint64_t) * rank).wait();
+    }
+    g_sycl_queue.memcpy(p_strides, tensor.get_strides().data(),
+                        sizeof(uint64_t) * rank).wait();
+
+
+    g_sycl_queue.submit([&](sycl::handler& cgh) {
+        cgh.parallel_for(sycl::range<1>(static_cast<size_t>(total_output_elems)),
+            [=](sycl::id<1> idx)
+        {
+            uint64_t flat_idx = static_cast<uint64_t>(idx[0]);
+            if (flatten)
+            {
+                indices_buffer[flat_idx] = flat_idx;
+            }
+            else
+            {
+                uint64_t pos_in_slice = flat_idx % effective_axis_size;
+                indices_buffer[flat_idx] = pos_in_slice;
+            }
+        });
+    }).wait();
+
+    const value_t* tensor_data = tensor.get_data();
+    uint64_t* merge_input = indices_buffer;
+    uint64_t* merge_output = merge_buffer;
+
+    size_t workgroup_size = temper::utils::compute_pow2_workgroup_size(
+        g_sycl_queue, static_cast<size_t>(effective_axis_size));
+
+    for (uint64_t width = 1; width < effective_axis_size; width *= 2)
+    {
+        const uint64_t chunks_per_slice =
+            (effective_axis_size + 2 * width - 1) / (2 * width);
+        const uint64_t total_merges =
+            static_cast<uint64_t>(slice_count) * chunks_per_slice;
+        if (total_merges == 0) break;
+
+        size_t local_size = workgroup_size;
+        size_t global_items = static_cast<size_t>(total_merges) * local_size;
+
+        g_sycl_queue.submit([&](sycl::handler& cgh) {
+            cgh.parallel_for(
+                sycl::nd_range<1>(sycl::range<1>(global_items),
+                                  sycl::range<1>(local_size)),
+                [=](sycl::nd_item<1> it)
+            {
+                const uint64_t group_id = it.get_group(0);
+                const uint64_t local_id = it.get_local_id(0);
+                const uint64_t local_range = it.get_local_range(0);
+
+                const uint64_t slice_idx = group_id / chunks_per_slice;
+                const uint64_t chunk_idx = group_id % chunks_per_slice;
+                const uint64_t slice_base = p_slice_base[slice_idx];
+
+                const uint64_t left = chunk_idx * 2 * width;
+                if (left >= effective_axis_size)
+                {
+                    return;
+                }
+                uint64_t mid = left + width;
+                if (mid > effective_axis_size)
+                {
+                    mid = effective_axis_size;
+                }
+                uint64_t right = left + 2 * width;
+                if (right > effective_axis_size)
+                {
+                    right = effective_axis_size;
+                }
+
+                const uint64_t len_left = mid - left;
+                const uint64_t len_right = right - mid;
+                const uint64_t total_len = len_left + len_right;
+
+                const uint64_t merge_start =
+                    (total_len * local_id) / local_range;
+                const uint64_t merge_end =
+                    (total_len * (local_id + 1)) / local_range;
+                if (merge_start >= merge_end)
+                {
+                    return;
+                }
+
+                auto idx_of_local = [&](uint64_t logical_idx) -> uint64_t
+                {
+                    if (flatten)
+                    {
+                        return temper::sycl_utils::idx_of
+                            (logical_idx, p_divisors, p_strides, rank);
+                    }
+                    else
+                    {
+                        return slice_base + logical_idx * axis_stride;
+                    }
+                };
+
+                auto find_partition_local = [&](uint64_t k) -> uint64_t
+                {
+                    const uint64_t base_offset = slice_idx * effective_axis_size;
+                    int64_t i_min;
+                    if (k > len_right)
+                    {
+                        i_min = static_cast<int64_t>(k - len_right);
+                    }
+                    else
+                    {
+                        i_min = 0;
+                    }
+
+                    int64_t i_max;
+                    if (k < len_left)
+                    {
+                        i_max = static_cast<int64_t>(k);
+                    }
+                    else
+                    {
+                        i_max = static_cast<int64_t>(len_left);
+                    }
+
+                    while (i_min < i_max)
+                    {
+                        int64_t i_mid = (i_min + i_max) / 2;
+                        int64_t j_mid = static_cast<int64_t>(k) - i_mid;
+
+                        uint64_t idx_a = merge_input[base_offset + left + i_mid];
+                        uint64_t a_off = idx_of_local(idx_a);
+                        value_t va = tensor_data[a_off];
+
+                        bool cmp;
+                        if (j_mid <= 0)
+                        {
+                            cmp = false;
+                        }
+                        else
+                        {
+                            uint64_t idx_b =
+                                merge_input[base_offset + mid + (j_mid - 1)];
+                            uint64_t b_off = idx_of_local(idx_b);
+                            value_t vb = tensor_data[b_off];
+
+                            const bool a_nan = sycl_utils::is_nan(va);
+                            const bool b_nan = sycl_utils::is_nan(vb);
+
+                            if (a_nan && !b_nan)
+                            {
+                                cmp = false;
+                            }
+                            else if (!a_nan && b_nan)
+                            {
+                                cmp = true;
+                            }
+                            else if (a_nan && b_nan)
+                            {
+                                cmp = (idx_a < idx_b);
+                            }
+                            else
+                            {
+                                if (!descending)
+                                {
+                                    if (va < vb) cmp = true;
+                                    else if (va > vb) cmp = false;
+                                    else cmp = (idx_a < idx_b);
+                                }
+                                else
+                                {
+                                    if (va > vb) cmp = true;
+                                    else if (va < vb) cmp = false;
+                                    else cmp = (idx_a < idx_b);
+                                }
+                            }
+                        }
+
+                        if (cmp)
+                        {
+                            i_min = i_mid + 1;
+                        }
+                        else
+                        {
+                            i_max = i_mid;
+                        }
+                    }
+                    return static_cast<uint64_t>(i_min);
+                };
+
+                const uint64_t i_start = find_partition_local(merge_start);
+                const uint64_t j_start = merge_start - i_start;
+                const uint64_t i_end = find_partition_local(merge_end);
+                const uint64_t j_end = merge_end - i_end;
+
+                uint64_t i = i_start;
+                uint64_t j = j_start;
+                uint64_t out_k = merge_start;
+
+                uint64_t base_offset = slice_idx * effective_axis_size;
+
+                while (i < i_end && j < j_end)
+                {
+                    uint64_t idx_a = merge_input[base_offset + left + i];
+                    uint64_t idx_b = merge_input[base_offset + mid + j];
+
+                    uint64_t a_off = idx_of_local(idx_a);
+                    uint64_t b_off = idx_of_local(idx_b);
+                    value_t va = tensor_data[a_off];
+                    value_t vb = tensor_data[b_off];
+
+                    bool take_a;
+                    const bool a_nan = sycl_utils::is_nan(va);
+                    const bool b_nan = sycl_utils::is_nan(vb);
+
+                    if (a_nan && !b_nan)
+                    {
+                        take_a = false;
+                    }
+                    else if (!a_nan && b_nan)
+                    {
+                        take_a = true;
+                    }
+                    else if (a_nan && b_nan)
+                    {
+                        take_a = (idx_a < idx_b);
+                    }
+                    else
+                    {
+                        if (!descending)
+                        {
+                            if (va < vb) take_a = true;
+                            else if (va > vb) take_a = false;
+                            else take_a = (idx_a < idx_b);
+                        }
+                        else
+                        {
+                            if (va > vb) take_a = true;
+                            else if (va < vb) take_a = false;
+                            else take_a = (idx_a < idx_b);
+                        }
+                    }
+
+                    if (take_a)
+                    {
+                        merge_output[base_offset + left + out_k] = idx_a;
+                        ++i;
+                    }
+                    else
+                    {
+                        merge_output[base_offset + left + out_k] = idx_b;
+                        ++j;
+                    }
+                    ++out_k;
+                }
+
+                while (i < i_end)
+                {
+                    merge_output[base_offset + left + out_k] =
+                        merge_input[base_offset + left + i];
+                    ++i; ++out_k;
+                }
+                while (j < j_end)
+                {
+                    merge_output[base_offset + left + out_k] =
+                        merge_input[base_offset + mid + j];
+                    ++j; ++out_k;
+                }
+            });
+        }).wait();
+
+        uint64_t* tmp = merge_input;
+        merge_input = merge_output;
+        merge_output = tmp;
+    }
+
+    g_sycl_queue.memcpy(p_out_data, merge_input,
+        static_cast<size_t>(total_output_elems) * sizeof(uint64_t)).wait();
+
+    sycl::free(p_slice_base, g_sycl_queue);
+    sycl::free(indices_buffer, g_sycl_queue);
+    sycl::free(merge_buffer, g_sycl_queue);
+    sycl::free(p_divisors, g_sycl_queue);
+    sycl::free(p_strides, g_sycl_queue);
+
+    return result;
+}
+template Tensor<uint64_t> argsort<float>
+    (const Tensor<float>&, std::optional<int64_t>, bool);
+template Tensor<uint64_t> argsort<uint64_t>
+    (const Tensor<uint64_t>&, std::optional<int64_t>, bool);
+
+template<typename value_t>
 Tensor<value_t> linspace(const Tensor<value_t>& start,
     const Tensor<value_t>& stop,
     uint64_t num,

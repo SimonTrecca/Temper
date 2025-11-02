@@ -3107,6 +3107,405 @@ TYPED_TEST(TypedArgmax, argmax_on_alias_view_strided)
     EXPECT_EQ(res.at(0), static_cast<uint64_t>(1));
 }
 
+template<typename T>
+class TypedArgsort : public ::testing::Test {};
+
+using ArgsortTestTypes = ::testing::Types<float, uint64_t>;
+TYPED_TEST_SUITE(TypedArgsort, ArgsortTestTypes);
+
+/**
+ * @test TypedArgsort.argsort_flattened_ascending
+ * @brief Verify flattened ascending argsort returns a valid perm.
+ */
+TYPED_TEST(TypedArgmax, argsort_flattened_ascending)
+{
+    using value_t = TypeParam;
+    Tensor<value_t> t({5}, MemoryLocation::DEVICE);
+    std::vector<value_t> vals = {
+        static_cast<value_t>(1), static_cast<value_t>(5),
+        static_cast<value_t>(3), static_cast<value_t>(5),
+        static_cast<value_t>(2)
+    };
+    t = vals;
+
+    Tensor<uint64_t> res = math::argsort<value_t>(t, std::nullopt, false);
+    const uint64_t N = res.get_num_elements();
+    ASSERT_EQ(N, static_cast<uint64_t>(5));
+
+    std::vector<uint64_t> host(N);
+    g_sycl_queue.memcpy(host.data(), res.m_p_data.get(),
+                        sizeof(uint64_t) * N).wait();
+
+    std::vector<bool> seen(N, false);
+    for (uint64_t i = 0; i < N; ++i)
+    {
+        uint64_t idx = host[i];
+        ASSERT_LT(idx, N);
+        seen[idx] = true;
+        value_t v = t.at(idx);
+        if (i > 0)
+        {
+            value_t prev = t.at(host[i - 1]);
+            if constexpr (std::is_floating_point<value_t>::value)
+                EXPECT_LE(static_cast<double>(prev),
+                          static_cast<double>(v));
+            else
+                EXPECT_LE(prev, v);
+        }
+    }
+    for (uint64_t i = 0; i < N; ++i) EXPECT_TRUE(seen[i]);
+}
+
+/**
+ * @test TypedArgsort.argsort_flattened_descending
+ * @brief Verify flattened descending argsort orders values.
+ */
+TYPED_TEST(TypedArgmax, argsort_flattened_descending)
+{
+    using value_t = TypeParam;
+    Tensor<value_t> t({5}, MemoryLocation::DEVICE);
+    std::vector<value_t> vals = {
+        static_cast<value_t>(1), static_cast<value_t>(5),
+        static_cast<value_t>(3), static_cast<value_t>(5),
+        static_cast<value_t>(2)
+    };
+    t = vals;
+
+    Tensor<uint64_t> res = math::argsort<value_t>(t, std::nullopt, true);
+    const uint64_t N = res.get_num_elements();
+    ASSERT_EQ(N, static_cast<uint64_t>(5));
+
+    std::vector<uint64_t> host(N);
+    g_sycl_queue.memcpy(host.data(), res.m_p_data.get(),
+                        sizeof(uint64_t) * N).wait();
+
+    for (uint64_t i = 1; i < N; ++i)
+    {
+        value_t prev = t.at(host[i - 1]);
+        value_t cur  = t.at(host[i]);
+        if constexpr (std::is_floating_point<value_t>::value)
+            EXPECT_GE(static_cast<double>(prev), static_cast<double>(cur));
+        else
+            EXPECT_GE(prev, cur);
+    }
+
+    std::vector<bool> seen(N, false);
+    for (uint64_t i = 0; i < N; ++i)
+    {
+        ASSERT_LT(host[i], N);
+        seen[host[i]] = true;
+    }
+    for (uint64_t i = 0; i < N; ++i) EXPECT_TRUE(seen[i]);
+}
+
+/**
+ * @test TypedArgsort.argsort_axis0_2d
+ * @brief Argsort along axis 0 for a 2x3 matrix, ascending order.
+ */
+TYPED_TEST(TypedArgmax, argsort_axis0_2d)
+{
+    using value_t = TypeParam;
+    Tensor<value_t> t({2, 3}, MemoryLocation::DEVICE);
+
+    std::vector<value_t> init = {
+        static_cast<value_t>(1), static_cast<value_t>(4),
+        static_cast<value_t>(3), static_cast<value_t>(2),
+        static_cast<value_t>(0), static_cast<value_t>(5)
+    };
+    t = init;
+
+    Tensor<uint64_t> res = math::argsort<value_t>(t, 0, false);
+
+    const uint64_t axis_size = 2;
+    const uint64_t slices = 3;
+    ASSERT_EQ(res.get_num_elements(), axis_size * slices);
+
+    std::vector<uint64_t> host(axis_size * slices);
+    g_sycl_queue.memcpy(host.data(), res.m_p_data.get(),
+                        sizeof(uint64_t) * host.size()).wait();
+
+    for (uint64_t col = 0; col < slices; ++col)
+    {
+        uint64_t base = col * axis_size;
+        uint64_t idx0 = host[base + 0];
+        uint64_t idx1 = host[base + 1];
+        ASSERT_LT(idx0, axis_size);
+        ASSERT_LT(idx1, axis_size);
+
+        value_t v0 = t.at(idx0 * 3 + col);
+        value_t v1 = t.at(idx1 * 3 + col);
+
+        if constexpr (std::is_floating_point<value_t>::value)
+        {
+            EXPECT_LE(static_cast<double>(v0), static_cast<double>(v1));
+        }
+        else
+        {
+            EXPECT_LE(v0, v1);
+        }
+        EXPECT_NE(idx0, idx1);
+    }
+}
+
+/**
+ * @test TypedArgsort.argsort_axis1_2d
+ * @brief Argsort along axis 1 for a 2x3 matrix, ascending order.
+ */
+TYPED_TEST(TypedArgmax, argsort_axis1_2d)
+{
+    using value_t = TypeParam;
+    Tensor<value_t> t({2, 3}, MemoryLocation::DEVICE);
+
+    std::vector<value_t> init = {
+        static_cast<value_t>(1), static_cast<value_t>(4),
+        static_cast<value_t>(3), static_cast<value_t>(2),
+        static_cast<value_t>(0), static_cast<value_t>(5)
+    };
+    t = init;
+
+    Tensor<uint64_t> res = math::argsort<value_t>(t, 1, false);
+
+    const uint64_t axis_size = 3;
+    const uint64_t slices = 2;
+    ASSERT_EQ(res.get_num_elements(), axis_size * slices);
+
+    std::vector<uint64_t> host(axis_size * slices);
+    g_sycl_queue.memcpy(host.data(), res.m_p_data.get(),
+                        sizeof(uint64_t) * host.size()).wait();
+
+    for (uint64_t row = 0; row < slices; ++row)
+    {
+        uint64_t base = row * axis_size;
+        uint64_t i0 = host[base + 0], i1 = host[base + 1], i2 = host[base + 2];
+        ASSERT_LT(i0, axis_size);
+        ASSERT_LT(i1, axis_size);
+        ASSERT_LT(i2, axis_size);
+
+        value_t v0 = t.at(row * 3 + i0), v1 = t.at(row * 3 + i1),
+                v2 = t.at(row * 3 + i2);
+
+        if constexpr (std::is_floating_point<value_t>::value)
+        {
+            EXPECT_LE(static_cast<double>(v0), static_cast<double>(v1));
+            EXPECT_LE(static_cast<double>(v1), static_cast<double>(v2));
+        }
+        else
+        {
+            EXPECT_LE(v0, v1);
+            EXPECT_LE(v1, v2);
+        }
+        EXPECT_NE(i0, i1); EXPECT_NE(i1, i2); EXPECT_NE(i0, i2);
+    }
+}
+
+/**
+ * @test TypedArgsort.argsort_axis_out_of_range
+ * @brief Axis values outside valid range must throw an exception.
+ */
+TYPED_TEST(TypedArgmax, argsort_axis_out_of_range)
+{
+    using value_t = TypeParam;
+    Tensor<value_t> t({2, 3}, MemoryLocation::DEVICE);
+    t = std::vector<value_t>{ static_cast<value_t>(1),
+                              static_cast<value_t>(2),
+                              static_cast<value_t>(3),
+                              static_cast<value_t>(4),
+                              static_cast<value_t>(5),
+                              static_cast<value_t>(6) };
+
+    EXPECT_THROW(math::argsort<value_t>(t, 2, false), std::invalid_argument);
+    EXPECT_THROW(math::argsort<value_t>(t, -3, false), std::invalid_argument);
+}
+
+/**
+ * @test TypedArgsort.argsort_nan_behavior
+ * @brief For floats, NaNs should be placed after finite values.
+ */
+TYPED_TEST(TypedArgmax, argsort_nan_behavior)
+{
+    using value_t = TypeParam;
+    if constexpr (!std::is_floating_point<value_t>::value) return;
+
+    Tensor<value_t> t({4}, MemoryLocation::DEVICE);
+    std::vector<value_t> vals = {
+        static_cast<value_t>(1.0),
+        std::numeric_limits<value_t>::quiet_NaN(),
+        static_cast<value_t>(0.0),
+        static_cast<value_t>(2.0)
+    };
+    t = vals;
+
+    Tensor<uint64_t> res = math::argsort<value_t>(t, std::nullopt, false);
+    const uint64_t N = res.get_num_elements();
+    std::vector<uint64_t> host(N);
+    g_sycl_queue.memcpy(host.data(), res.m_p_data.get(),
+                        sizeof(uint64_t) * N).wait();
+
+    EXPECT_EQ(host[N - 1], 1u);
+}
+
+/**
+ * @test TypedArgsort.argsort_tie_stability
+ * @brief Stable tie-breaking preserves first-occurrence order.
+ */
+TYPED_TEST(TypedArgmax, argsort_tie_stability)
+{
+    using value_t = TypeParam;
+    Tensor<value_t> t({5}, MemoryLocation::DEVICE);
+    std::vector<value_t> vals = {
+        static_cast<value_t>(2), static_cast<value_t>(1),
+        static_cast<value_t>(2), static_cast<value_t>(1),
+        static_cast<value_t>(2)
+    };
+    t = vals;
+
+    Tensor<uint64_t> res = math::argsort<value_t>(t, std::nullopt, false);
+    const uint64_t N = res.get_num_elements();
+    ASSERT_EQ(N, static_cast<uint64_t>(5));
+
+    std::vector<uint64_t> host(N);
+    g_sycl_queue.memcpy(host.data(), res.m_p_data.get(),
+                        sizeof(uint64_t) * N).wait();
+
+    std::vector<uint64_t> expected = {1u, 3u, 0u, 2u, 4u};
+    for (uint64_t i = 0; i < N; ++i) EXPECT_EQ(host[i], expected[i]);
+}
+
+/**
+ * @test TypedArgsort.argsort_alias_view_strided
+ * @brief Argsort on a strided 1D alias view returns indices in view.
+ */
+TYPED_TEST(TypedArgmax, argsort_alias_view_strided)
+{
+    using value_t = TypeParam;
+    Tensor<value_t> owner({6}, MemoryLocation::DEVICE);
+    owner = std::vector<value_t>{ static_cast<value_t>(1),
+                                  static_cast<value_t>(3),
+                                  static_cast<value_t>(2),
+                                  static_cast<value_t>(6),
+                                  static_cast<value_t>(4),
+                                  static_cast<value_t>(5) };
+
+    Tensor<value_t> v(owner, {1}, {3}, {2});
+
+    Tensor<uint64_t> res = math::argsort<value_t>(v, std::nullopt, false);
+    ASSERT_EQ(res.get_num_elements(), static_cast<uint64_t>(3));
+
+    std::vector<uint64_t> host(3);
+    g_sycl_queue.memcpy(host.data(), res.m_p_data.get(),
+                        sizeof(uint64_t) * 3).wait();
+
+    EXPECT_EQ(host[0], 0u);
+    EXPECT_EQ(host[1], 2u);
+    EXPECT_EQ(host[2], 1u);
+}
+
+/**
+ * @test TypedArgsort.argsort_3d_axis0
+ * @brief Argsort along axis 0 for a 3x2x2 tensor, ascending order.
+ */
+TYPED_TEST(TypedArgmax, argsort_3d_axis0)
+{
+    using value_t = TypeParam;
+    Tensor<value_t> owner({3,2,2}, MemoryLocation::DEVICE);
+
+    std::vector<value_t> vals = {
+        static_cast<value_t>(1), static_cast<value_t>(4),
+        static_cast<value_t>(2), static_cast<value_t>(0),
+        static_cast<value_t>(3), static_cast<value_t>(2),
+        static_cast<value_t>(5), static_cast<value_t>(1),
+        static_cast<value_t>(2), static_cast<value_t>(6),
+        static_cast<value_t>(0), static_cast<value_t>(7)
+    };
+    owner = vals;
+
+    Tensor<uint64_t> res = math::argsort<value_t>(owner, 0, false);
+
+    const uint64_t axis_size = 3;
+    const uint64_t slice_count = 4;
+    ASSERT_EQ(res.get_num_elements(), axis_size * slice_count);
+
+    std::vector<uint64_t> host(axis_size * slice_count);
+    g_sycl_queue.memcpy(host.data(), res.m_p_data.get(),
+                        sizeof(uint64_t) * host.size()).wait();
+
+    for (uint64_t j = 0; j < 2; ++j)
+    {
+        for (uint64_t k = 0; k < 2; ++k)
+        {
+            uint64_t slice = j * 2 + k;
+            uint64_t base = slice * axis_size;
+            std::vector<bool> seen(axis_size, false);
+            for (uint64_t r = 0; r < axis_size; ++r)
+            {
+                uint64_t idx = host[base + r];
+                ASSERT_LT(idx, axis_size);
+                seen[idx] = true;
+                uint64_t flat = idx * 4 + j * 2 + k;
+                value_t v = owner.at(flat);
+                if (r > 0)
+                {
+                    uint64_t prev_idx = host[base + r - 1];
+                    value_t prev_v = owner.at(prev_idx * 4 + j * 2 + k);
+                    if constexpr (std::is_floating_point<value_t>::value)
+                        EXPECT_LE(static_cast<double>(prev_v),
+                                  static_cast<double>(v));
+                    else
+                        EXPECT_LE(prev_v, v);
+                }
+            }
+            for (uint64_t s = 0; s < axis_size; ++s) EXPECT_TRUE(seen[s]);
+        }
+    }
+}
+
+/**
+ * @test TypedArgsort.argsort_3d_axis1
+ * @brief Argsort along axis 1 for a 2x3x2 tensor, ascending order.
+ */
+TYPED_TEST(TypedArgmax, argsort_3d_axis1)
+{
+    using value_t = TypeParam;
+    Tensor<value_t> owner({2,3,2}, MemoryLocation::DEVICE);
+
+    std::vector<value_t> vals;
+    vals.reserve(2*3*2);
+    for (uint64_t i = 0; i < 2; ++i)
+    {
+        for (uint64_t j = 0; j < 3; ++j)
+        {
+            for (uint64_t k = 0; k < 2; ++k)
+            {
+                vals.push_back(static_cast<value_t>(i * 100 + j * 10 + k));
+            }
+        }
+    }
+    owner = vals;
+
+    Tensor<uint64_t> res = math::argsort<value_t>(owner, 1, false);
+
+    const uint64_t axis_size = 3;
+    const uint64_t slice_count = 4;
+    ASSERT_EQ(res.get_num_elements(), axis_size * slice_count);
+
+    std::vector<uint64_t> host(axis_size * slice_count);
+    g_sycl_queue.memcpy(host.data(), res.m_p_data.get(),
+                        sizeof(uint64_t) * host.size()).wait();
+
+    uint64_t slice_idx = 0;
+    for (uint64_t i = 0; i < 2; ++i)
+    {
+        for (uint64_t k = 0; k < 2; ++k)
+        {
+            uint64_t base = slice_idx * axis_size;
+            EXPECT_EQ(host[base + 0], 0u);
+            EXPECT_EQ(host[base + 1], 1u);
+            EXPECT_EQ(host[base + 2], 2u);
+            ++slice_idx;
+        }
+    }
+}
+
 /**
  * @test LINSPACE.scalar_endpoint_true
  * @brief Linspace with 1-element start/stop (shape {1}), endpoint=true,

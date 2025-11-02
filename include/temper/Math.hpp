@@ -286,6 +286,32 @@ extern template Tensor<uint64_t> argmax<uint64_t>
     (const Tensor<uint64_t>&, std::optional<int64_t>);
 
 /**
+ * @brief Compute the indices that would sort a tensor.
+ *
+ * Returns a tensor of `uint64_t` indices such that applying them along
+ * the selected axis orders elements in ascending (default) or descending
+ * order. If `axis_opt` is `std::nullopt` the input is flattened and a
+ * 1-D index tensor is returned. Negative axis values are supported.
+ *
+ * @param tensor Input tensor (must contain at least one element).
+ * @param axis_opt Optional axis to sort along; `std::nullopt` means flatten.
+ * @param descending If true, produce indices for descending order.
+ * @return Tensor<uint64_t> Tensor of indices (same memory location as input).
+ *
+ * @throws std::invalid_argument If the input is empty or axis is out of range.
+ * @throws std::bad_alloc If required device/host memory allocation fails.
+ * @throws std::runtime_error If numeric or device execution errors occur.
+ */
+template<typename value_t>
+Tensor<uint64_t> argsort(const Tensor<value_t> & tensor,
+    std::optional<int64_t> axis_opt = std::nullopt,
+    bool descending = false);
+extern template Tensor<uint64_t> argsort<float>
+(const Tensor<float>&, std::optional<int64_t>, bool);
+extern template Tensor<uint64_t> argsort<uint64_t>
+(const Tensor<uint64_t>&, std::optional<int64_t>, bool);
+
+/**
  * @brief Elementwise linear interpolation between two tensors.
  *
  * Produces `num` samples interpolated between corresponding elements of
