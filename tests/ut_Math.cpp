@@ -2736,18 +2736,20 @@ TYPED_TEST(TypedArgmax, argmax_flattened)
     };
     t = vals;
 
-    std::vector<uint64_t> res = math::argmax<value_t>(t);
+    Tensor<uint64_t> res = math::argmax<value_t>(t);
 
-    ASSERT_EQ(res.size(), 1u);
+    ASSERT_EQ(res.get_num_elements(), static_cast<uint64_t>(1));
+
+    uint64_t idx = res.at(0);
 
     if constexpr (std::is_floating_point<value_t>::value)
     {
-        EXPECT_FLOAT_EQ(static_cast<double>(t.at(res[0])),
+        EXPECT_FLOAT_EQ(static_cast<double>(t.at(idx)),
                         static_cast<double>(static_cast<value_t>(5)));
     }
     else
     {
-        EXPECT_EQ(t.at(res[0]), static_cast<value_t>(5));
+        EXPECT_EQ(t.at(idx), static_cast<value_t>(5));
     }
 }
 
@@ -2768,12 +2770,12 @@ TYPED_TEST(TypedArgmax, argmax_axis0_2d)
     };
     t = init;
 
-    std::vector<uint64_t> res = math::argmax<value_t>(t, 0);
+    Tensor<uint64_t> res = math::argmax<value_t>(t, 0);
 
-    ASSERT_EQ(res.size(), 3u);
+    ASSERT_EQ(res.get_num_elements(), static_cast<uint64_t>(3));
     for (uint64_t col = 0; col < 3; ++col)
     {
-        uint64_t row = res[col];
+        uint64_t row = res.at(col);
         value_t v0 = t.at(col);
         value_t v1 = t.at(3 + col);
         value_t expected = (v0 > v1) ? v0 : v1;
@@ -2807,22 +2809,22 @@ TYPED_TEST(TypedArgmax, argmax_axis1_2d)
     };
     t = init;
 
-    std::vector<uint64_t> res = math::argmax<value_t>(t, 1);
+    Tensor<uint64_t> res = math::argmax<value_t>(t, 1);
 
-    ASSERT_EQ(res.size(), 2u);
+    ASSERT_EQ(res.get_num_elements(), static_cast<uint64_t>(2));
 
     if constexpr (std::is_floating_point<value_t>::value)
     {
-        EXPECT_FLOAT_EQ(static_cast<double>(t.at(0 * 3 + res[0])),
+        EXPECT_FLOAT_EQ(static_cast<double>(t.at(0 * 3 + res.at(0))),
                         static_cast<double>(static_cast<value_t>(4)));
-        EXPECT_FLOAT_EQ(static_cast<double>(t.at(1 * 3 + res[1])),
+        EXPECT_FLOAT_EQ(static_cast<double>(t.at(1 * 3 + res.at(1))),
                         static_cast<double>(static_cast<value_t>(5)));
     }
     else
     {
-        EXPECT_EQ(t.at(0 * 3 + res[0]),
+        EXPECT_EQ(t.at(0 * 3 + res.at(0)),
                   static_cast<value_t>(4));
-        EXPECT_EQ(t.at(1 * 3 + res[1]),
+        EXPECT_EQ(t.at(1 * 3 + res.at(1)),
                   static_cast<value_t>(5));
     }
 }
@@ -2843,23 +2845,22 @@ TYPED_TEST(TypedArgmax, argmax_axis_negative)
         static_cast<value_t>(0), static_cast<value_t>(5)
     };
     t = init;
+    Tensor<uint64_t> res = math::argmax<value_t>(t, -1);
 
-    std::vector<uint64_t> res = math::argmax<value_t>(t, -1);
-
-    ASSERT_EQ(res.size(), 2u);
+    ASSERT_EQ(res.get_num_elements(), static_cast<uint64_t>(2));
 
     if constexpr (std::is_floating_point<value_t>::value)
     {
-        EXPECT_FLOAT_EQ(static_cast<double>(t.at(0 * 3 + res[0])),
+        EXPECT_FLOAT_EQ(static_cast<double>(t.at(0 * 3 + res.at(0))),
                         static_cast<double>(static_cast<value_t>(4)));
-        EXPECT_FLOAT_EQ(static_cast<double>(t.at(1 * 3 + res[1])),
+        EXPECT_FLOAT_EQ(static_cast<double>(t.at(1 * 3 + res.at(1))),
                         static_cast<double>(static_cast<value_t>(5)));
     }
     else
     {
-        EXPECT_EQ(t.at(0 * 3 + res[0]),
+        EXPECT_EQ(t.at(0 * 3 + res.at(0)),
                   static_cast<value_t>(4));
-        EXPECT_EQ(t.at(1 * 3 + res[1]),
+        EXPECT_EQ(t.at(1 * 3 + res.at(1)),
                   static_cast<value_t>(5));
     }
 }
@@ -2880,11 +2881,11 @@ TYPED_TEST(TypedArgmax, argmax_tie_prefers_first)
     };
     t = vals;
 
-    std::vector<uint64_t> res = math::argmax<value_t>(t, 1);
+    Tensor<uint64_t> res = math::argmax<value_t>(t, 1);
 
-    ASSERT_EQ(res.size(), 2u);
-    EXPECT_EQ(res[0], 0u);
-    EXPECT_EQ(res[1], 1u);
+    ASSERT_EQ(res.get_num_elements(), static_cast<uint64_t>(2));
+    EXPECT_EQ(res.at(0), static_cast<uint64_t>(0));
+    EXPECT_EQ(res.at(1), static_cast<uint64_t>(1));
 }
 
 /**
@@ -2949,18 +2950,20 @@ TYPED_TEST(TypedArgmax, argmax_alias_view)
 
     Tensor<value_t> v(owner, {1}, {3}, {2});
 
-    std::vector<uint64_t> res = math::argmax<value_t>(v);
+    Tensor<uint64_t> res = math::argmax<value_t>(v);
 
-    ASSERT_EQ(res.size(), 1u);
+    ASSERT_EQ(res.get_num_elements(), static_cast<uint64_t>(1));
+
+    uint64_t idx = res.at(0);
 
     if constexpr (std::is_floating_point<value_t>::value)
     {
-        EXPECT_FLOAT_EQ(static_cast<double>(v.at(res[0])),
+        EXPECT_FLOAT_EQ(static_cast<double>(v.at(idx)),
                         static_cast<double>(static_cast<value_t>(6)));
     }
     else
     {
-        EXPECT_EQ(v.at(res[0]), static_cast<value_t>(6));
+        EXPECT_EQ(v.at(idx), static_cast<value_t>(6));
     }
 
     if constexpr (std::is_floating_point<value_t>::value)
@@ -2994,18 +2997,85 @@ TYPED_TEST(TypedArgmax, argmax_3d_view_flatten)
     };
 
     Tensor<value_t> v(t, {1, 0, 0}, {1, 2, 3}, {6, 3, 1});
-    std::vector<uint64_t> res = math::argmax<value_t>(v);
+    Tensor<uint64_t> res = math::argmax<value_t>(v);
 
-    ASSERT_EQ(res.size(), 1u);
+    ASSERT_EQ(res.get_num_elements(), static_cast<uint64_t>(1));
+
+    uint64_t idx = res.at(0);
 
     if constexpr (std::is_floating_point<value_t>::value)
     {
-        EXPECT_FLOAT_EQ(static_cast<double>(v.at(res[0])),
+        EXPECT_FLOAT_EQ(static_cast<double>(v.at(idx)),
                         static_cast<double>(static_cast<value_t>(6)));
     }
     else
     {
-        EXPECT_EQ(v.at(res[0]), static_cast<value_t>(6));
+        EXPECT_EQ(v.at(idx), static_cast<value_t>(6));
+    }
+}
+
+/**
+ * @test TypedArgmax.argmax_3d_view_axis0_sorted
+ * @brief argmax along axis 0 of a 3D view returns per-(i,j) layer indices.
+ */
+TYPED_TEST(TypedArgmax, argmax_3d_view_axis0_sorted)
+{
+    using value_t = TypeParam;
+
+    Tensor<value_t> owner({3, 2, 2}, MemoryLocation::DEVICE);
+
+    std::vector<value_t> vals = {
+        // layer 0
+        static_cast<value_t>(1), static_cast<value_t>(4),
+        static_cast<value_t>(2), static_cast<value_t>(0),
+        // layer 1
+        static_cast<value_t>(3), static_cast<value_t>(2),
+        static_cast<value_t>(5), static_cast<value_t>(1),
+        // layer 2
+        static_cast<value_t>(2), static_cast<value_t>(6),
+        static_cast<value_t>(0), static_cast<value_t>(7)
+    };
+    owner = vals;
+
+    Tensor<uint64_t> res = math::argmax<value_t>(owner, 0);
+
+    // Should produce 2*2 = 4 outputs (one per (axis1, axis2) position).
+    ASSERT_EQ(res.get_num_elements(), static_cast<uint64_t>(4));
+
+    // Expected per-(axis1,axis2) results in row-major order over shape [2,2]:
+    // flat order: (0,0), (0,1), (1,0), (1,1).
+    std::array<uint64_t,4> expected = {1u, 2u, 1u, 2u};
+
+    for (uint64_t i = 0; i < 4; ++i)
+    {
+        EXPECT_EQ(res.at(i), expected[i]);
+    }
+
+
+    for (uint64_t j = 0; j < 2; ++j)
+    {
+        for (uint64_t k = 0; k < 2; ++k)
+        {
+            uint64_t out_flat = j * 2 + k;
+            uint64_t chosen_layer = res.at(out_flat);
+            uint64_t flat_index_in_v = chosen_layer * 4 + j * 2 + k;
+            value_t chosen_val = owner.at(flat_index_in_v);
+
+            for (uint64_t layer = 0; layer < 3; ++layer)
+            {
+                uint64_t idx = layer * 4 + j * 2 + k;
+                if (layer == chosen_layer) continue;
+                if constexpr (std::is_floating_point<value_t>::value)
+                {
+                    EXPECT_GE(static_cast<double>(chosen_val),
+                              static_cast<double>(owner.at(idx)));
+                }
+                else
+                {
+                    EXPECT_GE(chosen_val, owner.at(idx));
+                }
+            }
+        }
     }
 }
 
@@ -3031,10 +3101,10 @@ TYPED_TEST(TypedArgmax, argmax_on_alias_view_strided)
     std::vector<uint64_t> strides = {2ull};
     Tensor<value_t> v(owner, start, dims, strides);
 
-    std::vector<uint64_t> res = math::argmax<value_t>(v);
+    Tensor<uint64_t> res = math::argmax<value_t>(v);
 
-    ASSERT_EQ(res.size(), 1u);
-    EXPECT_EQ(res[0], 1u);
+    ASSERT_EQ(res.get_num_elements(), static_cast<uint64_t>(1));
+    EXPECT_EQ(res.at(0), static_cast<uint64_t>(1));
 }
 
 /**

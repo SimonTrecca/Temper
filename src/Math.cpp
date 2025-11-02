@@ -622,7 +622,7 @@ template Tensor<uint64_t> pad<uint64_t>
     (const Tensor<uint64_t>&, uint64_t, uint64_t, uint64_t);
 
 template<typename value_t>
-std::vector<uint64_t> argmax(const Tensor<value_t> & tensor,
+Tensor<uint64_t> argmax(const Tensor<value_t> & tensor,
     std::optional<int64_t> axis_opt)
 {
     const std::vector<uint64_t> & in_shape = tensor.get_dimensions();
@@ -636,7 +636,7 @@ std::vector<uint64_t> argmax(const Tensor<value_t> & tensor,
 
     const bool flatten = !axis_opt.has_value();
 
-    int64_t axis;
+    int64_t axis = -1;
 
     if (!flatten)
     {
@@ -652,21 +652,24 @@ std::vector<uint64_t> argmax(const Tensor<value_t> & tensor,
     }
 
     uint64_t total_output_elems = 1;
+    std::vector<uint64_t> res_full_shape;
+
     if (flatten)
     {
         total_output_elems = 1;
+        res_full_shape = {1};
     }
     else
     {
         total_output_elems = 1;
         for (int64_t d = 0; d < rank; ++d)
         {
-            if (d == axis)
-            {
-                continue;
-            }
+            if (d == axis) continue;
             total_output_elems *= in_shape[d];
         }
+
+        res_full_shape = in_shape;
+        res_full_shape[axis] = 1;
     }
 
     const uint64_t total_input_elems = tensor.get_num_elements();
@@ -675,12 +678,9 @@ std::vector<uint64_t> argmax(const Tensor<value_t> & tensor,
         temper::utils::compute_divisors(in_shape);
     const std::vector<uint64_t> in_strides = tensor.get_strides();
 
-    std::vector<uint64_t> res_full_shape;
-    if (!flatten)
-    {
-        res_full_shape = in_shape;
-        res_full_shape[axis] = 1;
-    }
+    MemoryLocation res_loc = tensor.get_memory_location();
+    Tensor<uint64_t> result(res_full_shape, res_loc);
+    uint64_t* p_out = result.get_data();
 
     uint64_t* p_in_divs = static_cast<uint64_t*>(
         sycl::malloc_device(sizeof(uint64_t) * rank, g_sycl_queue));
@@ -693,22 +693,17 @@ std::vector<uint64_t> argmax(const Tensor<value_t> & tensor,
             sycl::malloc_device(sizeof(uint64_t) * rank, g_sycl_queue));
     }
 
-    uint64_t* p_out_dev = static_cast<uint64_t*>(sycl::malloc_device
-        (sizeof(uint64_t) * static_cast<size_t>(total_output_elems),
-                            g_sycl_queue));
-
     int32_t* p_error_flag = static_cast<int32_t*>(
         sycl::malloc_shared(sizeof(int32_t), g_sycl_queue));
 
     bool alloc_ok = (p_in_divs && p_in_strides && p_error_flag &&
-                     (flatten || p_res_full_divs) && p_out_dev);
+                     (flatten || p_res_full_divs));
     if (!alloc_ok)
     {
-        sycl::free(p_in_divs, g_sycl_queue);
-        sycl::free(p_in_strides, g_sycl_queue);
-        sycl::free(p_res_full_divs, g_sycl_queue);
-        sycl::free(p_out_dev, g_sycl_queue);
-        sycl::free(p_error_flag, g_sycl_queue);
+        if (p_in_divs) sycl::free(p_in_divs, g_sycl_queue);
+        if (p_in_strides) sycl::free(p_in_strides, g_sycl_queue);
+        if (p_res_full_divs) sycl::free(p_res_full_divs, g_sycl_queue);
+        if (p_error_flag) sycl::free(p_error_flag, g_sycl_queue);
         throw std::bad_alloc();
     }
 
@@ -764,7 +759,7 @@ std::vector<uint64_t> argmax(const Tensor<value_t> & tensor,
                         best_idx = t;
                     }
                 }
-                p_out_dev[0] = best_idx;
+                p_out[0] = best_idx;
                 return;
             }
 
@@ -788,7 +783,7 @@ std::vector<uint64_t> argmax(const Tensor<value_t> & tensor,
                 }
             }
 
-            p_out_dev[out_flat] = best_rel;
+            p_out[out_flat] = best_rel;
         });
     }).wait();
 
@@ -797,11 +792,10 @@ std::vector<uint64_t> argmax(const Tensor<value_t> & tensor,
     sycl::free(p_error_flag, g_sycl_queue);
     sycl::free(p_in_divs, g_sycl_queue);
     sycl::free(p_in_strides, g_sycl_queue);
-    sycl::free(p_res_full_divs, g_sycl_queue);
+    if (p_res_full_divs) sycl::free(p_res_full_divs, g_sycl_queue);
 
     if (err != 0)
     {
-        sycl::free(p_out_dev, g_sycl_queue);
         if (err == 1)
         {
             throw std::runtime_error(R"(argmax: NaN detected in inputs.)");
@@ -809,17 +803,11 @@ std::vector<uint64_t> argmax(const Tensor<value_t> & tensor,
         throw std::runtime_error(R"(argmax: numeric error during argmax.)");
     }
 
-    std::vector<uint64_t> host_out(static_cast<size_t>(total_output_elems));
-    g_sycl_queue.memcpy(host_out.data(), p_out_dev,
-        sizeof(uint64_t) * static_cast<size_t>(total_output_elems)).wait();
-
-    sycl::free(p_out_dev, g_sycl_queue);
-
-    return host_out;
+    return result;
 }
-template std::vector<uint64_t> argmax<float>
+template Tensor<uint64_t> argmax<float>
     (const Tensor<float>&, std::optional<int64_t>);
-template std::vector<uint64_t> argmax<uint64_t>
+template Tensor<uint64_t> argmax<uint64_t>
     (const Tensor<uint64_t>&, std::optional<int64_t>);
 
 template<typename value_t>

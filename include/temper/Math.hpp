@@ -257,28 +257,32 @@ extern template Tensor<uint64_t> pad<uint64_t>
     (const Tensor<uint64_t>&, uint64_t, uint64_t, uint64_t);
 
 /**
- * @brief Compute indices of maximum values along a specified axis.
- *
- * Returns a vector of indices corresponding to the maximum element of
- * each slice along @p axis_opt. For axis = nullopt, returns a single global max
- * index. Ties are resolved by taking the first occurrence.
- *
- * @param tensor Input tensor of arbitrary rank.
- * @param axis_opt Axis to reduce (nullopt = flatten, otherwise -rank..rank-1).
- * @return std::vector<uint64_t> Indices of maximum elements.
- *
- * @throws std::invalid_argument If tensor is empty or axis is out of range.
- * @throws std::runtime_error If any input is NaN or a numeric error occurs.
- * @throws std::bad_alloc If device memory allocation fails.
- */
+* @brief Compute indices of maximum elements along a specified axis.
+*
+* Finds the index of the maximum value for each slice of the input tensor
+* along the specified axis. If @p axis_opt is std::nullopt, the input tensor
+* is flattened and a single global maximum index is returned.
+*
+* The result tensor has the same rank as the input, with the reduced axis
+* set to size 1, and uses the same memory location (HOST or DEVICE) as the input.
+* Ties are resolved by taking the first occurrence of the maximum value.
+*
+* @param tensor Input tensor.
+* @param axis_opt Axis to reduce, or std::nullopt to flatten before reduction.
+* @return Tensor<uint64_t> Tensor of argmax indices.
+*
+* @throws std::invalid_argument If the tensor is empty or the axis is invalid.
+* @throws std::runtime_error If any input contains NaN or a numeric error occurs.
+* @throws std::bad_alloc If memory allocation fails.
+*/
 template<typename value_t>
-std::vector<uint64_t> argmax(const Tensor<value_t> & tensor,
+Tensor<uint64_t> argmax(const Tensor<value_t> & tensor,
     std::optional<int64_t> axis_opt = std::nullopt);
 /// Explicit instantiation of argmax for float
-extern template std::vector<uint64_t> argmax<float>
+extern template Tensor<uint64_t> argmax<float>
     (const Tensor<float>&, std::optional<int64_t>);
 /// Explicit instantiation of argmax for uint64_t
-extern template std::vector<uint64_t> argmax<uint64_t>
+extern template Tensor<uint64_t> argmax<uint64_t>
     (const Tensor<uint64_t>&, std::optional<int64_t>);
 
 /**
