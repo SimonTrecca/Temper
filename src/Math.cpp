@@ -917,6 +917,7 @@ Tensor<uint64_t> argsort(const Tensor<value_t> & tensor,
     uint64_t* p_strides = static_cast<uint64_t*>(
         sycl::malloc_device(sizeof(uint64_t) * rank, g_sycl_queue));
 
+    // buffers sized to total_output_elems (== total_size)
     uint64_t* indices_buffer = static_cast<uint64_t*>(sycl::malloc_device
         (static_cast<size_t>(total_output_elems) * sizeof(uint64_t),
             g_sycl_queue));
@@ -962,8 +963,11 @@ Tensor<uint64_t> argsort(const Tensor<value_t> & tensor,
             }
             else
             {
+                uint64_t slice_idx = flat_idx / effective_axis_size;
                 uint64_t pos_in_slice = flat_idx % effective_axis_size;
-                indices_buffer[flat_idx] = pos_in_slice;
+                uint64_t out_off = p_slice_base[slice_idx] +
+                    pos_in_slice * axis_stride;
+                indices_buffer[out_off] = pos_in_slice;
             }
         });
     }).wait();
@@ -998,7 +1002,8 @@ Tensor<uint64_t> argsort(const Tensor<value_t> & tensor,
 
                 const uint64_t slice_idx = group_id / chunks_per_slice;
                 const uint64_t chunk_idx = group_id % chunks_per_slice;
-                const uint64_t slice_base = p_slice_base[slice_idx];
+
+                const uint64_t slice_phys_base = p_slice_base[slice_idx];
 
                 const uint64_t left = chunk_idx * 2 * width;
                 if (left >= effective_axis_size)
@@ -1029,22 +1034,13 @@ Tensor<uint64_t> argsort(const Tensor<value_t> & tensor,
                     return;
                 }
 
-                auto idx_of_local = [&](uint64_t logical_idx) -> uint64_t
+                auto phys_index = [&](uint64_t logical_k) -> uint64_t
                 {
-                    if (flatten)
-                    {
-                        return temper::sycl_utils::idx_of
-                            (logical_idx, p_divisors, p_strides, rank);
-                    }
-                    else
-                    {
-                        return slice_base + logical_idx * axis_stride;
-                    }
+                    return slice_phys_base + logical_k * axis_stride;
                 };
 
                 auto find_partition_local = [&](uint64_t k) -> uint64_t
                 {
-                    const uint64_t base_offset = slice_idx * effective_axis_size;
                     int64_t i_min;
                     if (k > len_right)
                     {
@@ -1070,8 +1066,20 @@ Tensor<uint64_t> argsort(const Tensor<value_t> & tensor,
                         int64_t i_mid = (i_min + i_max) / 2;
                         int64_t j_mid = static_cast<int64_t>(k) - i_mid;
 
-                        uint64_t idx_a = merge_input[base_offset + left + i_mid];
-                        uint64_t a_off = idx_of_local(idx_a);
+                        uint64_t idx_a = merge_input[ phys_index
+                            (left + static_cast<uint64_t>(i_mid)) ];
+
+                        uint64_t a_off;
+                        if (flatten)
+                        {
+                            a_off = temper::sycl_utils::idx_of
+                                (idx_a, p_divisors, p_strides, rank);
+                        }
+                        else
+                        {
+                            a_off = slice_phys_base + idx_a * axis_stride;
+                        }
+
                         value_t va = tensor_data[a_off];
 
                         bool cmp;
@@ -1081,9 +1089,20 @@ Tensor<uint64_t> argsort(const Tensor<value_t> & tensor,
                         }
                         else
                         {
-                            uint64_t idx_b =
-                                merge_input[base_offset + mid + (j_mid - 1)];
-                            uint64_t b_off = idx_of_local(idx_b);
+                            uint64_t idx_b = merge_input[ phys_index
+                                (mid + static_cast<uint64_t>(j_mid - 1)) ];
+
+                            uint64_t b_off;
+                            if (flatten)
+                            {
+                                b_off = temper::sycl_utils::idx_of
+                                    (idx_b, p_divisors, p_strides, rank);
+                            }
+                            else
+                            {
+                                b_off = slice_phys_base + idx_b * axis_stride;
+                            }
+
                             value_t vb = tensor_data[b_off];
 
                             const bool a_nan = sycl_utils::is_nan(va);
@@ -1139,15 +1158,26 @@ Tensor<uint64_t> argsort(const Tensor<value_t> & tensor,
                 uint64_t j = j_start;
                 uint64_t out_k = merge_start;
 
-                uint64_t base_offset = slice_idx * effective_axis_size;
-
                 while (i < i_end && j < j_end)
                 {
-                    uint64_t idx_a = merge_input[base_offset + left + i];
-                    uint64_t idx_b = merge_input[base_offset + mid + j];
+                    uint64_t idx_a = merge_input[ phys_index(left + i) ];
+                    uint64_t idx_b = merge_input[ phys_index(mid + j) ];
 
-                    uint64_t a_off = idx_of_local(idx_a);
-                    uint64_t b_off = idx_of_local(idx_b);
+                    uint64_t a_off;
+                    uint64_t b_off;
+                    if (flatten)
+                    {
+                        a_off = temper::sycl_utils::idx_of
+                            (idx_a, p_divisors, p_strides, rank);
+                        b_off = temper::sycl_utils::idx_of
+                            (idx_b, p_divisors, p_strides, rank);
+                    }
+                    else
+                    {
+                        a_off = slice_phys_base + idx_a * axis_stride;
+                        b_off = slice_phys_base + idx_b * axis_stride;
+                    }
+
                     value_t va = tensor_data[a_off];
                     value_t vb = tensor_data[b_off];
 
@@ -1185,12 +1215,12 @@ Tensor<uint64_t> argsort(const Tensor<value_t> & tensor,
 
                     if (take_a)
                     {
-                        merge_output[base_offset + left + out_k] = idx_a;
+                        merge_output[ phys_index(left + out_k) ] = idx_a;
                         ++i;
                     }
                     else
                     {
-                        merge_output[base_offset + left + out_k] = idx_b;
+                        merge_output[ phys_index(left + out_k) ] = idx_b;
                         ++j;
                     }
                     ++out_k;
@@ -1198,14 +1228,14 @@ Tensor<uint64_t> argsort(const Tensor<value_t> & tensor,
 
                 while (i < i_end)
                 {
-                    merge_output[base_offset + left + out_k] =
-                        merge_input[base_offset + left + i];
+                    merge_output[ phys_index(left + out_k) ] =
+                        merge_input[ phys_index(left + i) ];
                     ++i; ++out_k;
                 }
                 while (j < j_end)
                 {
-                    merge_output[base_offset + left + out_k] =
-                        merge_input[base_offset + mid + j];
+                    merge_output[ phys_index(left + out_k) ] =
+                        merge_input[ phys_index(mid + j) ];
                     ++j; ++out_k;
                 }
             });
@@ -1231,6 +1261,7 @@ template Tensor<uint64_t> argsort<float>
     (const Tensor<float>&, std::optional<int64_t>, bool);
 template Tensor<uint64_t> argsort<uint64_t>
     (const Tensor<uint64_t>&, std::optional<int64_t>, bool);
+
 
 template<typename value_t>
 Tensor<value_t> linspace(const Tensor<value_t>& start,

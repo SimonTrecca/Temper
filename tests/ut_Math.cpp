@@ -3117,7 +3117,7 @@ TYPED_TEST_SUITE(TypedArgsort, ArgsortTestTypes);
  * @test TypedArgsort.argsort_flattened_ascending
  * @brief Verify flattened ascending argsort returns a valid perm.
  */
-TYPED_TEST(TypedArgmax, argsort_flattened_ascending)
+TYPED_TEST(TypedArgsort, argsort_flattened_ascending)
 {
     using value_t = TypeParam;
     Tensor<value_t> t({5}, MemoryLocation::DEVICE);
@@ -3160,7 +3160,7 @@ TYPED_TEST(TypedArgmax, argsort_flattened_ascending)
  * @test TypedArgsort.argsort_flattened_descending
  * @brief Verify flattened descending argsort orders values.
  */
-TYPED_TEST(TypedArgmax, argsort_flattened_descending)
+TYPED_TEST(TypedArgsort, argsort_flattened_descending)
 {
     using value_t = TypeParam;
     Tensor<value_t> t({5}, MemoryLocation::DEVICE);
@@ -3202,7 +3202,7 @@ TYPED_TEST(TypedArgmax, argsort_flattened_descending)
  * @test TypedArgsort.argsort_axis0_2d
  * @brief Argsort along axis 0 for a 2x3 matrix, ascending order.
  */
-TYPED_TEST(TypedArgmax, argsort_axis0_2d)
+TYPED_TEST(TypedArgsort, argsort_axis0_2d)
 {
     using value_t = TypeParam;
     Tensor<value_t> t({2, 3}, MemoryLocation::DEVICE);
@@ -3224,26 +3224,33 @@ TYPED_TEST(TypedArgmax, argsort_axis0_2d)
     g_sycl_queue.memcpy(host.data(), res.m_p_data.get(),
                         sizeof(uint64_t) * host.size()).wait();
 
+    const auto strides = res.get_strides();
+
     for (uint64_t col = 0; col < slices; ++col)
     {
-        uint64_t base = col * axis_size;
-        uint64_t idx0 = host[base + 0];
-        uint64_t idx1 = host[base + 1];
-        ASSERT_LT(idx0, axis_size);
-        ASSERT_LT(idx1, axis_size);
-
-        value_t v0 = t.at(idx0 * 3 + col);
-        value_t v1 = t.at(idx1 * 3 + col);
-
-        if constexpr (std::is_floating_point<value_t>::value)
+        std::vector<bool> seen(axis_size, false);
+        for (uint64_t r = 0; r < axis_size; ++r)
         {
-            EXPECT_LE(static_cast<double>(v0), static_cast<double>(v1));
+            // multi-index is [r, col] because axis==0 is the first dim
+            uint64_t offset = r * strides[0] + col * strides[1];
+            uint64_t idx = host[offset];
+            ASSERT_LT(idx, axis_size);
+            seen[idx] = true;
+
+            value_t v = t.at(idx * 3 + col);
+            if (r > 0)
+            {
+                uint64_t prev_offset = (r - 1) * strides[0] + col * strides[1];
+                uint64_t prev_idx = host[prev_offset];
+                value_t prev_v = t.at(prev_idx * 3 + col);
+                if constexpr (std::is_floating_point<value_t>::value)
+                    EXPECT_LE(static_cast<double>(prev_v),
+                              static_cast<double>(v));
+                else
+                    EXPECT_LE(prev_v, v);
+            }
         }
-        else
-        {
-            EXPECT_LE(v0, v1);
-        }
-        EXPECT_NE(idx0, idx1);
+        for (uint64_t s = 0; s < axis_size; ++s) EXPECT_TRUE(seen[s]);
     }
 }
 
@@ -3251,7 +3258,7 @@ TYPED_TEST(TypedArgmax, argsort_axis0_2d)
  * @test TypedArgsort.argsort_axis1_2d
  * @brief Argsort along axis 1 for a 2x3 matrix, ascending order.
  */
-TYPED_TEST(TypedArgmax, argsort_axis1_2d)
+TYPED_TEST(TypedArgsort, argsort_axis1_2d)
 {
     using value_t = TypeParam;
     Tensor<value_t> t({2, 3}, MemoryLocation::DEVICE);
@@ -3273,16 +3280,21 @@ TYPED_TEST(TypedArgmax, argsort_axis1_2d)
     g_sycl_queue.memcpy(host.data(), res.m_p_data.get(),
                         sizeof(uint64_t) * host.size()).wait();
 
+    const auto strides = res.get_strides();
+
     for (uint64_t row = 0; row < slices; ++row)
     {
-        uint64_t base = row * axis_size;
-        uint64_t i0 = host[base + 0], i1 = host[base + 1], i2 = host[base + 2];
-        ASSERT_LT(i0, axis_size);
-        ASSERT_LT(i1, axis_size);
-        ASSERT_LT(i2, axis_size);
+        std::vector<uint64_t> idxs(axis_size);
+        for (uint64_t r = 0; r < axis_size; ++r)
+        {
+            uint64_t offset = row * strides[0] + r * strides[1];
+            idxs[r] = host[offset];
+            ASSERT_LT(idxs[r], axis_size);
+        }
 
-        value_t v0 = t.at(row * 3 + i0), v1 = t.at(row * 3 + i1),
-                v2 = t.at(row * 3 + i2);
+        value_t v0 = t.at(row * 3 + idxs[0]);
+        value_t v1 = t.at(row * 3 + idxs[1]);
+        value_t v2 = t.at(row * 3 + idxs[2]);
 
         if constexpr (std::is_floating_point<value_t>::value)
         {
@@ -3294,7 +3306,9 @@ TYPED_TEST(TypedArgmax, argsort_axis1_2d)
             EXPECT_LE(v0, v1);
             EXPECT_LE(v1, v2);
         }
-        EXPECT_NE(i0, i1); EXPECT_NE(i1, i2); EXPECT_NE(i0, i2);
+        EXPECT_NE(idxs[0], idxs[1]);
+        EXPECT_NE(idxs[1], idxs[2]);
+        EXPECT_NE(idxs[0], idxs[2]);
     }
 }
 
@@ -3302,7 +3316,7 @@ TYPED_TEST(TypedArgmax, argsort_axis1_2d)
  * @test TypedArgsort.argsort_axis_out_of_range
  * @brief Axis values outside valid range must throw an exception.
  */
-TYPED_TEST(TypedArgmax, argsort_axis_out_of_range)
+TYPED_TEST(TypedArgsort, argsort_axis_out_of_range)
 {
     using value_t = TypeParam;
     Tensor<value_t> t({2, 3}, MemoryLocation::DEVICE);
@@ -3321,7 +3335,7 @@ TYPED_TEST(TypedArgmax, argsort_axis_out_of_range)
  * @test TypedArgsort.argsort_nan_behavior
  * @brief For floats, NaNs should be placed after finite values.
  */
-TYPED_TEST(TypedArgmax, argsort_nan_behavior)
+TYPED_TEST(TypedArgsort, argsort_nan_behavior)
 {
     using value_t = TypeParam;
     if constexpr (!std::is_floating_point<value_t>::value) return;
@@ -3348,7 +3362,7 @@ TYPED_TEST(TypedArgmax, argsort_nan_behavior)
  * @test TypedArgsort.argsort_tie_stability
  * @brief Stable tie-breaking preserves first-occurrence order.
  */
-TYPED_TEST(TypedArgmax, argsort_tie_stability)
+TYPED_TEST(TypedArgsort, argsort_tie_stability)
 {
     using value_t = TypeParam;
     Tensor<value_t> t({5}, MemoryLocation::DEVICE);
@@ -3375,7 +3389,7 @@ TYPED_TEST(TypedArgmax, argsort_tie_stability)
  * @test TypedArgsort.argsort_alias_view_strided
  * @brief Argsort on a strided 1D alias view returns indices in view.
  */
-TYPED_TEST(TypedArgmax, argsort_alias_view_strided)
+TYPED_TEST(TypedArgsort, argsort_alias_view_strided)
 {
     using value_t = TypeParam;
     Tensor<value_t> owner({6}, MemoryLocation::DEVICE);
@@ -3404,7 +3418,7 @@ TYPED_TEST(TypedArgmax, argsort_alias_view_strided)
  * @test TypedArgsort.argsort_3d_axis0
  * @brief Argsort along axis 0 for a 3x2x2 tensor, ascending order.
  */
-TYPED_TEST(TypedArgmax, argsort_3d_axis0)
+TYPED_TEST(TypedArgsort, argsort_3d_axis0)
 {
     using value_t = TypeParam;
     Tensor<value_t> owner({3,2,2}, MemoryLocation::DEVICE);
@@ -3429,29 +3443,39 @@ TYPED_TEST(TypedArgmax, argsort_3d_axis0)
     g_sycl_queue.memcpy(host.data(), res.m_p_data.get(),
                         sizeof(uint64_t) * host.size()).wait();
 
+    // get strides for res (rank = 3)
+    const auto strides = res.get_strides();
+
     for (uint64_t j = 0; j < 2; ++j)
     {
         for (uint64_t k = 0; k < 2; ++k)
         {
             uint64_t slice = j * 2 + k;
-            uint64_t base = slice * axis_size;
             std::vector<bool> seen(axis_size, false);
             for (uint64_t r = 0; r < axis_size; ++r)
             {
-                uint64_t idx = host[base + r];
+                uint64_t offset = r * strides[0]
+                    + j * strides[1] + k * strides[2];
+                uint64_t idx = host[offset];
                 ASSERT_LT(idx, axis_size);
                 seen[idx] = true;
                 uint64_t flat = idx * 4 + j * 2 + k;
                 value_t v = owner.at(flat);
                 if (r > 0)
                 {
-                    uint64_t prev_idx = host[base + r - 1];
+                    uint64_t prev_offset = (r - 1) * strides[0]
+                        + j * strides[1] + k * strides[2];
+                    uint64_t prev_idx = host[prev_offset];
                     value_t prev_v = owner.at(prev_idx * 4 + j * 2 + k);
                     if constexpr (std::is_floating_point<value_t>::value)
+                    {
                         EXPECT_LE(static_cast<double>(prev_v),
                                   static_cast<double>(v));
+                    }
                     else
+                    {
                         EXPECT_LE(prev_v, v);
+                    }
                 }
             }
             for (uint64_t s = 0; s < axis_size; ++s) EXPECT_TRUE(seen[s]);
@@ -3463,7 +3487,7 @@ TYPED_TEST(TypedArgmax, argsort_3d_axis0)
  * @test TypedArgsort.argsort_3d_axis1
  * @brief Argsort along axis 1 for a 2x3x2 tensor, ascending order.
  */
-TYPED_TEST(TypedArgmax, argsort_3d_axis1)
+TYPED_TEST(TypedArgsort, argsort_3d_axis1)
 {
     using value_t = TypeParam;
     Tensor<value_t> owner({2,3,2}, MemoryLocation::DEVICE);
@@ -3492,15 +3516,19 @@ TYPED_TEST(TypedArgmax, argsort_3d_axis1)
     g_sycl_queue.memcpy(host.data(), res.m_p_data.get(),
                         sizeof(uint64_t) * host.size()).wait();
 
+    const auto strides = res.get_strides();
+
     uint64_t slice_idx = 0;
     for (uint64_t i = 0; i < 2; ++i)
     {
         for (uint64_t k = 0; k < 2; ++k)
         {
-            uint64_t base = slice_idx * axis_size;
-            EXPECT_EQ(host[base + 0], 0u);
-            EXPECT_EQ(host[base + 1], 1u);
-            EXPECT_EQ(host[base + 2], 2u);
+            for (uint64_t r = 0; r < axis_size; ++r)
+            {
+                uint64_t offset = i * strides[0] +
+                    r * strides[1] + k * strides[2];
+                ASSERT_EQ(host[offset], r);
+            }
             ++slice_idx;
         }
     }
