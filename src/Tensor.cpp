@@ -1440,6 +1440,90 @@ Tensor<value_t> Tensor<value_t>::operator-() const
     return result;
 }
 
+template<typename value_t>
+bool Tensor<value_t>::operator==(const Tensor & other) const
+{
+    const int64_t first_rank = this->get_rank();
+    const int64_t second_rank = other.get_rank();
+
+    // Check if both are empty.
+    if (first_rank == 0 && second_rank == 0)
+    {
+        return true;
+    }
+
+    const std::vector<uint64_t> & first_dims = this->get_dimensions();
+    // Check if the shapes are the same.
+    if (first_dims != other.get_dimensions())
+    {
+        return false;
+    }
+
+    std::vector<uint64_t> divisors = utils::compute_divisors(first_dims);
+
+    uint64_t* p_divs = static_cast<uint64_t*>(
+        sycl::malloc_device(sizeof(uint64_t) * first_rank, g_sycl_queue));
+    uint64_t* p_first_strides = static_cast<uint64_t*>(
+        sycl::malloc_device(sizeof(uint64_t) * first_rank, g_sycl_queue));
+    uint64_t* p_second_strides = static_cast<uint64_t*>(
+        sycl::malloc_device(sizeof(uint64_t) * second_rank, g_sycl_queue));
+    uint32_t * p_flag = sycl::malloc_shared<uint32_t>(1, g_sycl_queue);
+
+    if (!p_divs || !p_first_strides || !p_second_strides || !p_flag)
+    {
+        sycl::free(p_divs, g_sycl_queue);
+        sycl::free(p_first_strides, g_sycl_queue);
+        sycl::free(p_second_strides, g_sycl_queue);
+        sycl::free(p_flag, g_sycl_queue);
+
+        throw std::bad_alloc();
+    }
+
+    g_sycl_queue.memcpy(p_divs,
+        divisors.data(), sizeof(uint64_t) * first_rank).wait();
+    g_sycl_queue.memcpy(p_first_strides,
+        this->get_strides().data(), sizeof(uint64_t) * first_rank).wait();
+    g_sycl_queue.memcpy(p_second_strides,
+        other.get_strides().data(), sizeof(uint64_t) * second_rank).wait();
+    *p_flag = static_cast<uint32_t>(0);
+
+    const value_t* p_first = this->get_data();
+    const value_t* p_second = other.get_data();
+
+    const uint64_t total_elements = this->get_num_elements();
+
+    g_sycl_queue.parallel_for(
+        sycl::range<1>(static_cast<size_t>(total_elements)),
+        [=](sycl::id<1> idx)
+    {
+        uint64_t linear = static_cast<uint64_t>(idx[0]);
+        uint64_t first_offset = sycl_utils::idx_of(
+            linear, p_divs, p_first_strides, first_rank);
+        uint64_t second_offset = sycl_utils::idx_of(
+            linear, p_divs, p_second_strides, second_rank);
+
+        // If mismatch set flag (atomic store).
+        if (!(p_first[first_offset] == p_second[second_offset]))
+        {
+            auto atomic_err = sycl::atomic_ref<uint32_t,
+                sycl::memory_order::relaxed,
+                sycl::memory_scope::device,
+                sycl::access::address_space::global_space>(*p_flag);
+            uint32_t expected = 0;
+            atomic_err.compare_exchange_strong(expected, 1);
+        }
+    }).wait();
+
+    const bool equal = (*p_flag == static_cast<uint32_t>(0));
+
+    sycl::free(p_divs, g_sycl_queue);
+    sycl::free(p_first_strides, g_sycl_queue);
+    sycl::free(p_second_strides, g_sycl_queue);
+    sycl::free(p_flag, g_sycl_queue);
+
+    return equal;
+}
+
 template <typename value_t>
 Tensor<value_t> Tensor<value_t>::clone() const
 {

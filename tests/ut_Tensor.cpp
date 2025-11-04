@@ -1073,7 +1073,7 @@ TYPED_TEST(TypedTensor, scalar_constructor_device)
 
 /**
  * @test TypedTensor.scalar_constructor_used_for_parameter_passing
- * @brief Ensure implicit conversion allows passing a float
+ * @brief Ensure explicit conversion allows passing a float
  * where Tensor is expected.
  */
 TYPED_TEST(TypedTensor, scalar_constructor_used_for_parameter_passing)
@@ -1087,7 +1087,7 @@ TYPED_TEST(TypedTensor, scalar_constructor_used_for_parameter_passing)
         return host_val;
     };
 
-    value_t got = read_scalar(static_cast<value_t>(9.81));
+    value_t got = read_scalar(Tensor<value_t>(static_cast<value_t>(9.81)));
     if constexpr (std::is_floating_point_v<value_t>) {
         EXPECT_FLOAT_EQ(static_cast<float>(got),
                         static_cast<float>(9.81f));
@@ -5442,6 +5442,90 @@ TYPED_TEST(TypedTensor, operator_unary_negation_alias_view_weird_strides)
             EXPECT_EQ(parent_buf[i], vals[i]);
         }
     }
+}
+
+/**
+ * @test TypedTensor.operator_compare_wrong_dimensions
+ * @brief Using operator== on two tensors with different shapes
+ * should return false.
+ */
+TYPED_TEST(TypedTensor, operator_compare_wrong_dimensions)
+{
+    using value_t = TypeParam;
+    Tensor<value_t> t1({2, 4});
+    Tensor<value_t> t2({2, 2});
+
+    EXPECT_NE(t1, t2);
+}
+
+/**
+ * @test TypedTensor.operator_compare_both_empty
+ * @brief Using operator== on two empty tensors should return true.
+ */
+TYPED_TEST(TypedTensor, operator_compare_both_empty)
+{
+    using value_t = TypeParam;
+    Tensor<value_t> t1;
+    Tensor<value_t> t2;
+
+    EXPECT_EQ(t1, t2);
+}
+
+/**
+ * @test TypedTensor.operator_compare_matching_values
+ * @brief Using operator== on two tensors with matching values should return true.
+ */
+TYPED_TEST(TypedTensor, operator_compare_matching_values)
+{
+    using value_t = TypeParam;
+    Tensor<value_t> t1({2, 2});
+    Tensor<value_t> t2({2, 2});
+
+    std::vector<value_t> vals = {1, 2, 3 ,4};
+
+    t1 = vals;
+    t2 = vals;
+
+    EXPECT_EQ(t1, t2);
+}
+
+/**
+ * @test TypedTensor.operator_compare_mismatching_values
+ * @brief Using operator== on two tensors with mismatching values
+ * should return false.
+ */
+TYPED_TEST(TypedTensor, operator_compare_mismatching_values)
+{
+    using value_t = TypeParam;
+    Tensor<value_t> t1({2, 2});
+    Tensor<value_t> t2({2, 2});
+
+    std::vector<value_t> vals1 = {1, 2, 3 ,4};
+    std::vector<value_t> vals2 = {4, 4, 4 ,4};
+
+    t1 = vals1;
+    t2 = vals2;
+
+    EXPECT_NE(t1, t2);
+}
+
+/**
+ * @test TypedTensor.operator_compare_matching_values_wrong_shapes
+ * @brief Using operator== on two tensors with matching values but different
+ * shapes should return true.
+ */
+TYPED_TEST(TypedTensor, operator_compare_matching_values_wrong_shapes)
+{
+    using value_t = TypeParam;
+    Tensor<value_t> t1({2, 1, 2});
+    Tensor<value_t> t2({2, 2});
+
+    std::vector<value_t> vals = {1, 2, 3 ,4};
+
+    t1 = vals;
+    t2 = vals;
+
+    EXPECT_NE(t1, t2);
 }
 
 /**

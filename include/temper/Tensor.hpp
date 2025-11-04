@@ -691,7 +691,7 @@ public:
      *
      * @throws std::bad_alloc if memory allocation fails.
      */
-    Tensor(value_t val, MemoryLocation loc = MemoryLocation::DEVICE);
+    explicit Tensor(value_t val, MemoryLocation loc = MemoryLocation::DEVICE);
 
     /**
      * @brief View constructor.
@@ -963,6 +963,19 @@ public:
      * @throws std::bad_alloc if memory allocation fails.
      */
     Tensor operator-() const;
+
+    /**
+     * @brief Value equality: shape then element-wise compare.
+     *
+     * Returns true iff @p other has the same dimensions and every
+     * corresponding element compares equal with `operator==`.
+     *
+     * @param other Tensor to compare.
+     * @return true when shapes match and all elements are equal,
+     * false otherwise.
+     * @throws std::bad_alloc on temporary allocation failure.
+     */
+    bool operator==(const Tensor & other) const;
 
     /**
      * @brief Returns an owning, contiguous deep copy of this tensor.
