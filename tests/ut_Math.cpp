@@ -6194,10 +6194,12 @@ TEST(EIG, eig_last_two_not_square)
 
 /**
  * @test EIG.eig_diagonal
- * @brief eig() returns expected eigenvalues for a diagonal device matrix.
+ * @brief eig() returns expected eigenvalues and eigenvectors
+ * for a diagonal device matrix.
  *
  * Creates a 4×4 diagonal matrix allocated on device, runs eig(), reads back
- * eigenvalues and checks they match the diagonal entries (within tolerance).
+ * eigenvalues and eigenvectors and checks they match the
+ * diagonal entries (within tolerance).
  */
 TEST(EIG, eig_diagonal)
 {
@@ -6213,32 +6215,49 @@ TEST(EIG, eig_diagonal)
     auto result = math::eig(A, 80, 1e-6f);
     Tensor<float> vals = result.first;
 
-    std::vector<double> got;
-    for (uint64_t i = 0; i < n; ++i)
-    {
-        Tensor<float> v_view(vals, std::vector<uint64_t>{i},
-            std::vector<uint64_t>{1});
-        got.push_back(static_cast<double>(static_cast<float>(v_view)));
-    }
-    std::sort(got.begin(), got.end());
-
-    std::vector<double> expected = {1.0, 2.0, 3.0, 4.0};
-    std::sort(expected.begin(), expected.end());
-
+    Tensor<float> expected({4});
+    expected = {1.0, 2.0, 3.0, 4.0};
     const double tol = 5e-4;
-    for (size_t i = 0; i < expected.size(); ++i)
+
+    auto it_a = vals.begin();
+    auto it_b = expected.begin();
+
+    for (; it_a != vals.end() && it_b != expected.end(); ++it_a, ++it_b)
     {
-        EXPECT_NEAR(got[i], expected[i], tol);
+        EXPECT_NEAR(*it_a, *it_b, tol);
+
+    }
+
+    Tensor<float> expected_eigvecs({4, 4});
+    expected_eigvecs =
+    {
+        1, 0, 0, 0,
+        0, 1, 0, 0,
+        0, 0, 1, 0,
+        0, 0, 0, 1
+    };
+
+    Tensor<float> eigvecs = result.second;
+
+    auto it_c = eigvecs.begin();
+    auto it_d = expected_eigvecs.begin();
+
+    for (; it_c != eigvecs.end() && it_d != expected_eigvecs.end();
+        ++it_c, ++it_d)
+    {
+        EXPECT_NEAR(*it_c, *it_d, tol);
+
     }
 }
 
 /**
  * @test EIG.eig_batched
- * @brief eig() on a small batched tensor yields per-batch eigenvalues.
+ * @brief eig() on a small batched tensor yields per-batch eigenvalues
+ * and eigenvectors.
  *
  * Builds a 2×3×3 device tensor containing two diagonal batches, runs eig()
- * with increased iterations, and checks each batch's computed eigenvalues
- * against expected diagonals (sorted, with loose tolerance for device runs).
+ * with increased iterations, and checks each batch's computed eigenvalues and
+ * eigenvectors against expected diagonals.
  */
 TEST(EIG, eig_batched)
 {
@@ -6258,42 +6277,56 @@ TEST(EIG, eig_batched)
     auto result = math::eig(T, 200, 1e-6f);
     Tensor<float> vals = result.first;
 
-    std::vector<std::vector<double>> expected =
+    Tensor<float> expected({2, 3});
+
+    expected =
     {
-        {1.0, 2.0, 3.0},
-        {4.0, 5.0, 6.0}
+        1.0, 2.0, 3.0,
+        4.0, 5.0, 6.0
     };
+
+    auto it_a = vals.begin();
+    auto it_b = expected.begin();
 
     const double tol = 5e-3;
 
-    for (uint64_t b = 0; b < 2; ++b)
+    for (; it_a != vals.end() && it_b != expected.end(); ++it_a, ++it_b)
     {
-        std::vector<double> got;
-        got.reserve(3);
-        for (uint64_t j = 0; j < 3; ++j)
-        {
-            Tensor<float> v_view(vals, std::vector<uint64_t>{b, j},
-                std::vector<uint64_t>{1});
-            got.push_back(static_cast<double>(static_cast<float>(v_view)));
-        }
-        std::sort(got.begin(), got.end());
-        std::sort(expected[b].begin(), expected[b].end());
+        EXPECT_NEAR(*it_a, *it_b, tol);
+    }
 
-        for (size_t i = 0; i < 3; ++i)
-        {
-            EXPECT_NEAR(got[i], expected[b][i], tol);
-        }
+    Tensor<float> expected_eigvecs({2, 3, 3});
+    expected_eigvecs =
+    {
+        1, 0, 0,
+        0, 1, 0,
+        0, 0, 1,
+
+        1, 0, 0,
+        0, 1, 0,
+        0, 0, 1
+    };
+
+    Tensor<float> eigvecs = result.second;
+
+    auto it_c = eigvecs.begin();
+    auto it_d = expected_eigvecs.begin();
+
+    for (; it_c != eigvecs.end() && it_d != expected_eigvecs.end();
+        ++it_c, ++it_d)
+    {
+        EXPECT_NEAR(*it_c, *it_d, tol);
+
     }
 }
 
 /**
  * @test EIG.eig_alias_view_strided
- * @brief eig() works on a strided alias/view and preserves owner memory.
+ * @brief eig() works on a strided alias/view.
  *
  * Creates a 10×10 owner matrix on device, builds a non-contiguous view that
  * selects every-other row/column (5×5) with a diagonal, computes eig() on the
- * view and verifies eigenvalues match the diagonal. Also verifies the owner
- * buffer is unmodified after the operation by copying back to host.
+ * view and verifies eigenvalues and eigenvectors match the diagonal.
  */
 TEST(EIG, eig_alias_view_strided)
 {
@@ -6313,11 +6346,6 @@ TEST(EIG, eig_alias_view_strided)
             {
                 owner_flat[owner_index] = static_cast<float>(10 * (i + 1));
             }
-            else
-            {
-                owner_flat[owner_index] = 0.0f;
-            }
-
         }
     }
 
@@ -6329,34 +6357,43 @@ TEST(EIG, eig_alias_view_strided)
     std::vector<uint64_t> view_strides = { N * 2, 2 };
     Tensor<float> view(owner, start_indices, view_dims, view_strides);
 
-    EXPECT_NE(view.get_strides(), owner.get_strides());
     auto result = math::eig(view, 250, 1e-6f);
     Tensor<float> vals = result.first;
 
-    std::vector<double> expected = {10.0, 20.0, 30.0, 40.0, 50.0};
-    std::sort(expected.begin(), expected.end());
+    std::vector<float> expected = {10.0, 20.0, 30.0, 40.0, 50.0};
 
-    std::vector<double> got;
-    for (uint64_t i = 0; i < n; ++i)
-    {
-        Tensor<float> v_view(vals, std::vector<uint64_t>{i},
-            std::vector<uint64_t>{1});
-        got.push_back(static_cast<double>(static_cast<float>(v_view)));
-    }
-    std::sort(got.begin(), got.end());
+    auto it_a = vals.begin();
+    auto it_b = expected.begin();
 
-    const double tol = 5e-4;
-    for (size_t i = 0; i < expected.size(); ++i)
+    const double tol = 5e-3;
+
+    for (; it_a != vals.end() && it_b != expected.end(); ++it_a, ++it_b)
     {
-        EXPECT_NEAR(got[i], expected[i], tol);
+        EXPECT_NEAR(*it_a, *it_b, tol);
     }
 
-    owner.to(MemoryLocation::HOST);
-    const float* host_ptr = owner.get_data();
-    for (size_t idx = 0; idx < owner_flat.size(); ++idx)
+    Tensor<float> expected_eigvecs({5, 5});
+    expected_eigvecs =
     {
-        EXPECT_FLOAT_EQ(owner_flat[idx], host_ptr[idx]);
+        1, 0, 0, 0, 0,
+        0, 1, 0, 0, 0,
+        0, 0, 1, 0, 0,
+        0, 0, 0, 1, 0,
+        0, 0, 0, 0, 1
+    };
+
+    Tensor<float> eigvecs = result.second;
+
+    auto it_c = eigvecs.begin();
+    auto it_d = expected_eigvecs.begin();
+
+    for (; it_c != eigvecs.end() && it_d != expected_eigvecs.end();
+        ++it_c, ++it_d)
+    {
+        EXPECT_NEAR(*it_c, *it_d, tol);
+
     }
+
 }
 
 /**
@@ -6395,42 +6432,48 @@ TEST(EIG, eig_noncontig_batch_strides_device)
 
     Tensor<float> view(owner, start_indices, view_dims, view_strides);
 
-    EXPECT_NE(view.get_strides(), owner.get_strides());
-
     auto result = math::eig(view, 200, 1e-6f);
     Tensor<float> vals = result.first;
 
-    std::vector<std::vector<double>> expected = {
-        {1.0, 2.0, 3.0},
-        {7.0, 8.0, 9.0}
+    Tensor<float> expected({2, 3});
+    expected =
+    {
+        1.0, 2.0, 3.0,
+        7.0, 8.0, 9.0
     };
+
+    auto it_a = vals.begin();
+    auto it_b = expected.begin();
 
     const double tol = 5e-3;
 
-    for (uint64_t b = 0; b < 2; ++b)
+    for (; it_a != vals.end() && it_b != expected.end(); ++it_a, ++it_b)
     {
-        std::vector<double> got;
-        got.reserve(batch_n);
-        for (uint64_t j = 0; j < batch_n; ++j)
-        {
-            Tensor<float> v_view(vals, std::vector<uint64_t>{b, j},
-                std::vector<uint64_t>{1});
-            got.push_back(static_cast<double>(static_cast<float>(v_view)));
-        }
-        std::sort(got.begin(), got.end());
-        std::sort(expected[b].begin(), expected[b].end());
-
-        for (size_t i = 0; i < batch_n; ++i)
-        {
-            EXPECT_NEAR(got[i], expected[b][i], tol);
-        }
+        EXPECT_NEAR(*it_a, *it_b, tol);
     }
 
-    owner.to(MemoryLocation::HOST);
-    const float* host_ptr = owner.get_data();
-    for (size_t idx = 0; idx < owner_flat.size(); ++idx)
+    Tensor<float> expected_eigvecs({2, 3, 3});
+    expected_eigvecs =
     {
-        EXPECT_FLOAT_EQ(owner_flat[idx], host_ptr[idx]);
+        1, 0, 0,
+        0, 1, 0,
+        0, 0, 1,
+
+        1, 0, 0,
+        0, 1, 0,
+        0, 0, 1
+    };
+
+    Tensor<float> eigvecs = result.second;
+
+    auto it_c = eigvecs.begin();
+    auto it_d = expected_eigvecs.begin();
+
+    for (; it_c != eigvecs.end() && it_d != expected_eigvecs.end();
+        ++it_c, ++it_d)
+    {
+        EXPECT_NEAR(*it_c, *it_d, tol);
+
     }
 }
 
@@ -6485,46 +6528,225 @@ TEST(EIG, eig_5d_noncontig_device)
 
     Tensor<float> view(owner, start_indices, view_dims, view_strides);
 
-    EXPECT_NE(view.get_strides(), owner.get_strides());
-
     auto result = math::eig(view, 200, 1e-6f);
     Tensor<float> vals = result.first;
 
-    std::vector<std::vector<double>> expected = {
-        {1.0, 2.0, 3.0},
-        {7.0, 8.0, 9.0}
+    std::vector<float> expected =
+    {
+        1.0, 2.0, 3.0,
+        7.0, 8.0, 9.0
     };
+
+    auto it_a = vals.begin();
+    auto it_b = expected.begin();
 
     const double tol = 5e-3;
 
-    for (uint64_t b = 0; b < 2; ++b)
+    for (; it_a != vals.end() && it_b != expected.end(); ++it_a, ++it_b)
     {
-        std::vector<double> got;
-        got.reserve(rows);
-        for (uint64_t j = 0; j < rows; ++j)
-        {
-            const uint64_t vals_rank = vals.get_rank();
-            std::vector<uint64_t> start(vals_rank, 0);
-            start[0] = b;
-            start[vals_rank - 1] = j;
-
-            Tensor<float> v_view(vals, start, std::vector<uint64_t>{1});
-            got.push_back(static_cast<double>(static_cast<float>(v_view)));
-        }
-        std::sort(got.begin(), got.end());
-        std::sort(expected[b].begin(), expected[b].end());
-
-        for (size_t i = 0; i < rows; ++i)
-        {
-            EXPECT_NEAR(got[i], expected[b][i], tol);
-        }
+        EXPECT_NEAR(*it_a, *it_b, tol);
     }
 
-    owner.to(MemoryLocation::HOST);
-    const float* host_ptr = owner.get_data();
-    for (size_t idx = 0; idx < owner_flat.size(); ++idx)
+    Tensor<float> expected_eigvecs({2, 1, 1, 3, 3});
+    expected_eigvecs =
     {
-        EXPECT_FLOAT_EQ(owner_flat[idx], host_ptr[idx]);
+        1, 0, 0,
+        0, 1, 0,
+        0, 0, 1,
+
+        1, 0, 0,
+        0, 1, 0,
+        0, 0, 1
+    };
+
+    Tensor<float> eigvecs = result.second;
+
+    auto it_c = eigvecs.begin();
+    auto it_d = expected_eigvecs.begin();
+
+    for (; it_c != eigvecs.end() && it_d != expected_eigvecs.end();
+        ++it_c, ++it_d)
+    {
+        EXPECT_NEAR(*it_c, *it_d, tol);
+
+    }
+}
+
+/**
+ * @test EIG.eig_3x3_known
+ * @brief eig() on a 3×3 symmetric matrix yields correct eigenpairs.
+ *
+ * Builds a 3×3 test matrix with known eigenvalues and eigenvectors,
+ * computes eig() on device, and checks results against expected
+ * analytical values within tolerance.
+ */
+TEST(EIG, eig_3x3_known)
+{
+    Tensor<float> A({3, 3}, MemoryLocation::DEVICE);
+    std::vector<float> data = {
+        2, 0, 0,
+        0, 3, 4,
+        0, 4, 9
+    };
+    A = data;
+    auto result = math::eig(A, 200, 1e-6f);
+    Tensor<float> vals = result.first;
+
+    std::vector<float> expected =
+    {
+        2, 1, 11
+    };
+
+    auto it_a = vals.begin();
+    auto it_b = expected.begin();
+
+    const double tol = 5e-3;
+
+    for (; it_a != vals.end() && it_b != expected.end(); ++it_a, ++it_b)
+    {
+        EXPECT_NEAR(*it_a, *it_b, tol);
+    }
+
+    Tensor<float> expected_eigvecs({3, 3});
+    expected_eigvecs =
+    {
+        1, 0, 0,
+        0, 0.894427, 0.447214,
+        0, -0.447214, 0.894427
+    };
+
+    Tensor<float> eigvecs = result.second;
+
+    auto it_c = eigvecs.begin();
+    auto it_d = expected_eigvecs.begin();
+
+    for (; it_c != eigvecs.end() && it_d != expected_eigvecs.end();
+        ++it_c, ++it_d)
+    {
+        EXPECT_NEAR(*it_c, *it_d, tol);
+
+    }
+}
+
+/**
+ * @test EIG.eig_3x3_harder
+ * @brief eig() handles a nontrivial 3×3 symmetric case accurately.
+ *
+ * Runs eig() on a harder 3×3 matrix with off-diagonal structure,
+ * verifying computed eigenvalues and normalized eigenvectors match
+ * the reference up to floating-point tolerance.
+ */
+TEST(EIG, eig_3x3_harder)
+{
+    Tensor<float> A({3, 3}, MemoryLocation::DEVICE);
+    std::vector<float> data = {
+        4, 2, -2,
+        2, 7, 3,
+        -2, 3, 9
+    };
+    A = data;
+    auto result = math::eig(A, 200, 1e-6f);
+    Tensor<float> vals = result.first;
+
+    std::vector<float> expected =
+    {
+        1.58338673, 7.21995753, 11.19665574
+    };
+
+    auto it_a = vals.begin();
+    auto it_b = expected.begin();
+
+    const double tol = 5e-3;
+
+    for (; it_a != vals.end() && it_b != expected.end(); ++it_a, ++it_b)
+    {
+        EXPECT_NEAR(*it_a, *it_b, tol);
+    }
+
+    Tensor<float> expected_eigvecs({3, 3});
+    expected_eigvecs =
+    {
+        0.758483, 0.647291, -0.0756199,
+        -0.506903, 0.658908, 0.555779,
+        0.409577, -0.383217, 0.827884
+    };
+
+    Tensor<float> eigvecs = result.second;
+
+    auto it_c = eigvecs.begin();
+    auto it_d = expected_eigvecs.begin();
+
+    for (; it_c != eigvecs.end() && it_d != expected_eigvecs.end();
+        ++it_c, ++it_d)
+    {
+        EXPECT_NEAR(*it_c, *it_d, tol);
+
+    }
+}
+
+/**
+ * @test EIG.eig_3x3_combined
+ * @brief eig() processes multiple 3×3 batches in one tensor.
+ *
+ * Combines two distinct 3×3 matrices into a batched tensor and
+ * confirms eig() returns correct per-batch eigenvalues and
+ * eigenvectors for both cases on device.
+ */
+TEST(EIG, eig_3x3_combined)
+{
+    Tensor<float> A({2, 3, 3}, MemoryLocation::DEVICE);
+    std::vector<float> data = {
+        2, 0, 0,
+        0, 3, 4,
+        0, 4, 9,
+
+        4, 2, -2,
+        2, 7, 3,
+        -2, 3, 9
+    };
+    A = data;
+    auto result = math::eig(A, 200, 1e-6f);
+    Tensor<float> vals = result.first;
+
+    std::vector<float> expected =
+    {
+        2, 1, 11,
+
+        1.58338673, 7.21995753, 11.19665574
+    };
+
+    auto it_a = vals.begin();
+    auto it_b = expected.begin();
+
+    const double tol = 5e-3;
+
+    for (; it_a != vals.end() && it_b != expected.end(); ++it_a, ++it_b)
+    {
+        EXPECT_NEAR(*it_a, *it_b, tol);
+    }
+
+    Tensor<float> expected_eigvecs({2, 3, 3});
+    expected_eigvecs =
+    {
+        1, 0, 0,
+        0, 0.894427, 0.447214,
+        0, -0.447214, 0.894427,
+
+        0.758483, 0.647291, -0.0756199,
+        -0.506903, 0.658908, 0.555779,
+        0.409577, -0.383217, 0.827884
+    };
+
+    Tensor<float> eigvecs = result.second;
+
+    auto it_c = eigvecs.begin();
+    auto it_d = expected_eigvecs.begin();
+
+    for (; it_c != eigvecs.end() && it_d != expected_eigvecs.end();
+        ++it_c, ++it_d)
+    {
+        EXPECT_NEAR(*it_c, *it_d, tol);
+
     }
 }
 

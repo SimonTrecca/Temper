@@ -2377,7 +2377,6 @@ std::pair<Tensor<value_t>, Tensor<value_t>> eig(const Tensor<value_t> & tensor,
 
     value_t* p_A = nullptr;
     value_t* p_Q = nullptr;
-    value_t* p_temp = nullptr;
     int32_t* p_error_flag = nullptr;
     uint64_t* p_batch_divisors = nullptr;
     uint64_t* p_batch_strides = nullptr;
@@ -2385,8 +2384,6 @@ std::pair<Tensor<value_t>, Tensor<value_t>> eig(const Tensor<value_t> & tensor,
     p_A = static_cast<value_t*>(sycl::malloc_device(
         sizeof(value_t) * total_matrix_elems, g_sycl_queue));
     p_Q = static_cast<value_t*>(sycl::malloc_device(
-        sizeof(value_t) * total_matrix_elems, g_sycl_queue));
-    p_temp = static_cast<value_t*>(sycl::malloc_device(
         sizeof(value_t) * total_matrix_elems, g_sycl_queue));
 
     p_error_flag = static_cast<int32_t*>(
@@ -2400,12 +2397,11 @@ std::pair<Tensor<value_t>, Tensor<value_t>> eig(const Tensor<value_t> & tensor,
             (sizeof(uint64_t) * batch_shape.size(), g_sycl_queue));
     }
 
-    if (!p_A || !p_Q || !p_temp || !p_error_flag ||
+    if (!p_A || !p_Q || !p_error_flag ||
         (!batch_shape.empty() && (!p_batch_divisors || !p_batch_strides)))
     {
         sycl::free(p_A, g_sycl_queue);
         sycl::free(p_Q, g_sycl_queue);
-        sycl::free(p_temp, g_sycl_queue);
         sycl::free(p_error_flag, g_sycl_queue);
         sycl::free(p_batch_divisors, g_sycl_queue);
         sycl::free(p_batch_strides, g_sycl_queue);
@@ -2465,12 +2461,10 @@ std::pair<Tensor<value_t>, Tensor<value_t>> eig(const Tensor<value_t> & tensor,
             uint64_t col = in_mat % n;
             if (row == col)
             {
-                // Diagonal entry of identity.
                 p_Q[flat] = value_t{1};
             }
             else
             {
-                // Off-diagonal entry of identity.
                 p_Q[flat] = value_t{0};
             }
         });
@@ -2489,66 +2483,72 @@ std::pair<Tensor<value_t>, Tensor<value_t>> eig(const Tensor<value_t> & tensor,
                     {
                         uint64_t b = static_cast<uint64_t>(b_id[0]);
                         uint64_t base = b * matrix_size;
-                        value_t a = p_A[base + col * n + col];
-                        value_t b_val = p_A[base + row * n + col];
+                        const uint64_t p = col;
+                        const uint64_t q = row;
 
-                        value_t r = sycl_utils::sqrt(a * a + b_val * b_val);
+                        value_t a_pp = p_A[base + p * n + p];
+                        value_t a_qq = p_A[base + q * n + q];
+                        value_t a_pq = p_A[base + p * n + q];
 
-                        sycl_utils::device_check_divzero_and_set
-                            (r, p_error_flag);
-                        if (r == value_t{0}) return;
+                        if (sycl_utils::fabs(a_pq) < value_t{1e-10}) return;
 
-                        value_t c = a / r;
-                        value_t s = -b_val / r;
+                        value_t denom = value_t{2} * a_pq;
+                        if (sycl_utils::fabs(denom) < value_t{1e-10}) return;
 
-                        for (uint64_t k = col; k < n; ++k)
-                        {
-                            value_t a_ck = p_A[base + col * n + k];
-                            value_t a_rk = p_A[base + row * n + k];
-                            value_t new_ck = c * a_ck - s * a_rk;
-                            value_t new_rk = s * a_ck + c * a_rk;
-                            p_A[base + col * n + k] = new_ck;
-                            p_A[base + row * n + k] = new_rk;
-                        }
+                        value_t tau = (a_qq - a_pp) / denom;
+
+                        value_t abs_tau = sycl_utils::fabs(tau);
+                        value_t sign;
+                        if (tau >= value_t{0})
+                            sign = value_t{1};
+                        else
+                            sign = value_t{-1};
+                        value_t t = sign / (abs_tau + sycl_utils::sqrt
+                            (value_t{1} + tau * tau));
+
+                        value_t c = value_t{1} / sycl_utils::sqrt(value_t{1} + t * t);
+                        value_t s = t * c;
 
                         for (uint64_t k = 0; k < n; ++k)
                         {
-                            value_t q_kc = p_Q[base + k * n + col];
-                            value_t q_kr = p_Q[base + k * n + row];
-                            value_t new_qc = c * q_kc - s * q_kr;
-                            value_t new_qr = s * q_kc + c * q_kr;
-                            p_Q[base + k * n + col] = new_qc;
-                            p_Q[base + k * n + row] = new_qr;
+                            if (k == p || k == q) continue;
+
+                            value_t A_pk = p_A[base + p * n + k];
+                            value_t A_qk = p_A[base + q * n + k];
+
+                            value_t new_pk = c * A_pk - s * A_qk;
+                            value_t new_qk = s * A_pk + c * A_qk;
+
+                            p_A[base + p * n + k] = new_pk;
+                            p_A[base + k * n + p] = new_pk;
+
+                            p_A[base + q * n + k] = new_qk;
+                            p_A[base + k * n + q] = new_qk;
+                        }
+
+                        value_t new_pp = c * c * a_pp - value_t{2} * c * s *
+                            a_pq + s * s * a_qq;
+                        value_t new_qq = s * s * a_pp + value_t{2} * c * s *
+                            a_pq + c * c * a_qq;
+
+                        p_A[base + p * n + p] = new_pp;
+                        p_A[base + q * n + q] = new_qq;
+
+                        p_A[base + p * n + q] = value_t{0};
+                        p_A[base + q * n + p] = value_t{0};
+
+                        for (uint64_t k = 0; k < n; ++k)
+                        {
+                            value_t Q_kp = p_Q[base + k * n + p];
+                            value_t Q_kq = p_Q[base + k * n + q];
+
+                            p_Q[base + k * n + p] = c * Q_kp - s * Q_kq;
+                            p_Q[base + k * n + q] = s * Q_kp + c * Q_kq;
                         }
                     });
                 }).wait();
             }
         }
-
-        g_sycl_queue.submit([&](sycl::handler& cgh)
-        {
-            cgh.parallel_for(sycl::range<1>(total_matrix_elems),
-                [=](sycl::id<1> idx)
-            {
-                uint64_t flat = static_cast<uint64_t>(idx[0]);
-                uint64_t b = flat / matrix_size;
-                uint64_t in_mat = flat % matrix_size;
-                uint64_t row = in_mat / n;
-                uint64_t col = in_mat % n;
-                uint64_t base = b * matrix_size;
-
-                value_t sum = value_t{0};
-                for (uint64_t k = 0; k < n; ++k)
-                {
-                    sum += p_A[base + row * n + k] * p_Q[base + col * n + k];
-                }
-                sycl_utils::device_check_finite_and_set(sum, p_error_flag);
-                p_temp[flat] = sum;
-            });
-        }).wait();
-
-        g_sycl_queue.memcpy(p_A, p_temp,
-            sizeof(value_t) * total_matrix_elems).wait();
 
         if (iter % 10 == 9)
         {
@@ -2556,7 +2556,7 @@ std::pair<Tensor<value_t>, Tensor<value_t>> eig(const Tensor<value_t> & tensor,
                 sycl::malloc_device(sizeof(value_t), g_sycl_queue));
 
             g_sycl_queue.memset(p_max_off_diag, 0, sizeof(value_t)).wait();
-            // Compute maximum off-diagonal value on device.
+
             g_sycl_queue.submit([&](sycl::handler& cgh)
             {
                 cgh.parallel_for(sycl::range<1>(batch_count * matrix_size),
@@ -2638,7 +2638,6 @@ std::pair<Tensor<value_t>, Tensor<value_t>> eig(const Tensor<value_t> & tensor,
     int32_t err = *p_error_flag;
     sycl::free(p_A, g_sycl_queue);
     sycl::free(p_Q, g_sycl_queue);
-    sycl::free(p_temp, g_sycl_queue);
     sycl::free(p_error_flag, g_sycl_queue);
     sycl::free(p_batch_divisors, g_sycl_queue);
     sycl::free(p_batch_strides, g_sycl_queue);
