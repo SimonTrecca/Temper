@@ -2581,6 +2581,7 @@ std::pair<Tensor<value_t>, Tensor<value_t>> eig(const Tensor<value_t> & tensor,
     }
 
     std::vector<uint64_t> eigvals_shape = batch_shape;
+    eigvals_shape.push_back(1);
     eigvals_shape.push_back(n);
     std::vector<uint64_t> eigvecs_shape = batch_shape;
     eigvecs_shape.push_back(n);

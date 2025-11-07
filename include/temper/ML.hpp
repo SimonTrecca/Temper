@@ -157,10 +157,51 @@ Tensor<value_t> mean_squared_error(const Tensor<value_t>& predictions,
 extern template Tensor<float> mean_squared_error<float>
 (const Tensor<float>&, const Tensor<float>&, std::optional<int64_t>, bool);
 
+/**
+ * @brief Result container for Principal Component Analysis (PCA).
+ *
+ * Holds the outputs of a PCA decomposition: the projections of each
+ * sample onto the principal components, the per-component explained
+ * variance, and the loadings (principal directions).
+ */
+template<typename value_t>
+struct PCAResult
+{
+    Tensor<value_t> projections;      ///< Scores of each sample in the PC space.
+    Tensor<value_t> explained_variance; ///< Variance captured by each component.
+    Tensor<value_t> loadings;         ///< Principal directions (eigenvectors).
+};
+
+/**
+ * @brief Principal Component Analysis (PCA) on the last two dimensions.
+ *
+ * Computes PCA over each matrix slice in @p data, optionally per batch if
+ * the tensor has rank > 2. Data are mean-centered, and if @p standardize
+ * is true the features are scaled to unit variance before decomposition.
+ *
+ * @param data Input tensor of shape (..., rows, cols), with rows ≥ 2.
+ * @param n_components Optional number of principal components to keep;
+ * nullopt returns all components. Must satisfy 1 ≤ n_components ≤ cols.
+ * @param standardize If true apply standardization before PCA; otherwise
+ * only centering is applied.
+ *
+ * @return PCAResult<value_t> containing projections, explained variance,
+ * and loadings for each slice.
+ *
+ * @throws std::invalid_argument If data rank < 2, if rows < 2, or if
+ * @p n_components is zero or exceeds the feature dimension.
+ */
+template<typename value_t>
+PCAResult<value_t> pca(const Tensor<value_t> & data,
+    std::optional<uint64_t> n_components = std::nullopt,
+    bool standardize = true);
+/// Explicit instantiation of pca for float
+extern template PCAResult<float> pca<float>
+(const Tensor<float>&, std::optional<uint64_t>, bool);
+
 /* todo
     regularization penalties
     other loss functions?
-    softmax
     hist
     linear regression
     logistic regression

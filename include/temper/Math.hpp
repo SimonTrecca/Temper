@@ -43,7 +43,6 @@ namespace temper::math
  * @throws std::runtime_error if:
  * - A numeric error occurs during computation (e.g., non-finite values produced).
  * @throws std::bad_alloc if required device memory cannot be allocated.
-
  */
 template <typename value_t>
 Tensor<value_t> matmul(const Tensor<value_t> & first,
@@ -719,7 +718,7 @@ extern template Tensor<float> stddev<float>
  * @param max_iters Maximum number of full Jacobi sweeps to attempt.
  * @param tol Convergence threshold for the largest off–diagonal entry.
  * @return std::pair<Tensor<value_t>, Tensor<value_t>>
- *     First:  eigenvalues of shape `{B..., N}`.
+ *     First:  eigenvalues of shape `{B..., 1, N}`.
  *     Second: eigenvectors of shape `{B..., N, N}`, stored by
  *     columns.
  *

@@ -429,4 +429,75 @@ Tensor<value_t> mean_squared_error(const Tensor<value_t>& predictions,
 template Tensor<float> mean_squared_error<float>
 (const Tensor<float>&, const Tensor<float>&, std::optional<int64_t>, bool);
 
+template<typename value_t>
+PCAResult<value_t> pca(const Tensor<value_t> & data,
+    std::optional<uint64_t> n_components,
+    bool standardize)
+{
+    const int64_t rank = data.get_rank();
+
+    if (rank < 2)
+    {
+        throw std::invalid_argument(R"(pca:
+            rank must be >= 2.)");
+    }
+
+    uint64_t k = data.get_dimensions()[rank - 1];
+    if (n_components.has_value())
+    {
+        uint64_t value = n_components.value();
+        // Check whether the number of components given is valid.
+        if (value > k || value == 0)
+        {
+            throw std::invalid_argument(R"(pca:
+                invalid number of components.)");
+        }
+        k = value;
+    }
+
+    Tensor<value_t> data_scaled;
+    if (standardize)
+    {
+        Tensor<value_t> data_mean = math::mean(data, -2);
+        Tensor<value_t> data_std = math::stddev(data, -2, /*ddof=*/1);
+        data_scaled = (data - data_mean) / data_std;
+    }
+    else
+    {
+        Tensor<value_t> data_mean = math::mean(data, -2);
+        data_scaled = data - data_mean;
+    }
+
+    Tensor<value_t> data_cov = math::cov(data_scaled, /*ddof=*/1);
+
+    auto eigs = math::eig(data_cov, 100);
+
+    Tensor<uint64_t> sort_order = math::argsort(eigs.first, -1, true);
+
+    std::vector<uint64_t> k_eigvals_shape = eigs.first.get_dimensions();
+    k_eigvals_shape[rank - 1] = k;
+
+    std::vector<uint64_t> k_eigvecs_shape = eigs.second.get_dimensions();
+    k_eigvecs_shape[rank - 1] = k;
+
+    Tensor<value_t> eigvals = math::gather(eigs.first, sort_order, -1);
+    Tensor<value_t> eigvecs = math::gather(eigs.second, sort_order, -1);
+
+    PCAResult<value_t> result;
+
+    std::vector<uint64_t> start_indices(rank, 0);
+
+    Tensor<value_t> eigvals_k_view(eigvals, start_indices, k_eigvals_shape);
+
+    result.explained_variance = std::move(eigvals_k_view);
+
+    Tensor<value_t> eigvecs_k_view(eigvecs, start_indices, k_eigvecs_shape);
+    result.loadings = std::move(eigvecs_k_view);
+    result.projections = math::matmul(data_scaled, result.loadings);
+
+    return result;
+}
+template PCAResult<float> pca<float>
+(const Tensor<float>&, std::optional<uint64_t>, bool);
+
 } // namespace temper::ml

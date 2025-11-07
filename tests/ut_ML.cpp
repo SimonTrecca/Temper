@@ -1431,4 +1431,641 @@ TEST(MSE, alias_both_weird_strides)
     EXPECT_NEAR(static_cast<double>(host[0]), 19.0, 1e-6);
 }
 
+/**
+ * @test PCA.pca_basic
+ * @brief Basic PCA on a 3×3 matrix with standardization; checks eigenvalues,
+ * loadings, and projections.
+ */
+TEST(PCA, pca_basic)
+{
+    Tensor<float> t({3, 3});
+    t = {
+       1,  2,  3,
+       4,  5,  6,
+       2,  3,  2,
+    };
+
+    ml::PCAResult result = ml::pca(t, std::nullopt, true);
+
+    Tensor<float> expected_expv({1, 3});
+    expected_expv =
+    {
+        2.78708718f, 0.21291282f, 7.03016493e-16f,
+    };
+
+    Tensor<float> expected_loadings({3, 3});
+    expected_loadings =
+    {
+        -0.58916765f, -0.39100062f, -0.70710678f,
+        -0.58916765f, -0.39100062f,  0.70710678f,
+        -0.55295837f,  0.83320888f, -1.22124533e-15f,
+    };
+
+    Tensor<float> expected_projections({3, 3});
+    expected_projections =
+    {
+         1.20562378f,  0.41574624f, -7.20766725e-16f,
+        -1.90547864f,  0.08070810f, -4.94177148e-17f,
+         0.69985486f, -0.49645434f,  7.24197496e-16f,
+    };
+
+    const double tol = 5e-3;
+
+    // Check explained variance.
+    {
+        auto it_a = result.explained_variance.begin();
+        auto it_b = expected_expv.begin();
+        for (; it_a != result.explained_variance.end() &&
+            it_b != expected_expv.end(); ++it_a, ++it_b)
+        {
+            EXPECT_NEAR(*it_a, *it_b, tol);
+        }
+    }
+
+    // Check loadings.
+    {
+        auto it_a = result.loadings.begin();
+        auto it_b = expected_loadings.begin();
+        for (; it_a != result.loadings.end() &&
+            it_b != expected_loadings.end(); ++it_a, ++it_b)
+        {
+            EXPECT_NEAR(std::fabs(*it_a), std::fabs(*it_b), tol);
+        }
+    }
+
+    // Check projections.
+    {
+        auto it_a = result.projections.begin();
+        auto it_b = expected_projections.begin();
+        for (; it_a != result.projections.end() &&
+            it_b != expected_projections.end(); ++it_a, ++it_b)
+        {
+            EXPECT_NEAR(std::fabs(*it_a), std::fabs(*it_b), tol);
+        }
+    }
+}
+
+/**
+ * @test PCA.pca_no_standardize_basic
+ * @brief PCA without standardization on a 3×2 matrix; verifies unscaled
+ * covariance, loadings, and projections.
+ */
+
+TEST(PCA, pca_no_standardize_basic)
+{
+    Tensor<float> t({3, 2});
+    t = {
+        1.f, 2.f,
+        3.f, 4.f,
+        5.f, 6.f
+    };
+
+    ml::PCAResult result = ml::pca(t, std::nullopt, /*standardize=*/false);
+
+    Tensor<float> expected_expv({1, 2});
+    expected_expv = {
+        8.f, 0.f
+    };
+
+    Tensor<float> expected_loadings({2, 2});
+    expected_loadings = {
+         0.70710678f,  0.70710678f,
+         0.70710678f, -0.70710678f
+    };
+
+    Tensor<float> expected_proj({3, 2});
+    expected_proj = {
+        -2.82842712f,  0.f,
+         0.f,          0.f,
+         2.82842712f,  0.f
+    };
+
+    const double tol = 5e-3;
+
+    // Check explained variance.
+    {
+        auto a = result.explained_variance.begin();
+        auto b = expected_expv.begin();
+        for (; a != result.explained_variance.end() &&
+            b != expected_expv.end(); ++a, ++b)
+        {
+            EXPECT_NEAR(*a, *b, tol);
+        }
+    }
+
+    // Check loadings.
+    {
+        auto a = result.loadings.begin();
+        auto b = expected_loadings.begin();
+        for (; a != result.loadings.end() &&
+            b != expected_loadings.end(); ++a, ++b)
+        {
+            EXPECT_NEAR(std::fabs(*a), std::fabs(*b), tol);
+        }
+    }
+
+    // Check projections.
+    {
+        auto a = result.projections.begin();
+        auto b = expected_proj.begin();
+        for (; a != result.projections.end() &&
+            b != expected_proj.end(); ++a, ++b)
+        {
+            EXPECT_NEAR(std::fabs(*a), std::fabs(*b), tol);
+        }
+    }
+}
+
+/**
+ * @test PCA.pca_basic_batched
+ * @brief Batched PCA on a 3×3 dataset replicated over batch dimension;
+ * validates per-batch eigenvalues, loadings, and projections.
+ */
+TEST(PCA, pca_basic_batched)
+{
+    Tensor<float> t({2, 3, 3});
+    t = {
+       1,  2,  3,
+       4,  5,  6,
+       2,  3,  2,
+
+       1,  3,  5,
+       7,  9, 45,
+       2,  4, 10
+    };
+
+    ml::PCAResult result = ml::pca(t, std::nullopt, true);
+
+    Tensor<float> expected_expv({2, 1, 3});
+    expected_expv =
+    {
+        2.78708718f, 0.21291282f, 7.03016493e-16f,
+        2.99886771f, 0.00113229f, 7.05596321e-16f
+    };
+
+    Tensor<float> expected_loadings({2, 3, 3});
+    expected_loadings =
+    {
+        -0.58916765f, -0.39100062f, -0.70710678f,
+        -0.58916765f, -0.39100062f,  0.70710678f,
+        -0.55295837f,  0.83320888f, -1.22124533e-15f,
+
+        -0.57740479f, -0.40817118f, -0.70710678f,
+        -0.57740479f, -0.40817118f,  0.70710678f,
+        -0.57724122f,  0.81657368f, -1.33559830e-13f
+    };
+
+    Tensor<float> expected_projections({2, 3, 3});
+    expected_projections =
+    {
+         1.20562378f,  0.41574624f, -7.20766725e-16f,
+        -1.90547864f,  0.08070810f, -4.94177148e-17f,
+         0.69985486f, -0.49645434f,  7.24197496e-16f,
+
+         1.23552187f,  0.03055077f, -5.14396459e-15f,
+        -1.97937101f,  0.00551589f, -3.04875468e-16f,
+         0.74384913f, -0.03606666f,  5.87388085e-15f
+    };
+
+    const double tol = 5e-3;
+
+    // Check explained variance.
+    {
+        auto it_a = result.explained_variance.begin();
+        auto it_b = expected_expv.begin();
+        for (; it_a != result.explained_variance.end() &&
+            it_b != expected_expv.end(); ++it_a, ++it_b)
+        {
+            EXPECT_NEAR(*it_a, *it_b, tol);
+        }
+    }
+
+    // Check loadings.
+    {
+        auto it_a = result.loadings.begin();
+        auto it_b = expected_loadings.begin();
+        for (; it_a != result.loadings.end() &&
+            it_b != expected_loadings.end(); ++it_a, ++it_b)
+        {
+            EXPECT_NEAR(std::fabs(*it_a), std::fabs(*it_b), tol);
+        }
+    }
+
+    // Check projections.
+    {
+        auto it_a = result.projections.begin();
+        auto it_b = expected_projections.begin();
+        for (; it_a != result.projections.end() &&
+            it_b != expected_projections.end(); ++it_a, ++it_b)
+        {
+            EXPECT_NEAR(std::fabs(*it_a), std::fabs(*it_b), tol);
+        }
+    }
+}
+
+/**
+ * @test PCA.pca_4d
+ * @brief PCA on a 4D tensor where the last two dims form square matrices;
+ * checks batched PCA across two leading dimensions.
+ */
+TEST(PCA, pca_4d)
+{
+    Tensor<float> t({2, 2, 3, 3});
+    t =
+    {
+        1,  2,  3,
+        4,  5,  6,
+        2,  3,  2,
+
+        1,  3,  5,
+        7,  9, 45,
+        2,  4, 10,
+
+        1,  2,  3,
+        4,  5,  6,
+        2,  3,  2,
+
+        1,  3,  5,
+        7,  9, 45,
+        2,  4, 10
+    };
+
+    ml::PCAResult result = ml::pca(t, std::nullopt, true);
+
+    Tensor<float> expected_expv({2, 2, 1, 3});
+    expected_expv =
+    {
+        2.78708718f, 0.21291282f, 6.85401860e-16f,
+        2.99886771f, 0.00113229f, 5.83854862e-16f,
+        2.78708718f, 0.21291282f, 6.85401860e-16f,
+        2.99886771f, 0.00113229f, 5.83854862e-16f
+    };
+
+    Tensor<float> expected_loadings({2, 2, 3, 3});
+    expected_loadings =
+    {
+        -0.58916765f, -0.39100062f, -0.70710678f,
+        -0.58916765f, -0.39100062f,  0.70710678f,
+        -0.55295837f,  0.83320888f,  5.61242657e-17f,
+
+        -0.57740479f, -0.40817118f, -0.70710678f,
+        -0.57740479f, -0.40817118f,  0.70710678f,
+        -0.57724122f,  0.81657368f, -3.15465886e-17f,
+
+        -0.58916765f, -0.39100062f, -0.70710678f,
+        -0.58916765f, -0.39100062f,  0.70710678f,
+        -0.55295837f,  0.83320888f,  5.61242657e-17f,
+
+        -0.57740479f, -0.40817118f, -0.70710678f,
+        -0.57740479f, -0.40817118f,  0.70710678f,
+        -0.57724122f,  0.81657368f, -3.15465886e-17f
+    };
+
+    Tensor<float> expected_projections({2, 2, 3, 3});
+    expected_projections =
+    {
+         1.20562378f,  0.41574624f,  5.33591709e-16f,
+        -1.90547864f,  0.08070810f, -6.96923002e-16f,
+         0.69985486f, -0.49645434f,  8.95887736e-17f,
+
+         1.23552187f,  0.03055077f, -5.14148336e-16f,
+        -1.97937101f,  0.00551589f, -3.56189375e-16f,
+         0.74384913f, -0.03606666f,  5.70337711e-16f,
+
+         1.20562378f,  0.41574624f,  5.33591709e-16f,
+        -1.90547864f,  0.08070810f, -6.96923002e-16f,
+         0.69985486f, -0.49645434f,  8.95887736e-17f,
+
+         1.23552187f,  0.03055077f, -5.14148336e-16f,
+        -1.97937101f,  0.00551589f, -3.56189375e-16f,
+         0.74384913f, -0.03606666f,  5.70337711e-16f
+    };
+
+    const double tol = 5e-3;
+
+    // Check explained variance.
+    {
+        auto it_a = result.explained_variance.begin();
+        auto it_b = expected_expv.begin();
+        for (; it_a != result.explained_variance.end() &&
+            it_b != expected_expv.end(); ++it_a, ++it_b)
+        {
+            EXPECT_NEAR(*it_a, *it_b, tol);
+        }
+    }
+
+    // Check loadings.
+    {
+        auto it_a = result.loadings.begin();
+        auto it_b = expected_loadings.begin();
+        for (; it_a != result.loadings.end() &&
+            it_b != expected_loadings.end(); ++it_a, ++it_b)
+        {
+            EXPECT_NEAR(std::fabs(*it_a), std::fabs(*it_b), tol);
+        }
+    }
+
+    // Check projections.
+    {
+        auto it_a = result.projections.begin();
+        auto it_b = expected_projections.begin();
+        for (; it_a != result.projections.end() &&
+            it_b != expected_projections.end(); ++it_a, ++it_b)
+        {
+            EXPECT_NEAR(std::fabs(*it_a), std::fabs(*it_b), tol);
+        }
+    }
+}
+
+/**
+ * @test PCA.pca_4d_k2
+ * @brief PCA on 4D input with n_components=2; verifies truncated eigenvalues,
+ * loadings, and projections.
+ */
+
+TEST(PCA, pca_4d_k2)
+{
+    Tensor<float> t({2, 2, 3, 3});
+    t = {
+
+        1, 2, 3,
+        4, 5, 6,
+        2, 3, 2,
+
+
+        1, 3, 5,
+        7, 9, 45,
+        2, 4, 10,
+
+
+        1, 2, 3,
+        4, 5, 6,
+        2, 3, 2,
+
+
+        1, 3, 5,
+        7, 9, 45,
+        2, 4, 10
+    };
+
+    ml::PCAResult result = ml::pca(t, 2, true);
+
+    Tensor<float> expected_expv({2, 2, 1, 2});
+    expected_expv =
+    {
+        2.78708718f, 0.21291282f,
+
+        2.99886771f, 0.00113229f,
+
+        2.78708718f, 0.21291282f,
+
+        2.99886771f, 0.00113229f
+    };
+
+    Tensor<float> expected_loadings({2, 2, 3, 2});
+    expected_loadings =
+    {
+        -0.58916765f, -0.39100062f,
+        -0.58916765f, -0.39100062f,
+        -0.55295837f,  0.83320888f,
+
+        -0.57740479f, -0.40817118f,
+        -0.57740479f, -0.40817118f,
+        -0.57724122f,  0.81657368f,
+
+        -0.58916765f, -0.39100062f,
+        -0.58916765f, -0.39100062f,
+        -0.55295837f,  0.83320888f,
+
+        -0.57740479f, -0.40817118f,
+        -0.57740479f, -0.40817118f,
+        -0.57724122f,  0.81657368f
+    };
+
+    Tensor<float> expected_proj({2, 2, 3, 2});
+    expected_proj =
+    {
+         1.20562378f,  0.41574624f,
+        -1.90547864f,  0.08070810f,
+         0.69985486f, -0.49645434f,
+
+         1.23552187f,  0.03055077f,
+        -1.97937101f,  0.00551589f,
+         0.74384913f, -0.03606666f,
+
+         1.20562378f,  0.41574624f,
+        -1.90547864f,  0.08070810f,
+         0.69985486f, -0.49645434f,
+
+         1.23552187f,  0.03055077f,
+        -1.97937101f,  0.00551589f,
+         0.74384913f, -0.03606666f
+    };
+
+    const double tol = 5e-3;
+
+    // Check explained variance.
+    {
+        auto a = result.explained_variance.begin();
+        auto b = expected_expv.begin();
+        for (; a != result.explained_variance.end() &&
+               b != expected_expv.end(); ++a, ++b)
+        {
+            EXPECT_NEAR(*a, *b, tol);
+        }
+    }
+
+    // Check loadings.
+    {
+        auto a = result.loadings.begin();
+        auto b = expected_loadings.begin();
+        for (; a != result.loadings.end() &&
+               b != expected_loadings.end(); ++a, ++b)
+        {
+            EXPECT_NEAR(std::fabs(*a), std::fabs(*b), tol);
+        }
+    }
+
+    // Check projections.
+    {
+        auto a = result.projections.begin();
+        auto b = expected_proj.begin();
+        for (; a != result.projections.end() &&
+               b != expected_proj.end(); ++a, ++b)
+        {
+            EXPECT_NEAR(std::fabs(*a), std::fabs(*b), tol);
+        }
+    }
+}
+
+/**
+ * @test PCA.pca_4d_alias_view_strided
+ * @brief PCA on a non-contiguous strided alias view of a 4D tensor; ensures
+ * batching and stride traversal work correctly.
+ */
+
+TEST(PCA, pca_4d_alias_view_strided)
+{
+    const std::vector<uint64_t> owner_dims = {2, 2, 3, 3};
+    const uint64_t b0 = owner_dims[0];
+    const uint64_t b1 = owner_dims[1];
+    const uint64_t rows = owner_dims[2];
+    const uint64_t cols = owner_dims[3];
+    ASSERT_EQ(rows, cols);
+    const uint64_t elems_per_batch = rows * cols;
+    const uint64_t owner_total = b0 * b1 * elems_per_batch;
+
+    std::vector<float> owner_flat(owner_total, 0.0f);
+
+    {
+        const uint64_t batch_base = (0 * owner_dims[1] + 0) * elems_per_batch;
+        owner_flat[batch_base + 0 * cols + 0] = 1.0f;
+        owner_flat[batch_base + 0 * cols + 1] = 2.0f;
+        owner_flat[batch_base + 0 * cols + 2] = 3.0f;
+        owner_flat[batch_base + 1 * cols + 0] = 4.0f;
+        owner_flat[batch_base + 1 * cols + 1] = 5.0f;
+        owner_flat[batch_base + 1 * cols + 2] = 6.0f;
+        owner_flat[batch_base + 2 * cols + 0] = 2.0f;
+        owner_flat[batch_base + 2 * cols + 1] = 3.0f;
+        owner_flat[batch_base + 2 * cols + 2] = 2.0f;
+    }
+
+    {
+        const uint64_t batch_base = (1 * owner_dims[1] + 0) * elems_per_batch;
+        owner_flat[batch_base + 0 * cols + 0] = 1.0f;
+        owner_flat[batch_base + 0 * cols + 1] = 3.0f;
+        owner_flat[batch_base + 0 * cols + 2] = 5.0f;
+        owner_flat[batch_base + 1 * cols + 0] = 7.0f;
+        owner_flat[batch_base + 1 * cols + 1] = 9.0f;
+        owner_flat[batch_base + 1 * cols + 2] = 45.0f;
+        owner_flat[batch_base + 2 * cols + 0] = 2.0f;
+        owner_flat[batch_base + 2 * cols + 1] = 4.0f;
+        owner_flat[batch_base + 2 * cols + 2] = 10.0f;
+    }
+
+    Tensor<float> owner(owner_dims, MemoryLocation::DEVICE);
+    owner = owner_flat;
+
+    std::vector<uint64_t> start_indices = {0, 0, 0, 0};
+    std::vector<uint64_t> view_dims = {2, 1, rows, cols};
+
+    std::vector<uint64_t> view_strides = {
+        elems_per_batch * 2,
+        elems_per_batch,
+        static_cast<uint64_t>(cols),
+        1
+    };
+
+    Tensor<float> view(owner, start_indices, view_dims, view_strides);
+
+    ml::PCAResult<float> result = ml::pca(view, std::nullopt, true);
+
+    Tensor<float> expected_expv({2, 1, 3});
+    expected_expv =
+    {
+        2.78708718f, 0.21291282f, 7.03016493e-16f,
+        2.99886771f, 0.00113229f, 7.05596321e-16f
+    };
+
+    Tensor<float> expected_loadings({2, 1, 3, 3});
+    expected_loadings =
+    {
+        -0.58916765f, -0.39100062f, -0.70710678f,
+        -0.58916765f, -0.39100062f,  0.70710678f,
+        -0.55295837f,  0.83320888f, -1.22124533e-15f,
+
+        -0.57740479f, -0.40817118f, -0.70710678f,
+        -0.57740479f, -0.40817118f,  0.70710678f,
+        -0.57724122f,  0.81657368f, -1.33559830e-13f
+    };
+
+    Tensor<float> expected_projections({2, 1, 3, 3});
+    expected_projections =
+    {
+         1.20562378f,  0.41574624f, -7.20766725e-16f,
+        -1.90547864f,  0.08070810f, -4.94177148e-17f,
+         0.69985486f, -0.49645434f,  7.24197496e-16f,
+
+         1.23552187f,  0.03055077f, -5.14396459e-15f,
+        -1.97937101f,  0.00551589f, -3.04875468e-16f,
+         0.74384913f, -0.03606666f,  5.87388085e-15f
+    };
+
+    const double tol = 5e-3;
+
+    // Check explained variance.
+    {
+        auto it_a = result.explained_variance.begin();
+        auto it_b = expected_expv.begin();
+        for (; it_a != result.explained_variance.end() &&
+            it_b != expected_expv.end();
+            ++it_a, ++it_b)
+        {
+            EXPECT_NEAR(*it_a, *it_b, tol);
+        }
+    }
+
+    // Check loadings.
+    {
+        auto it_a = result.loadings.begin();
+        auto it_b = expected_loadings.begin();
+        for (; it_a != result.loadings.end() && it_b != expected_loadings.end();
+            ++it_a, ++it_b)
+        {
+            EXPECT_NEAR(std::fabs(*it_a), std::fabs(*it_b), tol);
+        }
+    }
+
+    // Check projections.
+    {
+        auto it_a = result.projections.begin();
+        auto it_b = expected_projections.begin();
+        for (; it_a != result.projections.end() &&
+            it_b != expected_projections.end();
+            ++it_a, ++it_b)
+        {
+            EXPECT_NEAR(std::fabs(*it_a), std::fabs(*it_b), tol);
+        }
+    }
+}
+
+/**
+ * @test PCA.pca_rank_less_than_two_throws
+ * @brief PCA on rank-1 tensor should throw std::invalid_argument.
+ */
+TEST(PCA, pca_rank_less_than_two_throws)
+{
+    Tensor<float> t({5});
+
+    EXPECT_THROW({
+        ml::pca(t, std::nullopt, true);
+    }, std::invalid_argument);
+}
+
+/**
+ * @test PCA.pca_n_components_too_large_throws
+ * @brief Requesting more components than the feature dimension should throw.
+ */
+TEST(PCA, pca_n_components_too_large_throws)
+{
+    Tensor<float> t({4, 3});
+
+    EXPECT_THROW({
+        ml::pca(t, 4, true);
+    }, std::invalid_argument);
+}
+
+/**
+ * @test PCA.pca_n_components_zero_throws
+ * @brief Requesting zero components should throw std::invalid_argument.
+ */
+TEST(PCA, pca_n_components_zero_throws)
+{
+    Tensor<float> t({4, 3});
+
+    EXPECT_THROW({
+        ml::pca(t, 0, true);
+    }, std::invalid_argument);
+}
+
 } // namespace Test

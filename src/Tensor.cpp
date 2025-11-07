@@ -748,7 +748,6 @@ Tensor<value_t> & Tensor<value_t>::operator=(value_t val)
     return *this;
 }
 
-
 template<typename value_t>
 Tensor<value_t> Tensor<value_t>::operator[](uint64_t idx)
 {
