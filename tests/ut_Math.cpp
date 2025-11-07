@@ -3535,6 +3535,538 @@ TYPED_TEST(TypedArgsort, argsort_3d_axis1)
 }
 
 /**
+ * @test TypedArgsort.argsort_3d_axis_flattened
+ * @brief Argsort over the entire tensor for a 2x3x2 tensor, descending order.
+ * When axis == std::nullopt the tensor is flattened and
+ * argsort operates over the whole 1-D view of the tensor.
+ */
+TYPED_TEST(TypedArgsort, argsort_3d_axis_flattened)
+{
+    using value_t = TypeParam;
+    Tensor<value_t> owner({2,3,2}, MemoryLocation::DEVICE);
+
+    std::vector<value_t> vals;
+    vals.reserve(2*3*2);
+    for (uint64_t i = 0; i < 2; ++i)
+    {
+        for (uint64_t j = 0; j < 3; ++j)
+        {
+            for (uint64_t k = 0; k < 2; ++k)
+            {
+                vals.push_back(static_cast<value_t>(i * 100 + j * 10 + k));
+            }
+        }
+    }
+    owner = vals;
+
+    Tensor<uint64_t> res = math::argsort<value_t>(owner, std::nullopt, true);
+
+    const uint64_t axis_size = owner.get_num_elements();
+    const uint64_t slice_count = 1;
+    ASSERT_EQ(res.get_num_elements(), axis_size * slice_count);
+
+    std::vector<uint64_t> host(axis_size);
+    g_sycl_queue.memcpy(host.data(), res.m_p_data.get(),
+                        sizeof(uint64_t) * host.size()).wait();
+
+    for (uint64_t r = 0; r < axis_size; ++r)
+    {
+        ASSERT_EQ(host[r], axis_size - 1 - r);
+    }
+}
+
+template<typename T>
+class TypedGather : public ::testing::Test {};
+
+using GatherTestTypes = ::testing::Types<float, uint64_t>;
+TYPED_TEST_SUITE(TypedGather, GatherTestTypes);
+
+/**
+ * @test TypedGather.gather_2d_last_axis
+ * @brief Argsort each row (last axis) of a 2x3 tensor and gather using the
+ * produced ordering. Verifies per-row ascending ordering of the last axis.
+ */
+TYPED_TEST(TypedGather, gather_2d_last_axis)
+{
+    using value_t = TypeParam;
+    Tensor<value_t> t({2, 3}, MemoryLocation::DEVICE);
+
+    t = {1, 3, 2, 15, 7, 6};
+
+    Tensor<uint64_t> order = math::argsort(t, -1);
+
+    Tensor<value_t> sorted = math::gather(t, order, -1);
+
+    Tensor<value_t> expected({2, 3});
+    expected =
+    {
+        1, 2, 3,
+        6, 7, 15
+    };
+
+    EXPECT_EQ(sorted, expected);
+}
+
+/**
+ * @test TypedGather.gather_3d_axis_flattened
+ * @brief Compute argsort over the entire 3D tensor (flattened) and use the
+ * resulting flattened indices to gather into a new tensor. Verifies that a
+ * flattened index ordering is applied across all elements.
+ */
+TYPED_TEST(TypedGather, gather_3d_axis_flattened)
+{
+    using value_t = TypeParam;
+    Tensor<value_t> owner({2,3,2}, MemoryLocation::DEVICE);
+
+    std::vector<value_t> vals;
+    vals.reserve(2*3*2);
+    for (uint64_t i = 0; i < 2; ++i)
+    {
+        for (uint64_t j = 0; j < 3; ++j)
+        {
+            for (uint64_t k = 0; k < 2; ++k)
+            {
+                vals.push_back(static_cast<value_t>(i * 100 + j * 10 + k));
+            }
+        }
+    }
+    owner = vals;
+
+    Tensor<uint64_t> res = math::argsort<value_t>(owner, std::nullopt, true);
+
+    Tensor<value_t> sorted = math::gather(owner, res, std::nullopt);
+
+    Tensor<value_t> expected({2, 3, 2});
+    expected =
+    {
+        121, 120,
+        111, 110,
+        101, 100,
+
+        21, 20,
+        11, 10,
+        1, 0
+    };
+
+    EXPECT_EQ(sorted, expected);
+}
+
+/**
+ * @test TypedGather.gather_2d_first_axis
+ * @brief Argsort along axis 0 for a 2x3 tensor (per-column ordering) and
+ * gather to produce rows sorted by column-wise ordering.
+ */
+TYPED_TEST(TypedGather, gather_2d_first_axis)
+{
+    using value_t = TypeParam;
+    Tensor<value_t> t({2, 3}, MemoryLocation::DEVICE);
+    t = {5, 4, 3, 1, 2, 0};
+
+    Tensor<uint64_t> order = math::argsort(t, 0);
+
+    Tensor<value_t> sorted = math::gather(t, order, 0);
+
+    Tensor<value_t> expected({2, 3});
+    expected =
+    {
+        1, 2, 0,
+        5, 4, 3
+    };
+
+    EXPECT_EQ(sorted, expected);
+}
+
+/**
+ * @test TypedGather.gather_negative_axis_middle
+ * @brief Use a negative axis (-2) to select the middle axis of a 2x2x2 tensor,
+ * argsort along that axis and gather accordingly. Verifies correct handling of
+ * negative axis values and axis-relative gathering.
+ */
+TYPED_TEST(TypedGather, gather_negative_axis_middle)
+{
+    using value_t = TypeParam;
+
+    Tensor<value_t> t({2,2,2}, MemoryLocation::DEVICE);
+    t =
+    {
+        0,3,
+        2,1,
+
+        4,7,
+        6,5
+    };
+
+    Tensor<uint64_t> order = math::argsort(t, -2, true);
+
+    Tensor<value_t> sorted = math::gather(t, order, -2);
+
+    Tensor<value_t> expected({2,2,2});
+    expected =
+    {
+        2,3,
+        0,1,
+
+        6,7,
+        4,5
+    };
+    EXPECT_EQ(sorted, expected);
+}
+
+/**
+ * @test TypedGather.gather_strided_input_axis0
+ * @brief Gather from a non-contiguous (strided) 1D view derived from an
+ * owner tensor. Verifies gather correctly indexes into alias/view tensors.
+ */
+TYPED_TEST(TypedGather, gather_strided_input_axis0)
+{
+    using value_t = TypeParam;
+
+    Tensor<value_t> owner({6}, MemoryLocation::DEVICE);
+    owner = std::vector<value_t>
+    {
+        static_cast<value_t>(10),
+        static_cast<value_t>(11),
+        static_cast<value_t>(20),
+        static_cast<value_t>(21),
+        static_cast<value_t>(30),
+        static_cast<value_t>(31)
+    };
+
+    Tensor<value_t> v(owner, std::vector<uint64_t>{0},
+        std::vector<uint64_t>{3}, std::vector<uint64_t>{2});
+
+    Tensor<uint64_t> idx({3}, MemoryLocation::DEVICE);
+    idx = std::vector<uint64_t>{2, 0, 1};
+
+    Tensor<value_t> res = math::gather(v, idx, 0);
+
+    Tensor<value_t> expected({3}, MemoryLocation::DEVICE);
+    expected = std::vector<value_t>
+    {
+        static_cast<value_t>(30),
+        static_cast<value_t>(10),
+        static_cast<value_t>(20)
+    };
+
+    EXPECT_EQ(res, expected);
+}
+
+/**
+ * @test TypedGather.gather_flattened_with_strided_indexes
+ * @brief Flattened gather (axis = nullopt) using an indexes view with stride>1.
+ * The index view selects every-other entry from a backing array; verifies the
+ * gather correctly reads logical index values from a non-contiguous index view.
+ */
+TYPED_TEST(TypedGather, gather_flattened_with_strided_indexes)
+{
+    using value_t = TypeParam;
+
+    Tensor<value_t> owner({2,3,2}, MemoryLocation::DEVICE);
+    std::vector<value_t> vals;
+    vals.reserve(12);
+    for (uint64_t i = 0; i < 12; ++i)
+    {
+        vals.push_back(static_cast<value_t>(i));
+    }
+    owner = vals;
+
+    const uint64_t tot = owner.get_num_elements();
+
+    std::vector<uint64_t> idx_owner(24, 0);
+    for (uint64_t i = 0; i < tot; ++i)
+    {
+        idx_owner[2 * i] = (tot - 1) - i;
+    }
+
+    Tensor<uint64_t> idx_owner_tensor({24}, MemoryLocation::DEVICE);
+    idx_owner_tensor = idx_owner;
+
+    Tensor<uint64_t> idx_view(idx_owner_tensor, std::vector<uint64_t>{0},
+        std::vector<uint64_t>{tot}, std::vector<uint64_t>{2});
+
+    Tensor<value_t> out = math::gather(owner, idx_view, std::nullopt);
+
+    Tensor<value_t> expected({2,3,2}, MemoryLocation::DEVICE);
+    std::vector<value_t> exp_vals(tot);
+    for (uint64_t i = 0; i < tot; ++i)
+    {
+        exp_vals[i] = static_cast<value_t>( (tot - 1) - i );
+    }
+    expected = exp_vals;
+
+    EXPECT_EQ(out, expected);
+}
+
+/**
+ * @test TypedGather.gather_indexes_view_non_flattened
+ * @brief Use a non-contiguous multi-dimensional index view (derived from a
+ * larger backing array) to gather along the last axis of the data tensor.
+ * Verifies correct logical indexing through a strided index view in the
+ * non-flattened (axis-specified) path.
+ */
+TYPED_TEST(TypedGather, gather_indexes_view_non_flattened)
+{
+    using value_t = TypeParam;
+
+    Tensor<value_t> owner({2,3,2}, MemoryLocation::DEVICE);
+    std::vector<value_t> owner_vals;
+    owner_vals.reserve(12);
+    for (uint64_t i = 0; i < 12; ++i)
+    {
+        owner_vals.push_back(static_cast<value_t>(i));
+    }
+    owner = owner_vals;
+
+    Tensor<uint64_t> idx_owner({2,3,4}, MemoryLocation::DEVICE);
+    std::vector<uint64_t> idx_owner_vals(2 * 3 * 4, 999);
+    for (uint64_t i = 0; i < 2; ++i)
+    {
+        for (uint64_t j = 0; j < 3; ++j)
+        {
+            idx_owner_vals[(i * 3 + j) * 4 + 0] = 1;
+            idx_owner_vals[(i * 3 + j) * 4 + 2] = 0;
+        }
+    }
+    idx_owner = idx_owner_vals;
+
+    Tensor<uint64_t> idx_view(idx_owner,
+        std::vector<uint64_t>{0,0,0},
+        std::vector<uint64_t>{2,3,2},
+        std::vector<uint64_t>{12,4,2});
+
+    Tensor<value_t> out = math::gather(owner, idx_view, 2);
+
+    std::vector<value_t> expected_host;
+    for (uint64_t i = 0; i < 2; ++i)
+    {
+        for (uint64_t j = 0; j < 3; ++j)
+        {
+            uint64_t base = i * (3 * 2) + j * 2;
+            expected_host.push_back(owner_vals[base + 1]);
+            expected_host.push_back(owner_vals[base + 0]);
+        }
+    }
+
+    Tensor<value_t> expected({2, 3, 2});
+
+    expected = expected_host;
+
+    EXPECT_EQ(out, expected);
+}
+
+/**
+ * @test TypedGather.gather_both_views
+ * @brief Gather where both the source data and the index tensors are alias
+ * views (non-contiguous). Ensures the gather logic correctly maps view
+ * coordinates of both tensors when gathering along axis 0.
+ */
+TYPED_TEST(TypedGather, gather_both_views)
+{
+    using value_t = TypeParam;
+
+    Tensor<value_t> data_owner({4,3,2}, MemoryLocation::DEVICE);
+    std::vector<value_t> data_owner_vals(4 * 3 * 2);
+    for (uint64_t i = 0; i < data_owner_vals.size(); ++i)
+    {
+        data_owner_vals[i] = static_cast<value_t>(i);
+    }
+    data_owner = data_owner_vals;
+
+    Tensor<value_t> data_view(data_owner,
+        std::vector<uint64_t>{0,0,0},
+        std::vector<uint64_t>{2,3,2},
+        std::vector<uint64_t>{12,2,1});
+
+    Tensor<uint64_t> idx_owner({2,3,4}, MemoryLocation::DEVICE);
+    std::vector<uint64_t> idx_owner_vals(2 * 3 * 4, 0);
+    for (uint64_t i = 0; i < 2; ++i)
+    {
+        for (uint64_t j = 0; j < 3; ++j)
+        {
+            idx_owner_vals[(i * 3 + j) * 4 + 0] = 1;
+            idx_owner_vals[(i * 3 + j) * 4 + 2] = 1;
+        }
+    }
+    idx_owner = idx_owner_vals;
+
+    Tensor<uint64_t> idx_view(idx_owner,
+        std::vector<uint64_t>{0,0,0},
+        std::vector<uint64_t>{2,3,2},
+        std::vector<uint64_t>{12,4,2});
+
+    Tensor<value_t> out = math::gather(data_view, idx_view, 0);
+
+    std::vector<value_t> expected_host;
+    for (uint64_t i = 0; i < 2; ++i)
+    {
+        for (uint64_t j = 0; j < 3; ++j)
+        {
+            for (uint64_t k = 0; k < 2; ++k)
+            {
+                uint64_t chosen = 1;
+                uint64_t owner_idx = chosen * 12 + j * 2 + k;
+                expected_host.push_back(data_owner_vals[owner_idx]);
+            }
+        }
+    }
+
+    Tensor<value_t> expected({2, 3, 2});
+    expected = expected_host;
+
+    EXPECT_EQ(out, expected);
+}
+
+/**
+ * @test TypedGather.axis_out_of_range_throws
+ * @brief Passing an axis outside the valid range must
+ * throw std::invalid_argument.
+ */
+TYPED_TEST(TypedGather, axis_out_of_range_throws)
+{
+    using value_t = TypeParam;
+    Tensor<value_t> t({2,3}, MemoryLocation::DEVICE);
+    std::vector<value_t> vals = {
+        static_cast<value_t>(1), static_cast<value_t>(2), static_cast<value_t>(3),
+        static_cast<value_t>(4), static_cast<value_t>(5), static_cast<value_t>(6)
+    };
+    t = vals;
+    Tensor<uint64_t> idx = math::argsort(t, 0);
+
+    EXPECT_THROW(math::gather(t, idx, 5), std::invalid_argument);
+}
+
+/**
+ * @test TypedGather.indexes_rank_higher_than_input_throws
+ * @brief If indexes tensor has rank greater than the input tensor, gather must
+ * throw std::invalid_argument.
+ */
+TYPED_TEST(TypedGather, indexes_rank_higher_than_input_throws)
+{
+    using value_t = TypeParam;
+    Tensor<value_t> t({2, 2}, MemoryLocation::DEVICE);
+    std::vector<value_t> vals = {
+        static_cast<value_t>(1), static_cast<value_t>(2),
+        static_cast<value_t>(3), static_cast<value_t>(4)
+    };
+    t = vals;
+
+    Tensor<uint64_t> idx({1,2,2}, MemoryLocation::DEVICE);
+    std::vector<uint64_t> dummy(1*2*2, 0);
+    idx = dummy;
+
+    EXPECT_THROW(math::gather(t, idx, 0), std::invalid_argument);
+}
+
+/**
+ * @test TypedGather.flattened_indexes_not_1d_throws
+ * @brief For flattened gather (axis == nullopt) the indexes tensor must be
+ * 1-D; otherwise std::invalid_argument must be thrown.
+ */
+TYPED_TEST(TypedGather, flattened_indexes_not_1d_throws)
+{
+    using value_t = TypeParam;
+    Tensor<value_t> t({2,2}, MemoryLocation::DEVICE);
+    std::vector<value_t> vals =
+    {
+        static_cast<value_t>(1), static_cast<value_t>(2),
+        static_cast<value_t>(3), static_cast<value_t>(4)
+    };
+    t = vals;
+
+    Tensor<uint64_t> idx({2,1}, MemoryLocation::DEVICE);
+    idx = std::vector<uint64_t>{0,1};
+
+    EXPECT_THROW(math::gather(t, idx, std::nullopt), std::invalid_argument);
+}
+
+/**
+ * @test TypedGather.flattened_indexes_wrong_length_throws
+ * @brief For flattened gather the 1-D indexes length must equal the total
+ * number of input elements; otherwise std::invalid_argument must be thrown.
+ */
+TYPED_TEST(TypedGather, flattened_indexes_wrong_length_throws)
+{
+    using value_t = TypeParam;
+    Tensor<value_t> t({2,3}, MemoryLocation::DEVICE);
+    std::vector<value_t> vals =
+    {
+        static_cast<value_t>(0), static_cast<value_t>(1), static_cast<value_t>(2),
+        static_cast<value_t>(3), static_cast<value_t>(4), static_cast<value_t>(5)
+    };
+    t = vals;
+
+    Tensor<uint64_t> idx({5}, MemoryLocation::DEVICE);
+    idx = std::vector<uint64_t>{0,1,2,3,4};
+
+    EXPECT_THROW(math::gather(t, idx, std::nullopt), std::invalid_argument);
+}
+
+/**
+ * @test TypedGather.index_value_out_of_range_flattened_throws
+ * @brief Flattened gather with any index >= total_input_elems must throw
+ * std::out_of_range.
+ */
+TYPED_TEST(TypedGather, index_value_out_of_range_flattened_throws)
+{
+    using value_t = TypeParam;
+    Tensor<value_t> t({2,2}, MemoryLocation::DEVICE);
+    std::vector<value_t> vals =
+    {
+        static_cast<value_t>(10), static_cast<value_t>(20),
+        static_cast<value_t>(30), static_cast<value_t>(40)
+    };
+    t = vals;
+
+    Tensor<uint64_t> idx({4}, MemoryLocation::DEVICE);
+    idx = std::vector<uint64_t>{3,2,1,4};
+
+    EXPECT_THROW(math::gather(t, idx, std::nullopt), std::out_of_range);
+}
+
+/**
+ * @test TypedGather.index_value_out_of_range_axis_throws
+ * @brief In axis-based gather, any index value that is >= size of the chosen
+ * axis must cause std::out_of_range to be thrown.
+ */
+TYPED_TEST(TypedGather, index_value_out_of_range_axis_throws)
+{
+    using value_t = TypeParam;
+    Tensor<value_t> t({2,3}, MemoryLocation::DEVICE);
+    std::vector<value_t> vals =
+    {
+        static_cast<value_t>(1), static_cast<value_t>(2), static_cast<value_t>(3),
+        static_cast<value_t>(4), static_cast<value_t>(5), static_cast<value_t>(6)
+    };
+    t = vals;
+
+    Tensor<uint64_t> idx({2,3}, MemoryLocation::DEVICE);
+    idx = std::vector<uint64_t>{0,1,2, 0,5,1};
+
+    EXPECT_THROW(math::gather(t, idx, 1), std::out_of_range);
+}
+
+/**
+ * @test TypedGather.incompatible_broadcast_throws
+ * @brief If indexes cannot be broadcast to the input shape (for axis-based
+ * gather), std::invalid_argument must be thrown.
+ */
+TYPED_TEST(TypedGather, incompatible_broadcast_throws)
+{
+    using value_t = TypeParam;
+    Tensor<value_t> t({2,3}, MemoryLocation::DEVICE);
+    std::vector<value_t> vals = {
+        static_cast<value_t>(1), static_cast<value_t>(2), static_cast<value_t>(3),
+        static_cast<value_t>(4), static_cast<value_t>(5), static_cast<value_t>(6)
+    };
+    t = vals;
+
+    Tensor<uint64_t> idx({2,2}, MemoryLocation::DEVICE);
+    idx = std::vector<uint64_t>{0,1, 1,0};
+
+    EXPECT_THROW(math::gather(t, idx, 0), std::invalid_argument);
+}
+
+/**
  * @test LINSPACE.scalar_endpoint_true
  * @brief Linspace with 1-element start/stop (shape {1}), endpoint=true,
  * produces expected evenly spaced values when inserting axis 0.

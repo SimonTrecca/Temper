@@ -306,10 +306,45 @@ template<typename value_t>
 Tensor<uint64_t> argsort(const Tensor<value_t> & tensor,
     std::optional<int64_t> axis_opt = std::nullopt,
     bool descending = false);
+/// Explicit instantiation of argsort for float
 extern template Tensor<uint64_t> argsort<float>
 (const Tensor<float>&, std::optional<int64_t>, bool);
+/// Explicit instantiation of argsort for uint64_t
 extern template Tensor<uint64_t> argsort<uint64_t>
 (const Tensor<uint64_t>&, std::optional<int64_t>, bool);
+
+/**
+ * @brief Gather elements from a tensor using integer indices.
+ *
+ * Supports two modes:
+ * - **Flattened** (@p axis_opt is @c std::nullopt): @p indexes must be 1-D
+ * and its length must equal the total number of elements in @p tensor.
+ * - **Axis-based** (when @p axis_opt is provided): @p indexes
+ * (rank ≤ tensor.rank()) must be broadcastable to the input shape and supplies,
+ * for each output location, an index selecting an element along the chosen axis.
+ *
+ * @param tensor Source tensor.
+ * @param indexes Index tensor (uint64_t).
+ * @param axis_opt Optional axis to gather along (nullopt = flattened).
+ * @return Tensor<value_t> Result with same shape and memory location
+ * as `tensor`.
+ *
+ * @throws std::invalid_argument On bad ranks/shape/axis or
+ * incompatible broadcast.
+ * @throws std::out_of_range On index values outside allowed range.
+ * @throws std::bad_alloc On allocation failure.
+ * @throws std::runtime_error On device/kernel numeric errors.
+ */
+template<typename value_t>
+Tensor<value_t> gather(const Tensor<value_t> & tensor,
+    const Tensor<uint64_t> & indexes,
+    std::optional<int64_t> axis_opt = std::nullopt);
+/// Explicit instantiation of gather for float
+extern template Tensor<float> gather<float>
+(const Tensor<float>&, const Tensor<uint64_t>&, std::optional<int64_t>);
+/// Explicit instantiation of gather for uint64_t
+extern template Tensor<uint64_t> gather<uint64_t>
+(const Tensor<uint64_t>&, const Tensor<uint64_t>&, std::optional<int64_t>);
 
 /**
  * @brief Elementwise linear interpolation between two tensors.

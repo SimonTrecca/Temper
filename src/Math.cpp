@@ -1262,6 +1262,236 @@ template Tensor<uint64_t> argsort<float>
 template Tensor<uint64_t> argsort<uint64_t>
     (const Tensor<uint64_t>&, std::optional<int64_t>, bool);
 
+template<typename value_t>
+Tensor<value_t> gather(const Tensor<value_t> & tensor,
+    const Tensor<uint64_t> & indexes,
+    std::optional<int64_t> axis_opt)
+{
+    const std::vector<uint64_t> & in_shape = tensor.get_dimensions();
+    const int64_t in_rank = tensor.get_rank();
+
+    if (in_shape.empty())
+    {
+        throw std::invalid_argument(R"(gather: input tensor has no elements.)");
+    }
+
+    const bool flatten = !axis_opt.has_value();
+    int64_t axis = -1;
+    if (!flatten)
+    {
+        axis = axis_opt.value();
+        if (axis < 0)
+        {
+            axis += in_rank;
+        }
+        if (axis < 0 || axis >= in_rank)
+        {
+            throw std::invalid_argument("gather: axis out of bounds");
+        }
+    }
+
+    const uint64_t total_elems = tensor.get_num_elements();
+
+    const uint64_t idx_elems = indexes.get_num_elements();
+    const int64_t idx_rank = indexes.get_rank();
+    if (flatten)
+    {
+        if (idx_rank != 1)
+        {
+            throw std::invalid_argument(R"(gather:
+                for flattened gather, indexes must be 1-D.)");
+        }
+        if (idx_elems != total_elems)
+        {
+            throw std::invalid_argument(R"(gather:
+                for flattened gather, indexes length must equal
+                total input elements.)");
+        }
+    }
+    else
+    {
+        if (idx_rank > in_rank)
+        {
+            throw std::invalid_argument(R"(gather:
+                indexes tensor has higher rank than input tensor.)");
+        }
+    }
+
+    temper::utils::TensorDesc a_desc;
+    a_desc.shape = in_shape;
+    a_desc.strides = tensor.get_strides();
+
+    temper::utils::TensorDesc b_desc;
+    temper::utils::BroadcastResult bres;
+
+    if (!flatten)
+    {
+        b_desc.shape = indexes.get_dimensions();
+        b_desc.strides = indexes.get_strides();
+        b_desc = temper::utils::align_tensor(b_desc, in_rank);
+
+        bres = temper::utils::compute_broadcast(a_desc, b_desc);
+    }
+
+    uint64_t axis_dim = 0;
+    if (flatten)
+    {
+        axis_dim = total_elems;
+    }
+    else
+    {
+        axis_dim = in_shape[axis];
+    }
+
+    std::vector<uint64_t> in_divs =
+        temper::utils::compute_divisors(a_desc.shape);
+
+    uint64_t* p_in_divs = static_cast<uint64_t*>(
+        sycl::malloc_device(sizeof(uint64_t) * in_rank, g_sycl_queue));
+    uint64_t* p_in_strides = static_cast<uint64_t*>(
+        sycl::malloc_device(sizeof(uint64_t) * in_rank, g_sycl_queue));
+    uint64_t* p_idx_bcast_strides = nullptr;
+    if (!flatten)
+    {
+        p_idx_bcast_strides = static_cast<uint64_t*>(
+            sycl::malloc_device(sizeof(uint64_t) * in_rank, g_sycl_queue));
+    }
+
+    uint64_t* p_idx_divs = nullptr;
+    uint64_t* p_idx_strides = nullptr;
+    int64_t idx_rank_actual = 0;
+    std::vector<uint64_t> idx_divs_vec;
+    std::vector<uint64_t> idx_strides_vec;
+    if (flatten)
+    {
+        idx_rank_actual = indexes.get_rank();
+        idx_divs_vec = temper::utils::compute_divisors
+            (indexes.get_dimensions());
+        idx_strides_vec = indexes.get_strides();
+        p_idx_divs = static_cast<uint64_t*>(sycl::malloc_device
+            (sizeof(uint64_t) * idx_rank_actual, g_sycl_queue));
+        p_idx_strides = static_cast<uint64_t*>(sycl::malloc_device
+            (sizeof(uint64_t) * idx_rank_actual, g_sycl_queue));
+    }
+
+    int32_t* p_error_flag = static_cast<int32_t*>(
+        sycl::malloc_shared(sizeof(int32_t), g_sycl_queue));
+
+    bool alloc_ok = (p_in_divs && p_in_strides && p_error_flag &&
+                 ((flatten && p_idx_divs && p_idx_strides) ||
+                  (!flatten && p_idx_bcast_strides)));
+    if (!alloc_ok)
+    {
+        if (p_in_divs) sycl::free(p_in_divs, g_sycl_queue);
+        if (p_in_strides) sycl::free(p_in_strides, g_sycl_queue);
+        if (p_idx_bcast_strides) sycl::free(p_idx_bcast_strides, g_sycl_queue);
+        if (p_idx_divs) sycl::free(p_idx_divs, g_sycl_queue);
+        if (p_idx_strides) sycl::free(p_idx_strides, g_sycl_queue);
+        if (p_error_flag) sycl::free(p_error_flag, g_sycl_queue);
+        throw std::bad_alloc();
+    }
+
+    g_sycl_queue.memcpy(p_in_divs,
+        in_divs.data(), sizeof(uint64_t) * in_rank).wait();
+    g_sycl_queue.memcpy(p_in_strides,
+        a_desc.strides.data(), sizeof(uint64_t) * in_rank).wait();
+    if (!flatten)
+    {
+        g_sycl_queue.memcpy(p_idx_bcast_strides,
+            bres.b_strides.data(), sizeof(uint64_t) * in_rank).wait();
+    }
+    else
+    {
+        g_sycl_queue.memcpy(p_idx_divs,
+            idx_divs_vec.data(), sizeof(uint64_t) * idx_rank_actual).wait();
+        g_sycl_queue.memcpy(p_idx_strides,
+            idx_strides_vec.data(), sizeof(uint64_t) * idx_rank_actual).wait();
+    }
+
+    const uint64_t* p_idx_base = indexes.get_data();
+
+    *p_error_flag = 0;
+
+    Tensor<value_t> result(in_shape, tensor.get_memory_location());
+    value_t* p_out = result.get_data();
+    const value_t* p_in = tensor.get_data();
+
+    g_sycl_queue.submit([&](sycl::handler& cgh)
+    {
+        cgh.parallel_for(sycl::range<1>(static_cast<size_t>(total_elems)),
+            [=](sycl::id<1> idx)
+        {
+            const uint64_t out_flat = static_cast<uint64_t>(idx[0]);
+
+            uint64_t chosen;
+
+            if (flatten)
+            {
+                uint64_t src_off = temper::sycl_utils::idx_of(
+                    out_flat, p_idx_divs, p_idx_strides, idx_rank_actual);
+                chosen = p_idx_base[src_off];
+
+                if (chosen >= total_elems)
+                {
+                    *p_error_flag = 1;
+                    return;
+                }
+                p_out[out_flat] = p_in[chosen];
+                return;
+            }
+            else
+            {
+                uint64_t idx_pos = temper::sycl_utils::idx_of(
+                    out_flat, p_in_divs, p_idx_bcast_strides, in_rank);
+                chosen = p_idx_base[idx_pos];
+
+                const uint64_t coord_axis =
+                    (out_flat / p_in_divs[axis]) % axis_dim;
+
+                uint64_t base = temper::sycl_utils::idx_of(
+                    out_flat, p_in_divs, p_in_strides, in_rank);
+                base -= coord_axis * p_in_strides[axis];
+
+                if (chosen >= axis_dim)
+                {
+                    *p_error_flag = 1;
+                    return;
+                }
+
+                uint64_t src_offset = base + chosen * p_in_strides[axis];
+                p_out[out_flat] = p_in[src_offset];
+                return;
+            }
+        });
+    }).wait();
+
+    int32_t err = *p_error_flag;
+
+    sycl::free(p_in_divs, g_sycl_queue);
+    sycl::free(p_in_strides, g_sycl_queue);
+    if (p_idx_bcast_strides) sycl::free(p_idx_bcast_strides, g_sycl_queue);
+    if (p_idx_divs) sycl::free(p_idx_divs, g_sycl_queue);
+    if (p_idx_strides) sycl::free(p_idx_strides, g_sycl_queue);
+    sycl::free(p_error_flag, g_sycl_queue);
+
+    if (err != 0)
+    {
+        if (err == 1)
+        {
+            throw std::out_of_range(R"(gather:
+                index value out of range for the selected axis
+                / flattened input.)");
+        }
+        throw std::runtime_error(R"(gather:
+            numeric/device error during gather.)");
+    }
+
+    return result;
+}
+template Tensor<float> gather<float>
+    (const Tensor<float>&, const Tensor<uint64_t>&, std::optional<int64_t>);
+template Tensor<uint64_t> gather<uint64_t>
+    (const Tensor<uint64_t>&, const Tensor<uint64_t>&, std::optional<int64_t>);
 
 template<typename value_t>
 Tensor<value_t> linspace(const Tensor<value_t>& start,
