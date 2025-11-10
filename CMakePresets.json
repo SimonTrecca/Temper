@@ -9,7 +9,7 @@
   "configurePresets":
   [
     {
-      "name": "debug",
+      "name": "debug-oneapi",
       "hidden": false,
       "generator": "Unix Makefiles",
       "binaryDir": "${sourceDir}/build-debug",
@@ -17,6 +17,20 @@
       {
         "CMAKE_C_COMPILER": "icx",
         "CMAKE_CXX_COMPILER": "icpx",
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "YES",
+        "CMAKE_INSTALL_PREFIX": "${sourceDir}/build-debug"
+      }
+    },
+    {
+      "name": "debug-acpp",
+      "hidden": false,
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/build-debug",
+      "cacheVariables":
+      {
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_CXX_COMPILER": "acpp",
         "CMAKE_BUILD_TYPE": "Debug",
         "CMAKE_EXPORT_COMPILE_COMMANDS": "YES",
         "CMAKE_INSTALL_PREFIX": "${sourceDir}/build-debug"

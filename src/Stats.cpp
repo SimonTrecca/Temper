@@ -218,14 +218,14 @@ Tensor<value_t> ppf(const Tensor<value_t>& q,
             if (scalep <= 0.0)
             {
                 p_error_flag[0] = 4;
-                p_out[flat] = sycl::nan(0u);
+                p_out[flat] = std::numeric_limits<value_t>::quiet_NaN();
                 return;
             }
 
             if (!(qp >= 0.0 && qp <= 1.0))
             {
                 p_error_flag[0] = 3;
-                p_out[flat] = sycl::nan(0u);
+                p_out[flat] = std::numeric_limits<value_t>::quiet_NaN();
                 return;
             }
 
@@ -382,7 +382,7 @@ Tensor<value_t> rvs(const Tensor<value_t>& loc,
             if (!(u >= 0.0 && u < 1.0))
             {
                 p_error_flag[0] = 2;
-                p_q[flat] = sycl::nan(0u);
+                p_q[flat] = std::numeric_limits<value_t>::quiet_NaN();
                 return;
             }
 

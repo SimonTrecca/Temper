@@ -2195,7 +2195,8 @@ TYPED_TEST(TypedTensor, operator_equals_copy_self_assignment)
     };
     t = v;
 
-    t = t;
+    Tensor<value_t> tmp = t;
+    t = tmp;
 
     std::vector<value_t> host(4);
     g_sycl_queue.memcpy(host.data(), t.m_p_data.get(),

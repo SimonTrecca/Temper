@@ -3450,7 +3450,6 @@ TYPED_TEST(TypedArgsort, argsort_3d_axis0)
     {
         for (uint64_t k = 0; k < 2; ++k)
         {
-            uint64_t slice = j * 2 + k;
             std::vector<bool> seen(axis_size, false);
             for (uint64_t r = 0; r < axis_size; ++r)
             {
@@ -3532,6 +3531,8 @@ TYPED_TEST(TypedArgsort, argsort_3d_axis1)
             ++slice_idx;
         }
     }
+
+    ASSERT_EQ(slice_idx, slice_count);
 }
 
 /**

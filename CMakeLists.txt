@@ -18,40 +18,46 @@ set (CMAKE_CXX_EXTENSIONS OFF)
 
 set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g")
 set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG")
-set (CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -Wall -Wextra -Werror -fsycl")
+set (CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -Wall -Wextra -Werror")
 
-message(STATUS "Checking for available GPU")
+if (CMAKE_CXX_COMPILER STREQUAL "icpx")
+  set (CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -fsycl")
 
-execute_process(
-  COMMAND sh -c "rocm_agent_enumerator | awk 'NR==1'"
-  OUTPUT_VARIABLE ROCMGPU
-  OUTPUT_STRIP_TRAILING_WHITESPACE
-)
+  message(STATUS "Checking for available GPU")
 
-if (NOT ROCMGPU STREQUAL "")
-    message(STATUS "Detected AMD GPU: ${ROCMGPU}")
-    set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -fsycl-targets=amdgcn-amd-amdhsa -Xsycl-target-backend --offload-arch=${ROCMGPU}")
-elseif (EXISTS "/usr/bin/nvidia-smi")
-    execute_process(
-        COMMAND sh -c "nvidia-smi --query-gpu=compute_cap --format=csv,noheader | awk 'NR==1 {split($1,a,\".\"); printf(\"sm_%d%d\", a[1], a[2])}'"
-        OUTPUT_VARIABLE CUDA_ARCH
+  execute_process(
+    COMMAND sh -c "rocm_agent_enumerator | awk 'NR==1'"
+    OUTPUT_VARIABLE ROCMGPU
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+  )
+
+  if (NOT ROCMGPU STREQUAL "")
+      message(STATUS "Detected AMD GPU: ${ROCMGPU}")
+      set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -fsycl-targets=amdgcn-amd-amdhsa -Xsycl-target-backend --offload-arch=${ROCMGPU}")
+  elseif (EXISTS "/usr/bin/nvidia-smi")
+      execute_process(
+          COMMAND sh -c "nvidia-smi --query-gpu=compute_cap --format=csv,noheader | awk 'NR==1 {split($1,a,\".\"); printf(\"sm_%d%d\", a[1], a[2])}'"
+          OUTPUT_VARIABLE CUDA_ARCH
+          OUTPUT_STRIP_TRAILING_WHITESPACE
+      )
+      message(STATUS "Detected NVIDIA GPU: ${CUDA_ARCH}")
+      set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -fsycl-targets=nvptx64-nvidia-cuda -Xsycl-target-backend --cuda-gpu-arch=${CUDA_ARCH}")
+  else()
+      execute_process(
+        COMMAND sh -c "sycl-ls | grep -i intel"
+        OUTPUT_VARIABLE INTEL_PLATFORM
         OUTPUT_STRIP_TRAILING_WHITESPACE
-    )
-    message(STATUS "Detected NVIDIA GPU: ${CUDA_ARCH}")
-    set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -fsycl-targets=nvptx64-nvidia-cuda -Xsycl-target-backend --cuda-gpu-arch=${CUDA_ARCH}")
-else()
-    execute_process(
-      COMMAND sh -c "sycl-ls | grep -i intel"
-      OUTPUT_VARIABLE INTEL_PLATFORM
-      OUTPUT_STRIP_TRAILING_WHITESPACE
-    )
-    if (NOT INTEL_PLATFORM STREQUAL "")
-        message(STATUS "Detected Intel GPU")
-        set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -fsycl-targets=spir64_gen")
-    else()
-        message(FATAL_ERROR "No supported GPU detected. Please install ROCm, NVIDIA, or Intel oneAPI drivers.")
-    endif()
-endif()
+      )
+      if (NOT INTEL_PLATFORM STREQUAL "")
+          message(STATUS "Detected Intel GPU")
+          set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -fsycl-targets=spir64_gen")
+      else()
+          message(FATAL_ERROR "No supported GPU detected. Please install ROCm, NVIDIA, or Intel oneAPI drivers.")
+      endif()
+  endif()
+
+endif ()
+
 
 #### compile
 

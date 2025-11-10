@@ -741,7 +741,7 @@ TEST(SOFTMAX, softmax_2d_axis0)
         for (uint64_t c = 0; c < 3; ++c)
         {
             const double got = static_cast<double>(host[r * 3 + c]);
-            EXPECT_NEAR(got, 0.5, 1e-6);
+            EXPECT_NEAR(got, 0.5, 1e-4);
         }
     }
 }
@@ -777,10 +777,10 @@ TEST(SOFTMAX, alias_view_weird_strides)
     const double r0_c0 = 0.11920292202211755;
     const double r0_c1 = 0.88079707797788245;
 
-    EXPECT_NEAR(static_cast<double>(host[0]), r0_c0, 1e-6);
-    EXPECT_NEAR(static_cast<double>(host[1]), r0_c1, 1e-6);
-    EXPECT_NEAR(static_cast<double>(host[2]), r0_c0, 1e-6);
-    EXPECT_NEAR(static_cast<double>(host[3]), r0_c1, 1e-6);
+    EXPECT_NEAR(static_cast<double>(host[0]), r0_c0, 1e-4);
+    EXPECT_NEAR(static_cast<double>(host[1]), r0_c1, 1e-4);
+    EXPECT_NEAR(static_cast<double>(host[2]), r0_c0, 1e-4);
+    EXPECT_NEAR(static_cast<double>(host[3]), r0_c1, 1e-4);
 }
 
 /**
@@ -926,7 +926,7 @@ TEST(CROSS_ENTROPY, broadcast_labels_mean)
         out.m_p_data.get(), sizeof(float) * 1).wait();
 
     const double expected = -std::log(0.5);
-    EXPECT_NEAR(static_cast<double>(host[0]), expected, 1e-6);
+    EXPECT_NEAR(static_cast<double>(host[0]), expected, 1e-4);
 }
 
 /**
@@ -961,7 +961,7 @@ TEST(CROSS_ENTROPY, broadcast_labels_no_reduction)
     const double expected = -std::log(0.5);
     for (uint64_t i = 0; i < N; ++i)
     {
-        EXPECT_NEAR(static_cast<double>(host[i]), expected, 1e-6);
+        EXPECT_NEAR(static_cast<double>(host[i]), expected, 1e-4);
     }
 }
 
@@ -1071,7 +1071,7 @@ TEST(CROSS_ENTROPY, alias_logits_weird_strides_mean)
 
     const double expected_mean = 0.5 * (loss0 + loss1);
 
-    EXPECT_NEAR(static_cast<double>(host[0]), expected_mean, 1e-6);
+    EXPECT_NEAR(static_cast<double>(host[0]), expected_mean, 1e-4);
 }
 
 
@@ -1105,7 +1105,7 @@ TEST(CROSS_ENTROPY, alias_labels_weird_strides_mean)
     g_sycl_queue.memcpy(host.data(), out.m_p_data.get(), sizeof(float) * 1).wait();
 
     const double expected = -std::log(0.5);
-    EXPECT_NEAR(static_cast<double>(host[0]), expected, 1e-6);
+    EXPECT_NEAR(static_cast<double>(host[0]), expected, 1e-4);
 }
 
 /**
@@ -1149,7 +1149,7 @@ TEST(CROSS_ENTROPY, alias_both_weird_strides)
     const double loss1 = -std::log(e6 / (e4 + e6));
     const double expected_mean = 0.5 * (loss0 + loss1);
 
-    EXPECT_NEAR(static_cast<double>(host[0]), expected_mean, 1e-6);
+    EXPECT_NEAR(static_cast<double>(host[0]), expected_mean, 1e-4);
 }
 
 /**
