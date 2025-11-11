@@ -4640,7 +4640,7 @@ TEST(LINSPACE, scalar_overload_endpoint_true_with_step_out)
     const uint64_t num = 5;
     Tensor<float> step_out;
     Tensor<float> out = math::linspace
-        (start, stop, num, MemoryLocation::DEVICE, 0, true, &step_out);
+        (start, stop, num, MemoryLocation::DEVICE, true, &step_out);
 
     ASSERT_EQ(out.get_num_elements(), num);
 

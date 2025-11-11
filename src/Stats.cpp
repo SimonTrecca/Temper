@@ -32,8 +32,8 @@ namespace norm
 
 template<typename value_t>
 Tensor<value_t> ppf(const Tensor<value_t>& q,
-	const Tensor<value_t>& loc,
-	const Tensor<value_t>& scale)
+    const Tensor<value_t>& loc,
+    const Tensor<value_t>& scale)
 {
     const std::vector<uint64_t> q_shape = q.get_dimensions();
     const std::vector<uint64_t> loc_shape = loc.get_dimensions();
@@ -42,94 +42,60 @@ Tensor<value_t> ppf(const Tensor<value_t>& q,
     if (q_shape.empty())
     {
         throw std::invalid_argument(R"(norm::ppf:
-        	q tensor has no elements.)");
+            q tensor has no elements.)");
     }
     if (loc_shape.empty())
     {
         throw std::invalid_argument(R"(norm::ppf:
-        	loc tensor has no elements.)");
+            loc tensor has no elements.)");
     }
     if (scale_shape.empty())
     {
         throw std::invalid_argument(R"(norm::ppf:
-        	scale tensor has no elements.)");
+            scale tensor has no elements.)");
     }
 
-    temper::utils::TensorDesc a_desc{q_shape, q.get_strides(), {}};
-    temper::utils::TensorDesc b_desc{loc_shape, loc.get_strides(), {}};
-    temper::utils::TensorDesc c_desc{scale_shape, scale.get_strides(), {}};
+    temper::utils::TensorDesc a_desc{q_shape, q.get_strides()};
+    temper::utils::TensorDesc b_desc{loc_shape, loc.get_strides()};
+    temper::utils::TensorDesc c_desc{scale_shape, scale.get_strides()};
 
-    const int64_t full_rank = static_cast<int64_t>(std::max({a_desc.shape.size(),
-    	b_desc.shape.size(), c_desc.shape.size()}));
-    temper::utils::TensorDesc a_al =
-    	temper::utils::align_tensor(a_desc, full_rank);
-    temper::utils::TensorDesc b_al =
-    	temper::utils::align_tensor(b_desc, full_rank);
-    temper::utils::TensorDesc c_al =
-    	temper::utils::align_tensor(c_desc, full_rank);
+    temper::utils::BroadcastResult res =
+        temper::utils::compute_broadcast({a_desc, b_desc, c_desc});
 
-    temper::utils::BroadcastResult ab =
-    	temper::utils::compute_broadcast(a_al, b_al);
+    if (res.strides.size() != 3)
+    {
+        throw std::runtime_error(
+            "compute_broadcast returned unexpected number of operands");
+    }
 
-    temper::utils::TensorDesc ab_owner;
-    ab_owner.shape = ab.out.shape;
-    ab_owner.strides = temper::utils::compute_divisors(ab.out.shape);
-
-    temper::utils::BroadcastResult abc =
-    	temper::utils::compute_broadcast(ab_owner, c_al);
-
-    const std::vector<uint64_t> out_shape = abc.out.shape;
+    const std::vector<uint64_t> out_shape = std::move(res.shape);
     const int64_t out_rank = static_cast<int64_t>(out_shape.size());
 
-    std::vector<uint64_t> q_bcast(out_rank, 0);
-    std::vector<uint64_t> loc_bcast(out_rank, 0);
-    std::vector<uint64_t> scale_bcast = abc.b_strides;
-
-    for (int64_t d = 0; d < out_rank; ++d)
-	{
-	    if (abc.a_strides[d] == 0)
-	    {
-	        q_bcast[d] = 0;
-	        loc_bcast[d] = 0;
-	    }
-	    else
-	    {
-	        if (d < static_cast<int64_t>(ab.a_strides.size()))
-	        {
-	            q_bcast[d] = ab.a_strides[d];
-	        }
-	        else
-	        {
-	            q_bcast[d] = 0;
-	        }
-
-	        if (d < static_cast<int64_t>(ab.a_strides.size()))
-	        {
-	            loc_bcast[d] = ab.b_strides[d];
-	        }
-	        else
-	        {
-	            loc_bcast[d] = 0;
-	        }
-	    }
-	}
+    /* per-operand broadcast-aware strides */
+    const std::vector<uint64_t> q_bcast = std::move(res.strides[0]);
+    const std::vector<uint64_t> loc_bcast = std::move(res.strides[1]);
+    const std::vector<uint64_t> scale_bcast = std::move(res.strides[2]);
 
     Tensor<value_t> result(out_shape, q.get_memory_location());
 
     uint64_t* p_out_divs = static_cast<uint64_t*>(
-        sycl::malloc_device(sizeof(uint64_t) * out_rank, g_sycl_queue));
+        sycl::malloc_device(sizeof(uint64_t) * static_cast<size_t>(out_rank),
+                            g_sycl_queue));
     uint64_t* p_q_bcast = static_cast<uint64_t*>(
-        sycl::malloc_device(sizeof(uint64_t) * out_rank, g_sycl_queue));
+        sycl::malloc_device(sizeof(uint64_t) * static_cast<size_t>(out_rank),
+                            g_sycl_queue));
     uint64_t* p_loc_bcast = static_cast<uint64_t*>(
-        sycl::malloc_device(sizeof(uint64_t) * out_rank, g_sycl_queue));
+        sycl::malloc_device(sizeof(uint64_t) * static_cast<size_t>(out_rank),
+                            g_sycl_queue));
     uint64_t* p_scale_bcast = static_cast<uint64_t*>(
-        sycl::malloc_device(sizeof(uint64_t) * out_rank, g_sycl_queue));
+        sycl::malloc_device(sizeof(uint64_t) * static_cast<size_t>(out_rank),
+                            g_sycl_queue));
 
     int32_t* p_error_flag = static_cast<int32_t*>(
         sycl::malloc_shared(sizeof(int32_t), g_sycl_queue));
 
     bool alloc_ok = (p_out_divs && p_q_bcast && p_loc_bcast &&
-    	p_scale_bcast && p_error_flag);
+                     p_scale_bcast && p_error_flag);
 
     if (!alloc_ok)
     {
@@ -141,16 +107,20 @@ Tensor<value_t> ppf(const Tensor<value_t>& q,
         throw std::bad_alloc();
     }
 
-    std::vector<uint64_t> out_divs = abc.out.divisors;
+    const std::vector<uint64_t> out_divs = std::move(res.divisors);
 
     g_sycl_queue.memcpy(p_out_divs,
-    	out_divs.data(), sizeof(uint64_t) * out_rank).wait();
+        out_divs.data(), sizeof(uint64_t) * static_cast<size_t>(out_rank))
+        .wait();
     g_sycl_queue.memcpy(p_q_bcast,
-    	q_bcast.data(), sizeof(uint64_t) * out_rank).wait();
+        q_bcast.data(), sizeof(uint64_t) * static_cast<size_t>(out_rank))
+        .wait();
     g_sycl_queue.memcpy(p_loc_bcast,
-    	loc_bcast.data(), sizeof(uint64_t) * out_rank).wait();
+        loc_bcast.data(), sizeof(uint64_t) * static_cast<size_t>(out_rank))
+        .wait();
     g_sycl_queue.memcpy(p_scale_bcast,
-    	scale_bcast.data(), sizeof(uint64_t) * out_rank).wait();
+        scale_bcast.data(), sizeof(uint64_t) * static_cast<size_t>(out_rank))
+        .wait();
 
     *p_error_flag = 0;
 
@@ -197,23 +167,23 @@ Tensor<value_t> ppf(const Tensor<value_t>& q,
         {
             const uint64_t flat = static_cast<uint64_t>(id[0]);
 
-            const uint64_t q_idx = temper::sycl_utils::idx_of
-            	(flat, p_out_divs, p_q_bcast, out_rank);
-            const uint64_t loc_idx = temper::sycl_utils::idx_of
-            	(flat, p_out_divs, p_loc_bcast, out_rank);
-            const uint64_t scale_idx = temper::sycl_utils::idx_of
-            	(flat, p_out_divs, p_scale_bcast, out_rank);
+            const uint64_t q_idx = temper::sycl_utils::idx_of(
+                flat, p_out_divs, p_q_bcast, out_rank);
+            const uint64_t loc_idx = temper::sycl_utils::idx_of(
+                flat, p_out_divs, p_loc_bcast, out_rank);
+            const uint64_t scale_idx = temper::sycl_utils::idx_of(
+                flat, p_out_divs, p_scale_bcast, out_rank);
 
             double qp = static_cast<double>(p_q[q_idx]);
             double locp = static_cast<double>(p_loc[loc_idx]);
             double scalep = static_cast<double>(p_scale[scale_idx]);
 
             temper::sycl_utils::device_check_nan_and_set<double>
-            	(qp, p_error_flag);
+                (qp, p_error_flag);
             temper::sycl_utils::device_check_nan_and_set<double>
-            	(locp, p_error_flag);
+                (locp, p_error_flag);
             temper::sycl_utils::device_check_nan_and_set<double>
-            	(scalep, p_error_flag);
+                (scalep, p_error_flag);
 
             if (scalep <= 0.0)
             {
@@ -305,6 +275,7 @@ Tensor<value_t> ppf(const Tensor<value_t>& q,
 
     return result;
 }
+
 template Tensor<float> ppf<float>
 (const Tensor<float>&, const Tensor<float>&, const Tensor<float>&);
 

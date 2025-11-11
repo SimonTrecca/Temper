@@ -382,17 +382,31 @@ Tensor<value_t> linspace(const Tensor<value_t>& start,
 extern template Tensor<float> linspace<float>(const Tensor<float>&,
 const Tensor<float>&, uint64_t, MemoryLocation, int64_t, bool, Tensor<float>*);
 
+/**
+ * @brief Generate a 1-D tensor of linearly spaced samples between two scalars.
+ *
+ * @param start Start value.
+ * @param stop  Stop value.
+ * @param num   Number of samples.
+ * @param res_loc Memory location for result (default DEVICE).
+ * @param endpoint Include stop when true.
+ * @param step_out If non-null, moved a length-1 tensor with the step.
+ * @return 1-D Tensor<value_t> of length `num`.
+ *
+ * @throws std::invalid_argument For empty inputs or out-of-range axis.
+ * @throws std::bad_alloc On device allocation failure.
+ * @throws std::runtime_error If numeric errors (NaN/Inf/overflow) occur.
+ */
 template<typename value_t>
 Tensor<value_t> linspace(value_t start,
     value_t stop,
     uint64_t num,
     MemoryLocation res_loc = MemoryLocation::DEVICE,
-    int64_t axis = 0,
     bool endpoint = true,
     Tensor<value_t>* step_out = nullptr);
 /// Explicit instantiation of linspace(scalars) for float
 extern template Tensor<float> linspace<float>(float,
-float, uint64_t, MemoryLocation, int64_t, bool, Tensor<float>*);
+float, uint64_t, MemoryLocation, bool, Tensor<float>*);
 
 /**
  * @brief Generate a 1-D tensor with values in the half-open interval

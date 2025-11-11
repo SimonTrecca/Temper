@@ -850,21 +850,17 @@ Tensor<value_t> Tensor<value_t>::operator+(const Tensor & other) const
             either tensor has no elements.)");
     }
 
-    const int64_t rank_a = this->get_rank();
-    const int64_t rank_b = other.get_rank();
-    const int64_t max_rank = std::max(rank_a, rank_b);
+    utils::TensorDesc a_desc{m_dimensions, m_strides};
+    utils::TensorDesc b_desc{other.m_dimensions, other.m_strides};
 
-    utils::TensorDesc a_desc{m_dimensions, m_strides, {}};
-    utils::TensorDesc b_desc{other.m_dimensions, other.m_strides, {}};
+    utils::BroadcastResult br = utils::compute_broadcast({a_desc, b_desc});
 
-    utils::TensorDesc a_aligned = utils::align_tensor(a_desc, max_rank);
-    utils::TensorDesc b_aligned = utils::align_tensor(b_desc, max_rank);
+    std::vector<uint64_t> out_shape = std::move(br.shape);
+    std::vector<uint64_t> a_strides_broadcasted = std::move(br.strides[0]);
+    std::vector<uint64_t> b_strides_broadcasted = std::move(br.strides[1]);
+    std::vector<uint64_t> res_divs = std::move(br.divisors);
 
-    utils::BroadcastResult br = utils::compute_broadcast(a_aligned, b_aligned);
-    std::vector<uint64_t> out_shape = br.out.shape;
-    std::vector<uint64_t> a_strides_broadcasted = std::move(br.a_strides);
-    std::vector<uint64_t> b_strides_broadcasted = std::move(br.b_strides);
-    std::vector<uint64_t> res_divs = std::move(br.out.divisors);
+    const int64_t max_rank = static_cast<int64_t>(out_shape.size());
 
     uint64_t total_size = 1;
     for (uint64_t dim : out_shape)
@@ -980,21 +976,17 @@ Tensor<value_t> Tensor<value_t>::operator-(const Tensor & other) const
             either tensor has no elements.)");
     }
 
-    const int64_t rank_a = get_rank();
-    const int64_t rank_b = other.get_rank();
-    const int64_t max_rank = std::max(rank_a, rank_b);
+    utils::TensorDesc a_desc{m_dimensions, m_strides};
+    utils::TensorDesc b_desc{other.m_dimensions, other.m_strides};
 
-    utils::TensorDesc a_desc{m_dimensions, m_strides, {}};
-    utils::TensorDesc b_desc{other.m_dimensions, other.m_strides, {}};
+    utils::BroadcastResult br = utils::compute_broadcast({a_desc, b_desc});
 
-    utils::TensorDesc a_aligned = utils::align_tensor(a_desc, max_rank);
-    utils::TensorDesc b_aligned = utils::align_tensor(b_desc, max_rank);
+    std::vector<uint64_t> out_shape = std::move(br.shape);
+    std::vector<uint64_t> a_strides_broadcasted = std::move(br.strides[0]);
+    std::vector<uint64_t> b_strides_broadcasted = std::move(br.strides[1]);
+    std::vector<uint64_t> res_divs = std::move(br.divisors);
 
-    utils::BroadcastResult br = utils::compute_broadcast(a_aligned, b_aligned);
-    std::vector<uint64_t> out_shape = br.out.shape;
-    std::vector<uint64_t> a_strides_broadcasted = std::move(br.a_strides);
-    std::vector<uint64_t> b_strides_broadcasted = std::move(br.b_strides);
-    std::vector<uint64_t> res_divs = std::move(br.out.divisors);
+    const int64_t max_rank = static_cast<int64_t>(out_shape.size());
 
     uint64_t total_size = 1;
     for (uint64_t dim : out_shape)
@@ -1110,21 +1102,17 @@ Tensor<value_t> Tensor<value_t>::operator*(const Tensor & other) const
             either tensor has no elements.)");
     }
 
-    const int64_t rank_a = this->get_rank();
-    const int64_t rank_b = other.get_rank();
-    const int64_t max_rank = std::max(rank_a, rank_b);
+    utils::TensorDesc a_desc{m_dimensions, m_strides};
+    utils::TensorDesc b_desc{other.m_dimensions, other.m_strides};
 
-    utils::TensorDesc a_desc{m_dimensions, m_strides, {}};
-    utils::TensorDesc b_desc{other.m_dimensions, other.m_strides, {}};
+    utils::BroadcastResult br = utils::compute_broadcast({a_desc, b_desc});
 
-    utils::TensorDesc a_aligned = utils::align_tensor(a_desc, max_rank);
-    utils::TensorDesc b_aligned = utils::align_tensor(b_desc, max_rank);
+    std::vector<uint64_t> out_shape = std::move(br.shape);
+    std::vector<uint64_t> a_strides_broadcasted = std::move(br.strides[0]);
+    std::vector<uint64_t> b_strides_broadcasted = std::move(br.strides[1]);
+    std::vector<uint64_t> res_divs = std::move(br.divisors);
 
-    utils::BroadcastResult br = utils::compute_broadcast(a_aligned, b_aligned);
-    std::vector<uint64_t> out_shape = br.out.shape;
-    std::vector<uint64_t> a_strides_broadcasted = std::move(br.a_strides);
-    std::vector<uint64_t> b_strides_broadcasted = std::move(br.b_strides);
-    std::vector<uint64_t> res_divs = std::move(br.out.divisors);
+    const int64_t max_rank = static_cast<int64_t>(out_shape.size());
 
     uint64_t total_size = 1;
     for (uint64_t dim : out_shape)
@@ -1240,22 +1228,17 @@ Tensor<value_t> Tensor<value_t>::operator/(const Tensor & other) const
             either tensor has no elements.)");
     }
 
-    const int64_t rank_a = get_rank();
-    const int64_t rank_b = other.get_rank();
-    const int64_t max_rank = std::max(rank_a, rank_b);
+    utils::TensorDesc a_desc{m_dimensions, m_strides};
+    utils::TensorDesc b_desc{other.m_dimensions, other.m_strides};
 
-    utils::TensorDesc a_desc{m_dimensions, m_strides, {}};
-    utils::TensorDesc b_desc{other.m_dimensions, other.m_strides, {}};
+    utils::BroadcastResult br = utils::compute_broadcast({a_desc, b_desc});
 
-    utils::TensorDesc a_aligned = temper::utils::align_tensor(a_desc, max_rank);
-    utils::TensorDesc b_aligned = temper::utils::align_tensor(b_desc, max_rank);
+    std::vector<uint64_t> out_shape = std::move(br.shape);
+    std::vector<uint64_t> a_strides_broadcasted = std::move(br.strides[0]);
+    std::vector<uint64_t> b_strides_broadcasted = std::move(br.strides[1]);
+    std::vector<uint64_t> res_divs = std::move(br.divisors);
 
-    utils::BroadcastResult br = utils::compute_broadcast(a_aligned, b_aligned);
-
-    std::vector<uint64_t> out_shape = br.out.shape;
-    std::vector<uint64_t> a_strides_broadcasted = std::move(br.a_strides);
-    std::vector<uint64_t> b_strides_broadcasted = std::move(br.b_strides);
-    std::vector<uint64_t> res_divs = std::move(br.out.divisors);
+    const int64_t max_rank = static_cast<int64_t>(out_shape.size());
 
     uint64_t total_size = 1;
     for (uint64_t d : out_shape)
@@ -1662,12 +1645,13 @@ void Tensor<value_t>::copy_from(const Tensor & src)
     std::vector<uint64_t> dst_aligned_dims = m_dimensions;
     std::vector<uint64_t> dst_aligned_strides = m_strides;
 
-    utils::TensorDesc a_desc{src_aligned_dims, src_aligned_strides, {}};
-    utils::TensorDesc b_desc{dst_aligned_dims, dst_aligned_strides, {}};
+    utils::TensorDesc a_desc{src_aligned_dims, src_aligned_strides};
+    utils::TensorDesc b_desc{dst_aligned_dims, dst_aligned_strides};
 
-    utils::BroadcastResult br = utils::compute_broadcast(a_desc, b_desc);
+    utils::BroadcastResult br = utils::compute_broadcast({a_desc, b_desc});
 
-    if (br.out.shape != dst_aligned_dims)
+
+    if (br.shape != dst_aligned_dims)
     {
         throw std::invalid_argument(R"(Tensor(copy_from):
             source cannot be broadcast to destination shape.)");
@@ -1689,11 +1673,11 @@ void Tensor<value_t>::copy_from(const Tensor & src)
         throw std::bad_alloc();
     }
 
-    g_sycl_queue.memcpy(p_res_divs, br.out.divisors.data(),
+    g_sycl_queue.memcpy(p_res_divs, br.divisors.data(),
                         sizeof(uint64_t) * max_rank).wait();
-    g_sycl_queue.memcpy(p_a_strides, br.a_strides.data(),
+    g_sycl_queue.memcpy(p_a_strides, br.strides[0].data(),
                         sizeof(uint64_t) * max_rank).wait();
-    g_sycl_queue.memcpy(p_b_strides, br.b_strides.data(),
+    g_sycl_queue.memcpy(p_b_strides, br.strides[1].data(),
                         sizeof(uint64_t) * max_rank).wait();
 
     const value_t* p_src_data = src.get_data();

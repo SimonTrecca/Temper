@@ -20,29 +20,30 @@ namespace temper::utils
 /**
  * @brief Descriptor of a tensor's layout.
  *
- * Encapsulates the shape, strides, and optionally
- * divisors (used for index calculations).
+ * Encapsulates the shape and strides.
  */
 struct TensorDesc
 {
     std::vector<uint64_t> shape;    ///< Sizes of each dimension.
     std::vector<uint64_t> strides;  ///< Strides for each dimension.
-    std::vector<uint64_t> divisors; ///< Precomputed divisors for fast indexing.
 };
 
 /**
- * @brief Broadcast metadata and broadcast-aware strides.
- *
- * Contains the output tensor descriptor (shape and divisors) that
- * results from broadcasting two aligned tensors, together with the
- * strides to use for operands A and B after broadcasting. Strides
- * set to 0 indicate the dimension is broadcasted.
- */
+* @brief Broadcast metadata and broadcast-aware strides.
+*
+* Holds the result of broadcasting a set of input tensors.
+* - `shape`: Output shape after broadcasting.
+* - `divisors`: Precomputed divisors for indexing the broadcasted output.
+* - `strides`: Per-operand, broadcast-aware strides
+* (0 if the operand is broadcasted).
+*/
 struct BroadcastResult
 {
-    TensorDesc out;                  ///< Output tensor descriptor.
-    std::vector<uint64_t> a_strides; ///< Broadcast-aware strides for A.
-    std::vector<uint64_t> b_strides; ///< Broadcast-aware strides for B.
+    std::vector<uint64_t> shape;    ///< Sizes of each dimension.
+    std::vector<uint64_t> divisors; ///< Precomputed divisors for fast indexing.
+
+    /// Broadcast-aware strides.
+    std::vector<std::vector<uint64_t>> strides;
 };
 
 /**
@@ -70,93 +71,81 @@ compute_divisors(const std::vector<uint64_t>& shape)
 }
 
 /**
- * @brief Align a tensor descriptor to a target rank by left-padding.
+ * @brief Compute broadcast shape, divisors, and broadcast-aware strides.
  *
- * The input descriptor is left-padded with dimensions of size 1 and
- * strides of 0 so that the returned descriptor has exactly `rank`
- * dimensions.
+ * Aligns input tensor descriptors, computes the broadcasted output shape,
+ * per-operand broadcast-aware strides, and precomputed divisors for indexing.
  *
- * @param t The input tensor descriptor.
- * @param rank The desired rank.
- * @return A new descriptor with shape and strides expanded to `rank`.
+ * @param inputs A list of tensor descriptors to broadcast.
+ * @return BroadcastResult containing the broadcasted shape, divisors, and
+ * strides.
+ *
+ * @throws std::invalid_argument if `inputs` is empty or shapes are
+ * incompatible.
  */
-inline TensorDesc
-align_tensor(const TensorDesc& t, int64_t rank)
+inline BroadcastResult compute_broadcast(const std::vector<TensorDesc>& inputs)
 {
-    TensorDesc out;
-    out.shape.assign(rank, 1);
-    out.strides.assign(rank, 0);
-
-    int64_t offset = rank - static_cast<int64_t>(t.shape.size());
-    for (int64_t i = 0; i < static_cast<int64_t>(t.shape.size()); ++i)
+    if (inputs.empty())
     {
-        out.shape[offset + i]   = t.shape[i];
-        out.strides[offset + i] = t.strides[i];
-    }
-    return out;
-}
-
-/**
- * @brief Compute broadcast shape/divisors and broadcast-aware strides.
- *
- * Both inputs must already be aligned to the same rank (left-padded to
- * equal length). For each dimension a.shape[d] and b.shape[d] must be
- * either equal or one of them must be 1. If a dimension of an operand
- * is 1, its stride for that dimension becomes 0 in the result.
- *
- * @param a Left operand descriptor (aligned).
- * @param b Right operand descriptor (aligned).
- * @return BroadcastResult containing output descriptor and strides.
- * @throws std::invalid_argument If descriptors have differing rank or
- *         incompatible sizes for broadcasting.
- */
-inline BroadcastResult
-compute_broadcast(const TensorDesc& a, const TensorDesc& b)
-{
-    if (a.shape.size() != b.shape.size())
-    {
-        throw std::invalid_argument(R"(compute_broadcast:
-            descriptors must have same rank)");
+        throw std::invalid_argument("compute_broadcast: no inputs provided");
     }
 
-    const int64_t rank = static_cast<int64_t>(a.shape.size());
+    int64_t max_rank = 0;
+    for (const auto &t : inputs)
+    {
+        max_rank = std::max(max_rank, static_cast<int64_t>(t.shape.size()));
+    }
+
+    std::vector<TensorDesc> aligned;
+    aligned.reserve(inputs.size());
+    for (const auto &t : inputs)
+    {
+        TensorDesc a;
+        a.shape.assign(max_rank, 1);
+        a.strides.assign(max_rank, 0);
+        int64_t t_rank = static_cast<int64_t>(t.shape.size());
+        int64_t offset = max_rank - t_rank;
+        for (int64_t i = 0; i < t_rank; ++i)
+        {
+            a.shape[offset + i] = t.shape[i];
+            a.strides[offset + i] = t.strides[i];
+        }
+        aligned.push_back(std::move(a));
+    }
+
     BroadcastResult res;
-    res.out.shape.resize(rank);
-    res.out.strides.assign(rank, 0);
-    res.a_strides.assign(rank, 0);
-    res.b_strides.assign(rank, 0);
+    res.shape.assign(max_rank, 1);
+    res.strides.assign(aligned.size(), std::vector<uint64_t>(max_rank, 0));
 
-    for (int64_t d = 0; d < rank; ++d)
+    for (int64_t d = 0; d < max_rank; ++d)
     {
-        const uint64_t asz = a.shape[d];
-        const uint64_t bsz = b.shape[d];
+        uint64_t out_sz = 1;
+        for (const auto &a : aligned)
+        {
+            out_sz = std::max(out_sz, a.shape[d]);
+        }
 
-        if (asz == bsz)
+        for (size_t i = 0; i < aligned.size(); ++i)
         {
-            res.out.shape[d] = asz;
-            res.a_strides[d] = a.strides[d];
-            res.b_strides[d] = b.strides[d];
+            uint64_t asz = aligned[i].shape[d];
+            if (asz == out_sz)
+            {
+                res.strides[i][d] = aligned[i].strides[d];
+            }
+            else if (asz == 1)
+            {
+                res.strides[i][d] = 0;
+            }
+            else
+            {
+                throw std::invalid_argument(R"(compute_broadcast:
+                    incompatible shapes for broadcasting)");
+            }
         }
-        else if (asz == 1)
-        {
-            res.out.shape[d] = bsz;
-            res.a_strides[d] = 0;
-            res.b_strides[d] = b.strides[d];
-        }
-        else if (bsz == 1)
-        {
-            res.out.shape[d] = asz;
-            res.a_strides[d] = a.strides[d];
-            res.b_strides[d] = 0;
-        }
-        else
-        {
-            throw std::invalid_argument("compute_broadcast: incompatible shapes for broadcasting");
-        }
+        res.shape[d] = out_sz;
     }
 
-    res.out.divisors = compute_divisors(res.out.shape);
-
+    res.divisors = compute_divisors(res.shape);
     return res;
 }
 
