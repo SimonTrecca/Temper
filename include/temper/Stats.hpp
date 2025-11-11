@@ -37,6 +37,65 @@ extern template Tensor<float> randn<float>
 namespace norm
 {
 /**
+ * @brief Probability density function of the normal distribution.
+ *
+ * Computes the value of the normal PDF element-wise:
+ * pdf(x; loc, scale) = (1 / (scale * sqrt(2 * pi))) *
+ * exp(-0.5 * ((x - loc) / scale)^2)
+ *
+ * Inputs `x`, `loc` (mean) and `scale` (standard deviation) are broadcast
+ * together to produce the output shape.
+ *
+ * @param x Values at which to evaluate the PDF. Must be non-empty.
+ * @param loc Mean(s) of the normal distribution. Must be non-empty.
+ * @param scale Standard deviation(s) of the normal distribution. Must be
+ * non-empty and strictly positive.
+ * @return Tensor<value_t> Tensor containing PDF values with the broadcasted
+ * shape.
+ *
+ * @throws std::invalid_argument if any input tensor is empty, if any
+ * `scale` element is non-positive, or if NaN is detected in inputs.
+ * @throws std::runtime_error if a non-finite result (overflow or Inf) or
+ * other numeric error occurs during computation.
+ */
+template<typename value_t>
+Tensor<value_t> pdf(const Tensor<value_t>& x,
+    const Tensor<value_t>& loc,
+    const Tensor<value_t>& scale);
+/// Explicit instantiation of norm::pdf for float
+extern template Tensor<float> pdf<float>
+(const Tensor<float>&, const Tensor<float>&, const Tensor<float>&);
+
+/**
+ * @brief Cumulative distribution function of the normal distribution.
+ *
+ * Computes the normal CDF element-wise:
+ *     cdf(x; loc, scale) = 0.5 * (1 + erf((x - loc) / (scale * sqrt(2))))
+ *
+ * Inputs `x`, `loc` (mean) and `scale` (standard deviation) are broadcast
+ * together to produce the output shape.
+ *
+ * @param x Values at which to evaluate the CDF. Must be non-empty.
+ * @param loc Mean(s) of the normal distribution. Must be non-empty.
+ * @param scale Standard deviation(s) of the normal distribution. Must be
+ * non-empty and strictly positive.
+ * @return Tensor<value_t> Tensor containing CDF values in [0, 1] with the
+ * broadcasted shape.
+ *
+ * @throws std::invalid_argument if any input tensor is empty, if any
+ * `scale` element is non-positive, or if NaN is detected in inputs.
+ * @throws std::runtime_error if a non-finite result (overflow or Inf) or
+ * other numeric error occurs during computation.
+ */
+template<typename value_t>
+Tensor<value_t> cdf(const Tensor<value_t>& x,
+    const Tensor<value_t>& loc,
+    const Tensor<value_t>& scale);
+/// Explicit instantiation of norm::cdf for float
+extern template Tensor<float> cdf<float>
+(const Tensor<float>&, const Tensor<float>&, const Tensor<float>&);
+
+/**
  * @brief Inverse CDF (percent-point function) for the normal distribution.
  *
  * Computes x = loc + scale * inverse_normal_cdf(q) with broadcasting.
@@ -87,8 +146,6 @@ Tensor<value_t> rvs(const Tensor<value_t>& loc,
 extern template Tensor<float> rvs<float>(const Tensor<float>&,
 const Tensor<float>&, const std::vector<uint64_t>&, MemoryLocation, uint64_t);
         /*todo
-        pdf
-        cdf
         isf
         logpdf
         mean

@@ -31,6 +31,349 @@ namespace norm
 {
 
 template<typename value_t>
+Tensor<value_t> pdf(const Tensor<value_t>& x,
+    const Tensor<value_t>& loc,
+    const Tensor<value_t>& scale)
+{
+    const std::vector<uint64_t> x_shape = x.get_dimensions();
+    const std::vector<uint64_t> loc_shape = loc.get_dimensions();
+    const std::vector<uint64_t> scale_shape = scale.get_dimensions();
+
+    if (x_shape.empty())
+    {
+        throw std::invalid_argument(R"(norm::pdf:
+            x tensor has no elements.)");
+    }
+    if (loc_shape.empty())
+    {
+        throw std::invalid_argument(R"(norm::pdf:
+            loc tensor has no elements.)");
+    }
+    if (scale_shape.empty())
+    {
+        throw std::invalid_argument(R"(norm::pdf:
+            scale tensor has no elements.)");
+    }
+
+    temper::utils::TensorDesc a_desc{x_shape, x.get_strides()};
+    temper::utils::TensorDesc b_desc{loc_shape, loc.get_strides()};
+    temper::utils::TensorDesc c_desc{scale_shape, scale.get_strides()};
+
+    temper::utils::BroadcastResult res =
+        temper::utils::compute_broadcast({a_desc, b_desc, c_desc});
+
+    const std::vector<uint64_t> out_shape = std::move(res.shape);
+    const int64_t out_rank = static_cast<int64_t>(out_shape.size());
+
+    const std::vector<uint64_t> x_bcast = std::move(res.strides[0]);
+    const std::vector<uint64_t> loc_bcast = std::move(res.strides[1]);
+    const std::vector<uint64_t> scale_bcast = std::move(res.strides[2]);
+
+    Tensor<value_t> result(out_shape, x.get_memory_location());
+
+    uint64_t* p_out_divs = static_cast<uint64_t*>(
+        sycl::malloc_device(sizeof(uint64_t) * static_cast<size_t>(out_rank),
+                            g_sycl_queue));
+    uint64_t* p_x_bcast = static_cast<uint64_t*>(
+        sycl::malloc_device(sizeof(uint64_t) * static_cast<size_t>(out_rank),
+                            g_sycl_queue));
+    uint64_t* p_loc_bcast = static_cast<uint64_t*>(
+        sycl::malloc_device(sizeof(uint64_t) * static_cast<size_t>(out_rank),
+                            g_sycl_queue));
+    uint64_t* p_scale_bcast = static_cast<uint64_t*>(
+        sycl::malloc_device(sizeof(uint64_t) * static_cast<size_t>(out_rank),
+                            g_sycl_queue));
+
+    int32_t* p_error_flag = static_cast<int32_t*>(
+        sycl::malloc_shared(sizeof(int32_t), g_sycl_queue));
+
+    bool alloc_ok = (p_out_divs && p_x_bcast && p_loc_bcast &&
+                     p_scale_bcast && p_error_flag);
+
+    if (!alloc_ok)
+    {
+        sycl::free(p_out_divs, g_sycl_queue);
+        sycl::free(p_x_bcast, g_sycl_queue);
+        sycl::free(p_loc_bcast, g_sycl_queue);
+        sycl::free(p_scale_bcast, g_sycl_queue);
+        sycl::free(p_error_flag, g_sycl_queue);
+        throw std::bad_alloc();
+    }
+
+    const std::vector<uint64_t> out_divs = std::move(res.divisors);
+
+    g_sycl_queue.memcpy(p_out_divs,
+        out_divs.data(), sizeof(uint64_t) * static_cast<size_t>(out_rank))
+        .wait();
+    g_sycl_queue.memcpy(p_x_bcast,
+        x_bcast.data(), sizeof(uint64_t) * static_cast<size_t>(out_rank))
+        .wait();
+    g_sycl_queue.memcpy(p_loc_bcast,
+        loc_bcast.data(), sizeof(uint64_t) * static_cast<size_t>(out_rank))
+        .wait();
+    g_sycl_queue.memcpy(p_scale_bcast,
+        scale_bcast.data(), sizeof(uint64_t) * static_cast<size_t>(out_rank))
+        .wait();
+
+    *p_error_flag = 0;
+
+    const value_t* p_x = x.get_data();
+    const value_t* p_loc = loc.get_data();
+    const value_t* p_scale = scale.get_data();
+    value_t* p_out = result.get_data();
+
+    const double inv_sqrt_2pi = 1.0 / std::sqrt(2.0 * M_PI);
+
+    const uint64_t total_output_elems = result.get_num_elements();
+
+    g_sycl_queue.submit([&](sycl::handler& cgh)
+    {
+        cgh.parallel_for(sycl::range<1>(static_cast<size_t>(total_output_elems)),
+            [=](sycl::id<1> id)
+        {
+            const uint64_t flat = static_cast<uint64_t>(id[0]);
+
+            const uint64_t x_idx = temper::sycl_utils::idx_of(
+                flat, p_out_divs, p_x_bcast, out_rank);
+            const uint64_t loc_idx = temper::sycl_utils::idx_of(
+                flat, p_out_divs, p_loc_bcast, out_rank);
+            const uint64_t scale_idx = temper::sycl_utils::idx_of(
+                flat, p_out_divs, p_scale_bcast, out_rank);
+
+            double xp = static_cast<double>(p_x[x_idx]);
+            double locp = static_cast<double>(p_loc[loc_idx]);
+            double scalep = static_cast<double>(p_scale[scale_idx]);
+
+            temper::sycl_utils::device_check_nan_and_set<double>
+                (xp, p_error_flag);
+            temper::sycl_utils::device_check_nan_and_set<double>
+                (locp, p_error_flag);
+            temper::sycl_utils::device_check_nan_and_set<double>
+                (scalep, p_error_flag);
+
+            if (scalep <= 0.0)
+            {
+                p_error_flag[0] = 4;
+                p_out[flat] = std::numeric_limits<value_t>::quiet_NaN();
+                return;
+            }
+
+            double z = (xp - locp) / scalep;
+            double ex = sycl::exp(-0.5 * z * z);
+            double outv = (inv_sqrt_2pi / scalep) * ex;
+
+            temper::sycl_utils::device_check_finite_and_set<double>
+                (outv, p_error_flag);
+            p_out[flat] = static_cast<value_t>(outv);
+        });
+    }).wait();
+
+    int32_t err = *p_error_flag;
+
+    sycl::free(p_out_divs, g_sycl_queue);
+    sycl::free(p_x_bcast, g_sycl_queue);
+    sycl::free(p_loc_bcast, g_sycl_queue);
+    sycl::free(p_scale_bcast, g_sycl_queue);
+    sycl::free(p_error_flag, g_sycl_queue);
+
+    if (err != 0)
+    {
+        if (err == 1)
+        {
+            throw std::invalid_argument(R"(norm::pdf: NaN detected in inputs.)");
+        }
+        if (err == 2)
+        {
+            throw std::runtime_error(R"(norm::pdf:
+                non-finite result (overflow or Inf) produced.)");
+        }
+        if (err == 4)
+        {
+            throw std::invalid_argument(R"(norm::pdf: scale must be positive.)");
+        }
+        throw std::runtime_error(R"(norm::pdf:
+            numeric error during pdf computation.)");
+    }
+
+    return result;
+}
+template Tensor<float> pdf<float>
+(const Tensor<float>&, const Tensor<float>&, const Tensor<float>&);
+
+
+template<typename value_t>
+Tensor<value_t> cdf(const Tensor<value_t>& x,
+    const Tensor<value_t>& loc,
+    const Tensor<value_t>& scale)
+{
+    const std::vector<uint64_t> x_shape = x.get_dimensions();
+    const std::vector<uint64_t> loc_shape = loc.get_dimensions();
+    const std::vector<uint64_t> scale_shape = scale.get_dimensions();
+
+    if (x_shape.empty())
+    {
+        throw std::invalid_argument(R"(norm::cdf:
+            x tensor has no elements.)");
+    }
+    if (loc_shape.empty())
+    {
+        throw std::invalid_argument(R"(norm::cdf:
+            loc tensor has no elements.)");
+    }
+    if (scale_shape.empty())
+    {
+        throw std::invalid_argument(R"(norm::cdf:
+            scale tensor has no elements.)");
+    }
+
+    temper::utils::TensorDesc a_desc{x_shape, x.get_strides()};
+    temper::utils::TensorDesc b_desc{loc_shape, loc.get_strides()};
+    temper::utils::TensorDesc c_desc{scale_shape, scale.get_strides()};
+
+    temper::utils::BroadcastResult res =
+        temper::utils::compute_broadcast({a_desc, b_desc, c_desc});
+
+    const std::vector<uint64_t> out_shape = std::move(res.shape);
+    const int64_t out_rank = static_cast<int64_t>(out_shape.size());
+
+    const std::vector<uint64_t> x_bcast = std::move(res.strides[0]);
+    const std::vector<uint64_t> loc_bcast = std::move(res.strides[1]);
+    const std::vector<uint64_t> scale_bcast = std::move(res.strides[2]);
+
+    Tensor<value_t> result(out_shape, x.get_memory_location());
+
+    uint64_t* p_out_divs = static_cast<uint64_t*>(
+        sycl::malloc_device(sizeof(uint64_t) * static_cast<size_t>(out_rank),
+                            g_sycl_queue));
+    uint64_t* p_x_bcast = static_cast<uint64_t*>(
+        sycl::malloc_device(sizeof(uint64_t) * static_cast<size_t>(out_rank),
+                            g_sycl_queue));
+    uint64_t* p_loc_bcast = static_cast<uint64_t*>(
+        sycl::malloc_device(sizeof(uint64_t) * static_cast<size_t>(out_rank),
+                            g_sycl_queue));
+    uint64_t* p_scale_bcast = static_cast<uint64_t*>(
+        sycl::malloc_device(sizeof(uint64_t) * static_cast<size_t>(out_rank),
+                            g_sycl_queue));
+
+    int32_t* p_error_flag = static_cast<int32_t*>(
+        sycl::malloc_shared(sizeof(int32_t), g_sycl_queue));
+
+    bool alloc_ok = (p_out_divs && p_x_bcast && p_loc_bcast &&
+                     p_scale_bcast && p_error_flag);
+
+    if (!alloc_ok)
+    {
+        sycl::free(p_out_divs, g_sycl_queue);
+        sycl::free(p_x_bcast, g_sycl_queue);
+        sycl::free(p_loc_bcast, g_sycl_queue);
+        sycl::free(p_scale_bcast, g_sycl_queue);
+        sycl::free(p_error_flag, g_sycl_queue);
+        throw std::bad_alloc();
+    }
+
+    const std::vector<uint64_t> out_divs = std::move(res.divisors);
+
+    g_sycl_queue.memcpy(p_out_divs,
+        out_divs.data(), sizeof(uint64_t) * static_cast<size_t>(out_rank))
+        .wait();
+    g_sycl_queue.memcpy(p_x_bcast,
+        x_bcast.data(), sizeof(uint64_t) * static_cast<size_t>(out_rank))
+        .wait();
+    g_sycl_queue.memcpy(p_loc_bcast,
+        loc_bcast.data(), sizeof(uint64_t) * static_cast<size_t>(out_rank))
+        .wait();
+    g_sycl_queue.memcpy(p_scale_bcast,
+        scale_bcast.data(), sizeof(uint64_t) * static_cast<size_t>(out_rank))
+        .wait();
+
+    *p_error_flag = 0;
+
+    const value_t* p_x = x.get_data();
+    const value_t* p_loc = loc.get_data();
+    const value_t* p_scale = scale.get_data();
+    value_t* p_out = result.get_data();
+
+    const double sqrt2 = std::sqrt(2.0);
+
+    const uint64_t total_output_elems = result.get_num_elements();
+
+    g_sycl_queue.submit([&](sycl::handler& cgh)
+    {
+        cgh.parallel_for(sycl::range<1>(static_cast<size_t>(total_output_elems)),
+            [=](sycl::id<1> id)
+        {
+            const uint64_t flat = static_cast<uint64_t>(id[0]);
+
+            const uint64_t x_idx = temper::sycl_utils::idx_of(
+                flat, p_out_divs, p_x_bcast, out_rank);
+            const uint64_t loc_idx = temper::sycl_utils::idx_of(
+                flat, p_out_divs, p_loc_bcast, out_rank);
+            const uint64_t scale_idx = temper::sycl_utils::idx_of(
+                flat, p_out_divs, p_scale_bcast, out_rank);
+
+            double xp = static_cast<double>(p_x[x_idx]);
+            double locp = static_cast<double>(p_loc[loc_idx]);
+            double scalep = static_cast<double>(p_scale[scale_idx]);
+
+            temper::sycl_utils::device_check_nan_and_set<double>
+                (xp, p_error_flag);
+            temper::sycl_utils::device_check_nan_and_set<double>
+                (locp, p_error_flag);
+            temper::sycl_utils::device_check_nan_and_set<double>
+                (scalep, p_error_flag);
+
+            if (scalep <= 0.0)
+            {
+                p_error_flag[0] = 4;
+                p_out[flat] = std::numeric_limits<value_t>::quiet_NaN();
+                return;
+            }
+
+            double z = (xp - locp) / (scalep * sqrt2);
+            double erfv = sycl::erf(z);
+            double outv = 0.5 * (1.0 + erfv);
+
+            temper::sycl_utils::device_check_finite_and_set<double>
+                (outv, p_error_flag);
+            p_out[flat] = static_cast<value_t>(outv);
+        });
+    }).wait();
+
+    int32_t err = *p_error_flag;
+
+    sycl::free(p_out_divs, g_sycl_queue);
+    sycl::free(p_x_bcast, g_sycl_queue);
+    sycl::free(p_loc_bcast, g_sycl_queue);
+    sycl::free(p_scale_bcast, g_sycl_queue);
+    sycl::free(p_error_flag, g_sycl_queue);
+
+    if (err != 0)
+    {
+        if (err == 1)
+        {
+            throw std::invalid_argument(R"(norm::cdf:
+                NaN detected in inputs.)");
+        }
+        if (err == 2)
+        {
+            throw std::runtime_error(R"(norm::cdf:
+                non-finite result (overflow or Inf) produced.)");
+        }
+        if (err == 4)
+        {
+            throw std::invalid_argument(R"(norm::cdf:
+                scale must be positive.)");
+        }
+        throw std::runtime_error(R"(norm::cdf:
+            numeric error during cdf computation.)");
+    }
+
+    return result;
+}
+template Tensor<float> cdf<float>
+(const Tensor<float>&, const Tensor<float>&, const Tensor<float>&);
+
+template<typename value_t>
 Tensor<value_t> ppf(const Tensor<value_t>& q,
     const Tensor<value_t>& loc,
     const Tensor<value_t>& scale)
@@ -61,12 +404,6 @@ Tensor<value_t> ppf(const Tensor<value_t>& q,
 
     temper::utils::BroadcastResult res =
         temper::utils::compute_broadcast({a_desc, b_desc, c_desc});
-
-    if (res.strides.size() != 3)
-    {
-        throw std::runtime_error(
-            "compute_broadcast returned unexpected number of operands");
-    }
 
     const std::vector<uint64_t> out_shape = std::move(res.shape);
     const int64_t out_rank = static_cast<int64_t>(out_shape.size());
@@ -253,7 +590,7 @@ Tensor<value_t> ppf(const Tensor<value_t>& q,
     {
         if (err == 1)
         {
-            throw std::runtime_error(R"(norm::ppf: NaN detected in inputs.)");
+            throw std::invalid_argument(R"(norm::ppf: NaN detected in inputs.)");
         }
         if (err == 2)
         {
@@ -275,7 +612,6 @@ Tensor<value_t> ppf(const Tensor<value_t>& q,
 
     return result;
 }
-
 template Tensor<float> ppf<float>
 (const Tensor<float>&, const Tensor<float>&, const Tensor<float>&);
 

@@ -50,6 +50,506 @@ TEST(RANDN, randn_deterministic_and_shape)
 }
 
 /**
+ * @test NORM.pdf_basic_values
+ * @brief Check that pdf returns known values for simple 1-D inputs.
+ */
+TEST(NORM, pdf_basic_values)
+{
+    Tensor<float> x({3}, MemoryLocation::DEVICE);
+    std::vector<float> x_vals = {0.0f, 1.0f, -1.0f};
+    x = x_vals;
+    Tensor<float> loc({1}, MemoryLocation::DEVICE);
+    loc = std::vector<float>{0.0f};
+    Tensor<float> scale({1}, MemoryLocation::DEVICE);
+    scale = std::vector<float>{1.0f};
+    Tensor<float> out = stats::norm::pdf<float>(x, loc, scale);
+    std::vector<float> host_out(3);
+    g_sycl_queue.memcpy(host_out.data(),
+        out.m_p_data.get(), sizeof(float) * 3).wait();
+    std::vector<float> expected = {
+        0.3989422804014327f,
+        0.24197072451914337f,
+        0.24197072451914337f
+    };
+    const double tol = 1e-6;
+    for (size_t i = 0; i < expected.size(); ++i)
+    {
+        EXPECT_NEAR(static_cast<double>(host_out[i]),
+            static_cast<double>(expected[i]), tol);
+    }
+}
+
+/**
+ * @test NORM.pdf_broadcast_loc_scalar_scale_vector_x_vector
+ * @brief Verify broadcasting: scalar loc with vector scale and vector x.
+ */
+TEST(NORM, pdf_broadcast_loc_scalar_scale_vector_x_vector)
+{
+    Tensor<float> x({4}, MemoryLocation::DEVICE);
+    std::vector<float> x_vals = {-1.0f, 0.0f, 0.5f, 2.0f};
+    x = x_vals;
+    Tensor<float> loc({1}, MemoryLocation::DEVICE);
+    loc = std::vector<float>{0.0f};
+    Tensor<float> scale({4}, MemoryLocation::DEVICE);
+    std::vector<float> scale_vals = {1.0f, 2.0f, 0.5f, 1.5f};
+    scale = scale_vals;
+    Tensor<float> out = stats::norm::pdf<float>(x, loc, scale);
+    std::vector<float> host_out(4);
+    g_sycl_queue.memcpy(host_out.data(),
+        out.m_p_data.get(), sizeof(float) * 4).wait();
+    std::vector<float> expected = {
+        0.24197072451914337f,
+        0.19947114020071635f,
+        0.48394144903828673f,
+        0.10934004978399577f
+    };
+    const double tol = 1e-6;
+    for (size_t i = 0; i < expected.size(); ++i)
+    {
+        EXPECT_NEAR(static_cast<double>(host_out[i]),
+            static_cast<double>(expected[i]), tol);
+    }
+}
+
+/**
+ * @test NORM.pdf_broadcast_x_scalar_loc_vector_scale_vector
+ * @brief Verify broadcasting: scalar x with vector loc and vector scale.
+ */
+TEST(NORM, pdf_broadcast_x_scalar_loc_vector_scale_vector)
+{
+    Tensor<float> x({1}, MemoryLocation::DEVICE);
+    x = std::vector<float>{1.0f};
+    Tensor<float> loc({3}, MemoryLocation::DEVICE);
+    std::vector<float> loc_vals = {0.0f, 1.0f, 2.0f};
+    loc = loc_vals;
+    Tensor<float> scale({3}, MemoryLocation::DEVICE);
+    std::vector<float> scale_vals = {1.0f, 0.5f, 2.0f};
+    scale = scale_vals;
+    Tensor<float> out = stats::norm::pdf<float>(x, loc, scale);
+    std::vector<float> host_out(3);
+    g_sycl_queue.memcpy(host_out.data(),
+        out.m_p_data.get(), sizeof(float) * 3).wait();
+    std::vector<float> expected = {
+        0.24197072451914337f,
+        0.7978845608028654f,
+        0.17603266338214976f
+    };
+    const double tol = 1e-6;
+    for (size_t i = 0; i < expected.size(); ++i)
+    {
+        EXPECT_NEAR(static_cast<double>(host_out[i]),
+            static_cast<double>(expected[i]), tol);
+    }
+}
+
+/**
+ * @test NORM.pdf_broadcast_2d_x_loc_vector_scale_scalar
+ * @brief Verify broadcasting for 2D x against vector loc and scalar scale.
+ */
+TEST(NORM, pdf_broadcast_2d_x_loc_vector_scale_scalar)
+{
+    Tensor<float> x({2, 2}, MemoryLocation::DEVICE);
+    std::vector<float> x_vals = {0.0f, 1.0f, 2.0f, 3.0f};
+    x = x_vals;
+    Tensor<float> loc({2}, MemoryLocation::DEVICE);
+    std::vector<float> loc_vals = {0.0f, 1.0f};
+    loc = loc_vals;
+    Tensor<float> scale({1}, MemoryLocation::DEVICE);
+    scale = std::vector<float>{1.0f};
+    Tensor<float> out = stats::norm::pdf<float>(x, loc, scale);
+    std::vector<float> host_out(4);
+    g_sycl_queue.memcpy(host_out.data(),
+        out.m_p_data.get(), sizeof(float) * 4).wait();
+    std::vector<float> expected = {
+        0.3989422804014327f,
+        0.3989422804014327f,
+        0.05399096651318806f,
+        0.05399096651318806f
+    };
+    const double tol = 1e-6;
+    for (size_t i = 0; i < expected.size(); ++i)
+    {
+        EXPECT_NEAR(static_cast<double>(host_out[i]),
+            static_cast<double>(expected[i]), tol);
+    }
+}
+
+/**
+ * @test NORM.pdf_broadcast_mixed_shapes_all_operands
+ * @brief Verify pdf with mixed-shaped operands that exercise broadcasting rules.
+ */
+TEST(NORM, pdf_broadcast_mixed_shapes_all_operands)
+{
+    Tensor<float> x({2, 1}, MemoryLocation::DEVICE);
+    x = std::vector<float>{0.0f, 1.0f};
+    Tensor<float> loc({1, 3}, MemoryLocation::DEVICE);
+    loc = std::vector<float>{0.0f, 1.0f, 2.0f};
+    Tensor<float> scale({1, 3}, MemoryLocation::DEVICE);
+    scale = std::vector<float>{1.0f, 0.5f, 2.0f};
+    Tensor<float> out = stats::norm::pdf<float>(x, loc, scale);
+    std::vector<float> host_out(6);
+    g_sycl_queue.memcpy(host_out.data(),
+        out.m_p_data.get(), sizeof(float) * 6).wait();
+    std::vector<float> expected = {
+        0.3989422804014327f,
+        0.10798193302637613f,
+        0.12098536225957168f,
+        0.24197072451914337f,
+        0.7978845608028654f,
+        0.17603266338214976f
+    };
+    const double tol = 1e-6;
+    for (size_t i = 0; i < expected.size(); ++i)
+    {
+        EXPECT_NEAR(static_cast<double>(host_out[i]),
+            static_cast<double>(expected[i]), tol);
+    }
+}
+
+/**
+ * @test NORM.pdf_view_with_weird_strides
+ * @brief Ensure pdf accepts non-contiguous/alias views for x, loc, and scale.
+ */
+TEST(NORM, pdf_view_with_weird_strides)
+{
+    const std::vector<uint64_t> out_shape = {2, 3};
+    const uint64_t total = 6;
+
+    Tensor<float> loc_owner({6}, MemoryLocation::DEVICE);
+    std::vector<float> loc_vals = {
+        10.0f, 99.0f, 99.0f, 20.0f, 99.0f, 99.0f
+    };
+    loc_owner = loc_vals;
+    Tensor<float> loc_alias(
+        loc_owner,
+        std::vector<uint64_t>{0ull},
+        std::vector<uint64_t>{2ull, 1ull},
+        std::vector<uint64_t>{3ull, 2ull}
+    );
+
+    Tensor<float> scale_owner({5}, MemoryLocation::DEVICE);
+    std::vector<float> scale_vals = {
+        1.0f, 99.0f, 1.0f, 99.0f, 1.0f
+    };
+    scale_owner = scale_vals;
+    Tensor<float> scale_alias(
+        scale_owner,
+        std::vector<uint64_t>{0ull},
+        std::vector<uint64_t>{1ull, 3ull},
+        std::vector<uint64_t>{3ull, 2ull}
+    );
+
+    Tensor<float> x_owner({6}, MemoryLocation::DEVICE);
+    std::vector<float> x_owner_vals = {
+        10.0f, 20.0f, 10.0f, 20.0f, 10.0f, 20.0f
+    };
+    x_owner = x_owner_vals;
+    Tensor<float> x_alias(
+        x_owner,
+        std::vector<uint64_t>{0ull},
+        std::vector<uint64_t>{2ull, 3ull},
+        std::vector<uint64_t>{1ull, 2ull}
+    );
+
+    Tensor<float> out = stats::norm::pdf<float>(x_alias, loc_alias, scale_alias);
+
+    std::vector<float> host_out(total);
+    g_sycl_queue.memcpy(host_out.data(),
+        out.m_p_data.get(), sizeof(float) * total).wait();
+
+    std::vector<float> expected(total, 0.3989422804014327f);
+    const double tol = 1e-6;
+    for (uint64_t i = 0; i < total; ++i)
+    {
+        EXPECT_NEAR(static_cast<double>(host_out[i]),
+            static_cast<double>(expected[i]), tol);
+    }
+}
+
+/**
+ * @test NORM.pdf_throws_on_nonpositive_scale
+ * @brief pdf should throw std::invalid_argument when any scale element <= 0.
+ */
+TEST(NORM, pdf_throws_on_nonpositive_scale)
+{
+    Tensor<float> x({1}, MemoryLocation::DEVICE);
+    x = std::vector<float>{0.0f};
+    Tensor<float> loc({1}, MemoryLocation::DEVICE);
+    loc = std::vector<float>{0.0f};
+    Tensor<float> scale({1}, MemoryLocation::DEVICE);
+    scale = std::vector<float>{0.0f};
+    EXPECT_THROW(stats::norm::pdf<float>(x, loc, scale),
+        std::invalid_argument);
+}
+
+/**
+ * @test NORM.pdf_throws_on_nan_input
+ * @brief pdf should throw std::invalid_argument when x contains NaN.
+ */
+TEST(NORM, pdf_throws_on_nan_input)
+{
+    Tensor<float> x({1}, MemoryLocation::DEVICE);
+    float nanf = std::numeric_limits<float>::quiet_NaN();
+    x = nanf;
+    Tensor<float> loc({1}, MemoryLocation::DEVICE);
+    loc = std::vector<float>{0.0f};
+    Tensor<float> scale({1}, MemoryLocation::DEVICE);
+    scale = std::vector<float>{1.0f};
+    EXPECT_THROW(stats::norm::pdf<float>(x, loc, scale),
+        std::invalid_argument);
+}
+
+/**
+ * @test NORM.cdf_basic_values
+ * @brief Check that cdf returns known values for simple 1-D inputs.
+ */
+TEST(NORM, cdf_basic_values)
+{
+    Tensor<float> x({3}, MemoryLocation::DEVICE);
+    std::vector<float> x_vals = {0.0f, 1.0f, -1.0f};
+    x = x_vals;
+    Tensor<float> loc({1}, MemoryLocation::DEVICE);
+    loc = std::vector<float>{0.0f};
+    Tensor<float> scale({1}, MemoryLocation::DEVICE);
+    scale = std::vector<float>{1.0f};
+    Tensor<float> out = stats::norm::cdf<float>(x, loc, scale);
+    std::vector<float> host_out(3);
+    g_sycl_queue.memcpy(host_out.data(),
+        out.m_p_data.get(), sizeof(float) * 3).wait();
+    std::vector<float> expected = {
+        0.5f,
+        0.8413447460685429f,
+        0.15865525393145707f
+    };
+    const double tol = 1e-6;
+    for (size_t i = 0; i < expected.size(); ++i)
+    {
+        EXPECT_NEAR(static_cast<double>(host_out[i]),
+            static_cast<double>(expected[i]), tol);
+    }
+}
+
+/**
+ * @test NORM.cdf_broadcast_loc_scalar_scale_vector_x_vector
+ * @brief Verify broadcasting: scalar loc with vector scale and vector x for cdf.
+ */
+TEST(NORM, cdf_broadcast_loc_scalar_scale_vector_x_vector)
+{
+    Tensor<float> x({4}, MemoryLocation::DEVICE);
+    std::vector<float> x_vals = {-1.0f, 0.0f, 0.5f, 2.0f};
+    x = x_vals;
+    Tensor<float> loc({1}, MemoryLocation::DEVICE);
+    loc = std::vector<float>{0.0f};
+    Tensor<float> scale({4}, MemoryLocation::DEVICE);
+    std::vector<float> scale_vals = {1.0f, 2.0f, 0.5f, 1.5f};
+    scale = scale_vals;
+    Tensor<float> out = stats::norm::cdf<float>(x, loc, scale);
+    std::vector<float> host_out(4);
+    g_sycl_queue.memcpy(host_out.data(),
+        out.m_p_data.get(), sizeof(float) * 4).wait();
+    std::vector<float> expected = {
+        0.15865525393145707f,
+        0.5f,
+        0.8413447460685429f,
+        0.9087887802741321f
+    };
+    const double tol = 1e-6;
+    for (size_t i = 0; i < expected.size(); ++i)
+    {
+        EXPECT_NEAR(static_cast<double>(host_out[i]),
+            static_cast<double>(expected[i]), tol);
+    }
+}
+
+/**
+ * @test NORM.cdf_broadcast_x_scalar_loc_vector_scale_vector
+ * @brief Verify broadcasting: scalar x with vector loc and vector scale for cdf.
+ */
+TEST(NORM, cdf_broadcast_x_scalar_loc_vector_scale_vector)
+{
+    Tensor<float> x({1}, MemoryLocation::DEVICE);
+    x = std::vector<float>{1.0f};
+    Tensor<float> loc({3}, MemoryLocation::DEVICE);
+    std::vector<float> loc_vals = {0.0f, 1.0f, 2.0f};
+    loc = loc_vals;
+    Tensor<float> scale({3}, MemoryLocation::DEVICE);
+    std::vector<float> scale_vals = {1.0f, 0.5f, 2.0f};
+    scale = scale_vals;
+    Tensor<float> out = stats::norm::cdf<float>(x, loc, scale);
+    std::vector<float> host_out(3);
+    g_sycl_queue.memcpy(host_out.data(),
+        out.m_p_data.get(), sizeof(float) * 3).wait();
+    std::vector<float> expected = {
+        0.8413447460685429f,
+        0.5f,
+        0.3085375387259869f
+    };
+    const double tol = 1e-6;
+    for (size_t i = 0; i < expected.size(); ++i)
+    {
+        EXPECT_NEAR(static_cast<double>(host_out[i]),
+            static_cast<double>(expected[i]), tol);
+    }
+}
+
+/**
+ * @test NORM.cdf_broadcast_2d_x_loc_vector_scale_scalar
+ * @brief Verify cdf broadcasting for 2D x against vector loc and scalar scale.
+ */
+TEST(NORM, cdf_broadcast_2d_x_loc_vector_scale_scalar)
+{
+    Tensor<float> x({2, 2}, MemoryLocation::DEVICE);
+    std::vector<float> x_vals = {0.0f, 1.0f, 2.0f, 3.0f};
+    x = x_vals;
+    Tensor<float> loc({2}, MemoryLocation::DEVICE);
+    std::vector<float> loc_vals = {0.0f, 1.0f};
+    loc = loc_vals;
+    Tensor<float> scale({1}, MemoryLocation::DEVICE);
+    scale = std::vector<float>{1.0f};
+    Tensor<float> out = stats::norm::cdf<float>(x, loc, scale);
+    std::vector<float> host_out(4);
+    g_sycl_queue.memcpy(host_out.data(),
+        out.m_p_data.get(), sizeof(float) * 4).wait();
+    std::vector<float> expected = {
+        0.5f,
+        0.5f,
+        0.9772498680518208f,
+        0.9772498680518208f
+    };
+    const double tol = 1e-6;
+    for (size_t i = 0; i < expected.size(); ++i)
+    {
+        EXPECT_NEAR(static_cast<double>(host_out[i]),
+            static_cast<double>(expected[i]), tol);
+    }
+}
+
+/**
+ * @test NORM.cdf_broadcast_mixed_shapes_all_operands
+ * @brief Verify cdf with mixed-shaped operands that exercise broadcasting rules.
+ */
+TEST(NORM, cdf_broadcast_mixed_shapes_all_operands)
+{
+    Tensor<float> x({2, 1}, MemoryLocation::DEVICE);
+    x = std::vector<float>{0.0f, 1.0f};
+    Tensor<float> loc({1, 3}, MemoryLocation::DEVICE);
+    loc = std::vector<float>{0.0f, 1.0f, 2.0f};
+    Tensor<float> scale({1, 3}, MemoryLocation::DEVICE);
+    scale = std::vector<float>{1.0f, 0.5f, 2.0f};
+    Tensor<float> out = stats::norm::cdf<float>(x, loc, scale);
+    std::vector<float> host_out(6);
+    g_sycl_queue.memcpy(host_out.data(),
+        out.m_p_data.get(), sizeof(float) * 6).wait();
+    std::vector<float> expected = {
+        0.5f,
+        0.02275013194817921f,
+        0.15865525393145707f,
+        0.8413447460685429f,
+        0.5f,
+        0.3085375387259869f
+    };
+    const double tol = 1e-6;
+    for (size_t i = 0; i < expected.size(); ++i)
+    {
+        EXPECT_NEAR(static_cast<double>(host_out[i]),
+            static_cast<double>(expected[i]), tol);
+    }
+}
+
+/**
+ * @test NORM.cdf_view_with_weird_strides
+ * @brief Ensure cdf accepts non-contiguous/alias views for x, loc, and scale.
+ */
+TEST(NORM, cdf_view_with_weird_strides)
+{
+    const std::vector<uint64_t> out_shape = {2, 3};
+    const uint64_t total = 6;
+
+    Tensor<float> loc_owner({6}, MemoryLocation::DEVICE);
+    std::vector<float> loc_vals = {
+        10.0f, 99.0f, 99.0f, 20.0f, 99.0f, 99.0f
+    };
+    loc_owner = loc_vals;
+    Tensor<float> loc_alias(
+        loc_owner,
+        std::vector<uint64_t>{0ull},
+        std::vector<uint64_t>{2ull, 1ull},
+        std::vector<uint64_t>{3ull, 2ull}
+    );
+
+    Tensor<float> scale_owner({5}, MemoryLocation::DEVICE);
+    std::vector<float> scale_vals = {
+        1.0f, 99.0f, 1.0f, 99.0f, 1.0f
+    };
+    scale_owner = scale_vals;
+    Tensor<float> scale_alias(
+        scale_owner,
+        std::vector<uint64_t>{0ull},
+        std::vector<uint64_t>{1ull, 3ull},
+        std::vector<uint64_t>{3ull, 2ull}
+    );
+
+    Tensor<float> x_owner({6}, MemoryLocation::DEVICE);
+    std::vector<float> x_owner_vals = {
+        10.0f, 20.0f, 10.0f, 20.0f, 10.0f, 20.0f
+    };
+    x_owner = x_owner_vals;
+    Tensor<float> x_alias(
+        x_owner,
+        std::vector<uint64_t>{0ull},
+        std::vector<uint64_t>{2ull, 3ull},
+        std::vector<uint64_t>{1ull, 2ull}
+    );
+
+    Tensor<float> out = stats::norm::cdf<float>(x_alias, loc_alias, scale_alias);
+
+    std::vector<float> host_out(total);
+    g_sycl_queue.memcpy(host_out.data(),
+        out.m_p_data.get(), sizeof(float) * total).wait();
+
+    std::vector<float> expected(total, 0.5f);
+    const double tol = 1e-6;
+    for (uint64_t i = 0; i < total; ++i)
+    {
+        EXPECT_NEAR(static_cast<double>(host_out[i]),
+            static_cast<double>(expected[i]), tol);
+    }
+}
+
+/**
+ * @test NORM.cdf_throws_on_nonpositive_scale
+ * @brief cdf should throw std::invalid_argument when any scale element <= 0.
+ */
+TEST(NORM, cdf_throws_on_nonpositive_scale)
+{
+    Tensor<float> x({1}, MemoryLocation::DEVICE);
+    x = std::vector<float>{0.0f};
+    Tensor<float> loc({1}, MemoryLocation::DEVICE);
+    loc = std::vector<float>{0.0f};
+    Tensor<float> scale({1}, MemoryLocation::DEVICE);
+    scale = std::vector<float>{0.0f};
+    EXPECT_THROW(stats::norm::cdf<float>(x, loc, scale),
+        std::invalid_argument);
+}
+
+/**
+ * @test NORM.cdf_throws_on_nan_input
+ * @brief cdf should throw std::invalid_argument when x contains NaN.
+ */
+TEST(NORM, cdf_throws_on_nan_input)
+{
+    Tensor<float> x({1}, MemoryLocation::DEVICE);
+    float nanf = std::numeric_limits<float>::quiet_NaN();
+    x = nanf;
+    Tensor<float> loc({1}, MemoryLocation::DEVICE);
+    loc = std::vector<float>{0.0f};
+    Tensor<float> scale({1}, MemoryLocation::DEVICE);
+    scale = std::vector<float>{1.0f};
+    EXPECT_THROW(stats::norm::cdf<float>(x, loc, scale),
+        std::invalid_argument);
+}
+
+/**
  * @test NORM.ppf_basic_quantiles
  * @brief ppf returns known quantiles for the standard normal (loc=0, scale=1)
  */
