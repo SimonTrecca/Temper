@@ -300,6 +300,220 @@ TEST(NORM, pdf_throws_on_nan_input)
 }
 
 /**
+ * @test NORM.logpdf_basic_values
+ * @brief Check that logpdf returns the log of known pdf values for inputs.
+ */
+TEST(NORM, logpdf_basic_values)
+{
+    Tensor<float> x({3}, MemoryLocation::DEVICE);
+    std::vector<float> x_vals = {0.0f, 1.0f, -1.0f};
+    x = x_vals;
+    Tensor<float> loc({1}, MemoryLocation::DEVICE);
+    loc = std::vector<float>{0.0f};
+    Tensor<float> scale({1}, MemoryLocation::DEVICE);
+    scale = std::vector<float>{1.0f};
+    Tensor<float> out = stats::norm::logpdf<float>(x, loc, scale);
+    std::vector<float> host_out(3);
+    g_sycl_queue.memcpy(host_out.data(),
+        out.m_p_data.get(), sizeof(float) * 3).wait();
+    std::vector<float> expected = {
+        -0.9189385332046727f,
+        -1.4189385332046727f,
+        -1.4189385332046727f
+    };
+    const double tol = 1e-6;
+    for (size_t i = 0; i < expected.size(); ++i)
+    {
+        EXPECT_NEAR(static_cast<double>(host_out[i]),
+            static_cast<double>(expected[i]), tol);
+    }
+}
+
+/**
+ * @test NORM.logpdf_broadcast_loc_scalar_scale_vector_x_vector
+ * @brief Verify broadcasting: scalar loc with vector scale and vector x.
+ */
+TEST(NORM, logpdf_broadcast_loc_scalar_scale_vector_x_vector)
+{
+    Tensor<float> x({4}, MemoryLocation::DEVICE);
+    std::vector<float> x_vals = {-1.0f, 0.0f, 0.5f, 2.0f};
+    x = x_vals;
+    Tensor<float> loc({1}, MemoryLocation::DEVICE);
+    loc = std::vector<float>{0.0f};
+    Tensor<float> scale({4}, MemoryLocation::DEVICE);
+    std::vector<float> scale_vals = {1.0f, 2.0f, 0.5f, 1.5f};
+    scale = scale_vals;
+    Tensor<float> out = stats::norm::logpdf<float>(x, loc, scale);
+    std::vector<float> host_out(4);
+    g_sycl_queue.memcpy(host_out.data(),
+        out.m_p_data.get(), sizeof(float) * 4).wait();
+    std::vector<float> expected = {
+        -1.4189385332046727f,
+        -1.612085713764618f,
+        -0.7257913526447274f,
+        -2.2132925302017257f
+    };
+    const double tol = 1e-6;
+    for (size_t i = 0; i < expected.size(); ++i)
+    {
+        EXPECT_NEAR(static_cast<double>(host_out[i]),
+            static_cast<double>(expected[i]), tol);
+    }
+}
+
+/**
+ * @test NORM.logpdf_broadcast_2d_x_loc_vector_scale_scalar
+ * @brief Verify broadcasting for 2D x against vector loc and scalar scale.
+ */
+TEST(NORM, logpdf_broadcast_2d_x_loc_vector_scale_scalar)
+{
+    Tensor<float> x({2, 2}, MemoryLocation::DEVICE);
+    std::vector<float> x_vals = {0.0f, 1.0f, 2.0f, 3.0f};
+    x = x_vals;
+    Tensor<float> loc({2}, MemoryLocation::DEVICE);
+    std::vector<float> loc_vals = {0.0f, 1.0f};
+    loc = loc_vals;
+    Tensor<float> scale({1}, MemoryLocation::DEVICE);
+    scale = std::vector<float>{1.0f};
+    Tensor<float> out = stats::norm::logpdf<float>(x, loc, scale);
+    std::vector<float> host_out(4);
+    g_sycl_queue.memcpy(host_out.data(),
+        out.m_p_data.get(), sizeof(float) * 4).wait();
+    std::vector<float> expected = {
+        -0.9189385332046727f,
+        -0.9189385332046727f,
+        -2.9189385332046727f,
+        -2.9189385332046727f
+    };
+    const double tol = 1e-6;
+    for (size_t i = 0; i < expected.size(); ++i)
+    {
+        EXPECT_NEAR(static_cast<double>(host_out[i]),
+            static_cast<double>(expected[i]), tol);
+    }
+}
+
+/**
+ * @test NORM.logpdf_broadcast_mixed_shapes_all_operands
+ * @brief Verify logpdf with mixed-shaped operands exercising broadcasting.
+ */
+TEST(NORM, logpdf_broadcast_mixed_shapes_all_operands)
+{
+    Tensor<float> x({2, 1}, MemoryLocation::DEVICE);
+    x = std::vector<float>{0.0f, 1.0f};
+    Tensor<float> loc({1, 3}, MemoryLocation::DEVICE);
+    loc = std::vector<float>{0.0f, 1.0f, 2.0f};
+    Tensor<float> scale({1, 3}, MemoryLocation::DEVICE);
+    scale = std::vector<float>{1.0f, 0.5f, 2.0f};
+    Tensor<float> out = stats::norm::logpdf<float>(x, loc, scale);
+    std::vector<float> host_out(6);
+    g_sycl_queue.memcpy(host_out.data(),
+        out.m_p_data.get(), sizeof(float) * 6).wait();
+    std::vector<float> expected = {
+        -0.9189385332046727f,
+        -2.2257913526447273f,
+        -2.112085713764618f,
+        -1.4189385332046727f,
+        -0.22579135264472738f,
+        -1.7370857137646178f
+    };
+    const double tol = 1e-6;
+    for (size_t i = 0; i < expected.size(); ++i)
+    {
+        EXPECT_NEAR(static_cast<double>(host_out[i]),
+            static_cast<double>(expected[i]), tol);
+    }
+}
+
+/**
+ * @test NORM.logpdf_view_with_weird_strides
+ * @brief Ensure logpdf accepts x/loc/scale provided as alias-views.
+ */
+TEST(NORM, logpdf_view_with_weird_strides)
+{
+    const std::vector<uint64_t> out_shape = {2, 3};
+    const uint64_t total = 6;
+    Tensor<float> loc_owner({6}, MemoryLocation::DEVICE);
+    std::vector<float> loc_vals = {
+        10.0f, 99.0f, 99.0f, 20.0f, 99.0f, 99.0f
+    };
+    loc_owner = loc_vals;
+    Tensor<float> loc_alias(
+        loc_owner,
+        std::vector<uint64_t>{0ull},
+        std::vector<uint64_t>{2ull, 1ull},
+        std::vector<uint64_t>{3ull, 2ull}
+    );
+    Tensor<float> scale_owner({5}, MemoryLocation::DEVICE);
+    std::vector<float> scale_vals = {
+        1.0f, 99.0f, 1.0f, 99.0f, 1.0f
+    };
+    scale_owner = scale_vals;
+    Tensor<float> scale_alias(
+        scale_owner,
+        std::vector<uint64_t>{0ull},
+        std::vector<uint64_t>{1ull, 3ull},
+        std::vector<uint64_t>{3ull, 2ull}
+    );
+    Tensor<float> x_owner({6}, MemoryLocation::DEVICE);
+    std::vector<float> x_owner_vals = {
+        10.0f, 20.0f, 10.0f, 20.0f, 10.0f, 20.0f
+    };
+    x_owner = x_owner_vals;
+    Tensor<float> x_alias(
+        x_owner,
+        std::vector<uint64_t>{0ull},
+        std::vector<uint64_t>{2ull, 3ull},
+        std::vector<uint64_t>{1ull, 2ull}
+    );
+    Tensor<float> out = stats::norm::logpdf<float>(x_alias, loc_alias,
+        scale_alias);
+    std::vector<float> host_out(total);
+    g_sycl_queue.memcpy(host_out.data(),
+        out.m_p_data.get(), sizeof(float) * total).wait();
+    std::vector<float> expected(total, -0.9189385332046727f);
+    const double tol = 1e-6;
+    for (uint64_t i = 0; i < total; ++i)
+    {
+        EXPECT_NEAR(static_cast<double>(host_out[i]),
+            static_cast<double>(expected[i]), tol);
+    }
+}
+
+/**
+ * @test NORM.logpdf_throws_on_nonpositive_scale
+ * @brief logpdf should throw std::invalid_argument when scale <= 0.
+ */
+TEST(NORM, logpdf_throws_on_nonpositive_scale)
+{
+    Tensor<float> x({1}, MemoryLocation::DEVICE);
+    x = std::vector<float>{0.0f};
+    Tensor<float> loc({1}, MemoryLocation::DEVICE);
+    loc = std::vector<float>{0.0f};
+    Tensor<float> scale({1}, MemoryLocation::DEVICE);
+    scale = std::vector<float>{0.0f};
+    EXPECT_THROW(stats::norm::logpdf<float>(x, loc, scale),
+        std::invalid_argument);
+}
+
+/**
+ * @test NORM.logpdf_throws_on_nan_input
+ * @brief logpdf should throw std::invalid_argument when x contains NaN.
+ */
+TEST(NORM, logpdf_throws_on_nan_input)
+{
+    Tensor<float> x({1}, MemoryLocation::DEVICE);
+    float nanf = std::numeric_limits<float>::quiet_NaN();
+    x = nanf;
+    Tensor<float> loc({1}, MemoryLocation::DEVICE);
+    loc = std::vector<float>{0.0f};
+    Tensor<float> scale({1}, MemoryLocation::DEVICE);
+    scale = std::vector<float>{1.0f};
+    EXPECT_THROW(stats::norm::logpdf<float>(x, loc, scale),
+        std::invalid_argument);
+}
+
+/**
  * @test NORM.cdf_basic_values
  * @brief Check that cdf returns known values for simple 1-D inputs.
  */
@@ -673,6 +887,179 @@ TEST(NORM, ppf_throws_on_nan_input)
     scale = std::vector<float>{1.0f};
 
     EXPECT_THROW(stats::norm::ppf<float>(q, loc, scale), std::invalid_argument);
+}
+
+/**
+ * @test NORM.isf_basic_quantiles
+ * @brief isf returns known quantiles via relation isf(q) == ppf(1 - q)
+ */
+TEST(NORM, isf_basic_quantiles)
+{
+    Tensor<float> q({3}, MemoryLocation::DEVICE);
+    std::vector<float> q_vals = {0.5f, 0.841344746f, 0.158655254f};
+    q = q_vals;
+    Tensor<float> loc({1}, MemoryLocation::DEVICE);
+    loc = std::vector<float>{0.0f};
+    Tensor<float> scale({1}, MemoryLocation::DEVICE);
+    scale = std::vector<float>{1.0f};
+    Tensor<float> out = stats::norm::isf<float>(q, loc, scale);
+    std::vector<float> host_out(3);
+    g_sycl_queue.memcpy(host_out.data(),
+        out.m_p_data.get(), sizeof(float) * 3).wait();
+    const double tol = 1e-5;
+    EXPECT_NEAR(static_cast<double>(host_out[0]), 0.0, tol);
+    EXPECT_NEAR(static_cast<double>(host_out[1]), -1.0, tol);
+    EXPECT_NEAR(static_cast<double>(host_out[2]), 1.0, tol);
+}
+
+/**
+ * @test NORM.isf_matches_ppf_with_complement
+ * @brief isf(q) should equal ppf(1 - q) elementwise (broadcasting too).
+ */
+TEST(NORM, isf_matches_ppf_with_complement)
+{
+    const std::vector<uint64_t> out_shape = {4, 5};
+    const uint64_t total = 4 * 5;
+    Tensor<float> loc({1}, MemoryLocation::DEVICE);
+    loc = std::vector<float>{2.5f};
+    Tensor<float> scale({1}, MemoryLocation::DEVICE);
+    scale = std::vector<float>{0.75f};
+    std::vector<float> host_uniforms; host_uniforms.reserve(total);
+    for (uint64_t flat = 0; flat < total; ++flat)
+    {
+        uint64_t s = 123456789ULL ^
+            (flat + 0x9e3779b97f4a7c15ULL);
+        s ^= s >> 12;
+        s ^= s << 25;
+        s ^= s >> 27;
+        uint64_t rnd = s * 2685821657736338717ULL;
+        double u = static_cast<double>(rnd) /
+            18446744073709551616.0;
+        if (u < 1e-16) u = 1e-16;
+        if (u > 1.0 - 1e-16) u = 1.0 - 1e-16;
+        host_uniforms.push_back(static_cast<float>(u));
+    }
+    Tensor<float> q(out_shape, MemoryLocation::DEVICE);
+    q = host_uniforms;
+    std::vector<float> host_q_comp(total);
+    for (uint64_t i = 0; i < total; ++i)
+        host_q_comp[i] = 1.0f - host_uniforms[i];
+    Tensor<float> q_comp(out_shape, MemoryLocation::DEVICE);
+    q_comp = host_q_comp;
+    Tensor<float> expected = stats::norm::ppf<float>(q_comp, loc, scale);
+    Tensor<float> actual = stats::norm::isf<float>(q, loc, scale);
+    std::vector<float> host_expected(total);
+    std::vector<float> host_actual(total);
+    g_sycl_queue.memcpy(host_expected.data(),
+        expected.m_p_data.get(), sizeof(float) * total).wait();
+    g_sycl_queue.memcpy(host_actual.data(),
+        actual.m_p_data.get(), sizeof(float) * total).wait();
+    const double tol = 1e-6;
+    for (uint64_t i = 0; i < total; ++i)
+    {
+        EXPECT_NEAR(static_cast<double>(host_expected[i]),
+            static_cast<double>(host_actual[i]), tol);
+    }
+}
+
+/**
+ * @test NORM.isf_view_and_alias
+ * @brief isf accepts q/loc/scale provided as alias-views with weird strides.
+ */
+TEST(NORM, isf_view_and_alias)
+{
+    const std::vector<uint64_t> q_shape = {2, 3};
+    Tensor<float> q_owner({6}, MemoryLocation::DEVICE);
+    std::vector<float> q_vals(6, 0.5f);
+    q_owner = q_vals;
+    Tensor<float> q_alias(
+        q_owner,
+        std::vector<uint64_t>{0ull},
+        std::vector<uint64_t>{2ull, 1ull},
+        std::vector<uint64_t>{3ull, 2ull}
+    );
+    Tensor<float> loc_owner({6}, MemoryLocation::DEVICE);
+    std::vector<float> loc_vals = {
+        10.0f, 99.0f, 99.0f, 20.0f, 99.0f, 99.0f
+    };
+    loc_owner = loc_vals;
+    Tensor<float> loc_alias(
+        loc_owner,
+        std::vector<uint64_t>{0ull},
+        std::vector<uint64_t>{2ull, 1ull},
+        std::vector<uint64_t>{3ull, 2ull}
+    );
+    Tensor<float> scale_owner({5}, MemoryLocation::DEVICE);
+    std::vector<float> scale_vals = {1.0f, 99.0f, 1.0f, 99.0f, 1.0f};
+    scale_owner = scale_vals;
+    Tensor<float> scale_alias(
+        scale_owner,
+        std::vector<uint64_t>{0ull},
+        std::vector<uint64_t>{1ull, 3ull},
+        std::vector<uint64_t>{3ull, 2ull}
+    );
+    Tensor<float> out = stats::norm::isf<float>(q_alias, loc_alias,
+        scale_alias);
+    std::vector<float> host_out(6);
+    g_sycl_queue.memcpy(host_out.data(),
+        out.m_p_data.get(), sizeof(float) * 6).wait();
+    EXPECT_FLOAT_EQ(host_out[0], 10.0f);
+    EXPECT_FLOAT_EQ(host_out[1], 10.0f);
+    EXPECT_FLOAT_EQ(host_out[2], 10.0f);
+    EXPECT_FLOAT_EQ(host_out[3], 20.0f);
+    EXPECT_FLOAT_EQ(host_out[4], 20.0f);
+    EXPECT_FLOAT_EQ(host_out[5], 20.0f);
+}
+
+/**
+ * @test NORM.isf_throws_on_q_out_of_range
+ * @brief isf should throw invalid_argument when q contains values outside [0,1].
+ */
+TEST(NORM, isf_throws_on_q_out_of_range)
+{
+    Tensor<float> q({1}, MemoryLocation::DEVICE);
+    std::vector<float> q_vals = {1.5f};
+    q = q_vals;
+    Tensor<float> loc({1}, MemoryLocation::DEVICE);
+    loc = std::vector<float>{0.0f};
+    Tensor<float> scale({1}, MemoryLocation::DEVICE);
+    scale = std::vector<float>{1.0f};
+    EXPECT_THROW(stats::norm::isf<float>(q, loc, scale),
+        std::invalid_argument);
+}
+
+/**
+ * @test NORM.isf_throws_on_nonpositive_scale
+ * @brief isf should throw invalid_argument when scale <= 0.
+ */
+TEST(NORM, isf_throws_on_nonpositive_scale)
+{
+    Tensor<float> q({1}, MemoryLocation::DEVICE);
+    std::vector<float> q_vals = {0.5f};
+    q = q_vals;
+    Tensor<float> loc({1}, MemoryLocation::DEVICE);
+    loc = std::vector<float>{0.0f};
+    Tensor<float> scale({1}, MemoryLocation::DEVICE);
+    scale = std::vector<float>{0.0f};
+    EXPECT_THROW(stats::norm::isf<float>(q, loc, scale),
+        std::invalid_argument);
+}
+
+/**
+ * @test NORM.isf_throws_on_nan_input
+ * @brief isf should throw std::invalid_argument when q contains NaN.
+ */
+TEST(NORM, isf_throws_on_nan_input)
+{
+    Tensor<float> q({1}, MemoryLocation::DEVICE);
+    float nanf = std::numeric_limits<float>::quiet_NaN();
+    q = nanf;
+    Tensor<float> loc({1}, MemoryLocation::DEVICE);
+    loc = std::vector<float>{0.0f};
+    Tensor<float> scale({1}, MemoryLocation::DEVICE);
+    scale = std::vector<float>{1.0f};
+    EXPECT_THROW(stats::norm::isf<float>(q, loc, scale),
+        std::invalid_argument);
 }
 
 /**

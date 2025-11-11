@@ -67,6 +67,36 @@ extern template Tensor<float> pdf<float>
 (const Tensor<float>&, const Tensor<float>&, const Tensor<float>&);
 
 /**
+ * @brief Logarithm of the normal probability density function.
+ *
+ * Computes the log-PDF element-wise:
+ * logpdf(x; loc, scale) = -0.5 * ((x - loc) / scale)^2 
+ *  - log(scale) - 0.5*log(2*pi)
+ * 
+ * Inputs `x`, `loc` and `scale` are broadcast together to produce the
+ * output shape.
+ *
+ * @param x Values at which to evaluate the log-PDF. Must be non-empty.
+ * @param loc Mean(s) of the normal distribution. Must be non-empty.
+ * @param scale Std-dev(s) of the normal distribution. Must be non-empty
+ * and strictly positive.
+ * @return Tensor<value_t> Tensor containing log-PDF values with the
+ * broadcasted shape.
+ *
+ * @throws std::invalid_argument if any input tensor is empty, if any
+ * `scale` element is non-positive, or if NaN is detected in inputs.
+ * @throws std::runtime_error if a non-finite result (overflow or Inf)
+ * or other numeric error occurs during computation.
+ */
+template<typename value_t>
+Tensor<value_t> logpdf(const Tensor<value_t>& x,
+const Tensor<value_t>& loc,
+const Tensor<value_t>& scale);
+/// Explicit instantiation of norm::logpdf for float
+extern template Tensor<float> logpdf<float>
+(const Tensor<float>&, const Tensor<float>&, const Tensor<float>&);
+
+/**
  * @brief Cumulative distribution function of the normal distribution.
  *
  * Computes the normal CDF element-wise:
@@ -115,6 +145,43 @@ Tensor<value_t> ppf(const Tensor<value_t>& q,
     const Tensor<value_t>& scale);
 /// Explicit instantiation of norm::ppf for float
 extern template Tensor<float> ppf<float>
+(const Tensor<float>&, const Tensor<float>&, const Tensor<float>&);
+
+/**
+ * @brief Inverse survival function (ISF) / quantile of the normal.
+ *
+ * Computes the inverse survival function element-wise. The relation
+ * used is: isf(q; loc, scale) == ppf(1 - q; loc, scale). Inputs `q`,
+ * `loc` and `scale` are broadcast together to produce the output shape.
+ *
+ * For a scalar q this corresponds to the value x such that
+ *     q = 1 - CDF(x; loc, scale)
+ * i.e. the returned x satisfies CDF(x; loc, scale) = 1 - q.
+ *
+ * Note: q values of exactly 0 or 1 lead to infinite intermediate values
+ * inside the kernel (the implementation maps those to +/-Inf) which are
+ * treated as numeric non-finite results and will be reported as errors.
+ *
+ * @param q Probabilities in [0,1], broadcastable to the output shape.
+ * Must be non-empty.
+ * @param loc Mean(s) of the normal distribution. Must be non-empty.
+ * @param scale Std-dev(s) of the normal distribution. Must be non-empty
+ * and strictly positive.
+ * @return Tensor<value_t> Quantiles (ISF values) with the broadcasted
+ * shape.
+ *
+ * @throws std::invalid_argument if any input tensor is empty, if any
+ * `q` value is outside [0,1], if any `scale` element is
+ * non-positive, or if NaN is detected in inputs.
+ * @throws std::runtime_error if a non-finite result (overflow or Inf)
+ * or other numeric error occurs during computation.
+ */
+template<typename value_t>
+Tensor<value_t> isf(const Tensor<value_t>& s,
+    const Tensor<value_t>& loc,
+    const Tensor<value_t>& scale);
+/// Explicit instantiation of norm::isf for float
+extern template Tensor<float> isf<float>
 (const Tensor<float>&, const Tensor<float>&, const Tensor<float>&);
 
 /**
