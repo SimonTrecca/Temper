@@ -2963,6 +2963,136 @@ Tensor<value_t> sqrt(const Tensor<value_t>& tensor)
 template Tensor<float> sqrt<float>(const Tensor<float>& tensor);
 
 template<typename value_t>
+Tensor<value_t> pow(const Tensor<value_t> & a, const Tensor<value_t> & b)
+{
+    const std::vector<uint64_t> & a_shape = a.get_dimensions();
+    const std::vector<uint64_t> & b_shape = b.get_dimensions();
+
+    if (a_shape.empty() || b_shape.empty())
+    {
+        throw std::invalid_argument(R"(pow:
+            either input tensor has no elements.)");
+    }
+
+    temper::utils::TensorDesc a_desc;
+    temper::utils::TensorDesc b_desc;
+    a_desc.shape = a_shape;
+    a_desc.strides = a.get_strides();
+    b_desc.shape = b_shape;
+    b_desc.strides = b.get_strides();
+
+    auto bcast = temper::utils::compute_broadcast({a_desc, b_desc});
+
+    const std::vector<uint64_t> full_shape = bcast.shape;
+    const int64_t full_rank = static_cast<int64_t>(full_shape.size());
+
+    uint64_t total_elems = 1;
+    for (uint64_t d : full_shape) total_elems *= d;
+
+    MemoryLocation res_loc = MemoryLocation::HOST;
+    if (a.get_memory_location() == MemoryLocation::DEVICE ||
+        b.get_memory_location() == MemoryLocation::DEVICE)
+    {
+        res_loc = MemoryLocation::DEVICE;
+    }
+
+    Tensor<value_t> result(full_shape, res_loc);
+    value_t* p_out = result.get_data();
+
+    std::vector<uint64_t> full_divs =
+        temper::utils::compute_divisors(full_shape);
+
+    uint64_t* p_divs = static_cast<uint64_t*>(
+        sycl::malloc_device(sizeof(uint64_t) * static_cast<size_t>(full_rank),
+                            g_sycl_queue));
+    uint64_t* p_a_strides = static_cast<uint64_t*>(
+        sycl::malloc_device(sizeof(uint64_t) * static_cast<size_t>(full_rank),
+                            g_sycl_queue));
+    uint64_t* p_b_strides = static_cast<uint64_t*>(
+        sycl::malloc_device(sizeof(uint64_t) * static_cast<size_t>(full_rank),
+                            g_sycl_queue));
+    int32_t* p_error = static_cast<int32_t*>(
+        sycl::malloc_shared(sizeof(int32_t), g_sycl_queue));
+
+    bool alloc_ok = (p_divs && p_a_strides && p_b_strides && p_error);
+    if (!alloc_ok)
+    {
+        if (p_divs) sycl::free(p_divs, g_sycl_queue);
+        if (p_a_strides) sycl::free(p_a_strides, g_sycl_queue);
+        if (p_b_strides) sycl::free(p_b_strides, g_sycl_queue);
+        if (p_error) sycl::free(p_error, g_sycl_queue);
+        throw std::bad_alloc();
+    }
+
+    g_sycl_queue.memcpy(p_divs, full_divs.data(),
+        sizeof(uint64_t) * static_cast<size_t>(full_rank)).wait();
+    g_sycl_queue.memcpy(p_a_strides, bcast.strides[0].data(),
+        sizeof(uint64_t) * static_cast<size_t>(full_rank)).wait();
+    g_sycl_queue.memcpy(p_b_strides, bcast.strides[1].data(),
+        sizeof(uint64_t) * static_cast<size_t>(full_rank)).wait();
+
+    *p_error = 0;
+
+    const value_t* p_a = a.get_data();
+    const value_t* p_b = b.get_data();
+
+    g_sycl_queue.submit([&](sycl::handler& cgh)
+    {
+        cgh.parallel_for(sycl::range<1>(static_cast<size_t>(total_elems)),
+            [=](sycl::id<1> id)
+        {
+            const uint64_t flat = static_cast<uint64_t>(id[0]);
+
+            uint64_t a_off = temper::sycl_utils::idx_of
+                (flat, p_divs, p_a_strides, full_rank);
+            uint64_t b_off = temper::sycl_utils::idx_of
+                (flat, p_divs, p_b_strides, full_rank);
+
+            value_t av = p_a[a_off];
+            value_t bv = p_b[b_off];
+
+            temper::sycl_utils::device_check_nan_and_set<value_t>(av, p_error);
+            temper::sycl_utils::device_check_nan_and_set<value_t>(bv, p_error);
+
+            value_t out = temper::sycl_utils::pow<value_t>(av, bv);
+
+            temper::sycl_utils::device_check_finite_and_set<value_t>
+                (out, p_error);
+
+            p_out[flat] = out;
+        });
+    }).wait();
+
+    int32_t err = *p_error;
+
+    sycl::free(p_error, g_sycl_queue);
+    sycl::free(p_divs, g_sycl_queue);
+    sycl::free(p_a_strides, g_sycl_queue);
+    sycl::free(p_b_strides, g_sycl_queue);
+
+    if (err != 0)
+    {
+        if (err == 1)
+        {
+            throw std::runtime_error(R"(pow:
+                NaN detected in inputs.)");
+        }
+        else if (err == 2)
+        {
+            throw std::runtime_error(R"(pow:
+                non-finite or overflow result detected.)");
+        }
+        throw std::runtime_error(R"(pow: numeric/device error during pow.)");
+    }
+
+    return result;
+}
+template Tensor<float> pow<float>
+    (const Tensor<float>&, const Tensor<float>&);
+template Tensor<uint64_t> pow<uint64_t>
+    (const Tensor<uint64_t>&, const Tensor<uint64_t>&);
+
+template<typename value_t>
 Tensor<value_t> exp(const Tensor<value_t> & tensor)
 {
     const std::vector<uint64_t> & in_shape = tensor.get_dimensions();

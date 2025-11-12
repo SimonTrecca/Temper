@@ -1199,4 +1199,85 @@ TEST(NORM, rvs_throws_when_scale_nonpositive)
         std::invalid_argument);
 }
 
+/**
+ * @test NORM.mean_returns_loc
+ * @brief mean(loc, scale) should return loc (ignoring scale).
+ */
+TEST(NORM, mean_returns_loc)
+{
+    Tensor<float> loc({3}, MemoryLocation::DEVICE);
+    std::vector<float> loc_vals = {1.0f, 2.0f, -3.5f};
+    loc = loc_vals;
+
+    Tensor<float> scale({1}, MemoryLocation::DEVICE);
+    scale = std::vector<float>{2.0f};
+
+    Tensor<float> out = stats::norm::mean<float>(loc, scale);
+
+    std::vector<float> host_out(3);
+    g_sycl_queue.memcpy(host_out.data(),
+        out.m_p_data.get(), sizeof(float) * 3).wait();
+
+    for (size_t i = 0; i < loc_vals.size(); ++i)
+    {
+        EXPECT_FLOAT_EQ(host_out[i], loc_vals[i]);
+    }
+}
+
+/**
+ * @test NORM.var_scale_squared
+ * @brief var(loc, scale) should return scale ** 2 (elementwise).
+ */
+TEST(NORM, var_scale_squared)
+{
+    Tensor<float> loc({1}, MemoryLocation::DEVICE);
+    loc = std::vector<float>{0.0f};
+
+    Tensor<float> scale({3}, MemoryLocation::DEVICE);
+    std::vector<float> scale_vals = {1.0f, 2.0f, 0.5f};
+    scale = scale_vals;
+
+    Tensor<float> out = stats::norm::var<float>(loc, scale);
+
+    std::vector<float> host_out(3);
+    g_sycl_queue.memcpy(host_out.data(),
+        out.m_p_data.get(), sizeof(float) * 3).wait();
+
+    std::vector<float> expected = {1.0f, 4.0f, 0.25f};
+    const double tol = 1e-6;
+    for (size_t i = 0; i < expected.size(); ++i)
+    {
+        EXPECT_NEAR(static_cast<double>(host_out[i]),
+            static_cast<double>(expected[i]), tol);
+    }
+}
+
+/**
+ * @test NORM.stddev_returns_scale
+ * @brief stddev(loc, scale) should return scale (ignoring loc).
+ */
+TEST(NORM, stddev_returns_scale)
+{
+    Tensor<float> loc({1}, MemoryLocation::DEVICE);
+    loc = std::vector<float>{0.0f};
+
+    Tensor<float> scale({2, 2}, MemoryLocation::DEVICE);
+    std::vector<float> scale_vals = {0.1f, 1.0f, 2.5f, 3.0f};
+    scale = scale_vals;
+
+    Tensor<float> out = stats::norm::stddev<float>(loc, scale);
+
+    const uint64_t total = 4;
+    std::vector<float> host_out(total);
+    g_sycl_queue.memcpy(host_out.data(),
+        out.m_p_data.get(), sizeof(float) * total).wait();
+
+    const double tol = 1e-6;
+    for (size_t i = 0; i < total; ++i)
+    {
+        EXPECT_NEAR(static_cast<double>(host_out[i]),
+            static_cast<double>(scale_vals[i]), tol);
+    }
+}
+
 } // namespace Test

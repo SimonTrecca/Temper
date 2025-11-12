@@ -6695,6 +6695,340 @@ TEST(SQRT, sqrt_basic_positive)
     EXPECT_FLOAT_EQ(host[4], 4.0f);
 }
 
+template<typename T>
+class TypedPow : public ::testing::Test {};
+
+using PowTestTypes = ::testing::Types<float, uint64_t>;
+TYPED_TEST_SUITE(TypedPow, PowTestTypes);
+
+/**
+ * @test TypedPow.basic_elementwise
+ * @brief elementwise pow on two same-shaped tensors.
+ */
+TYPED_TEST(TypedPow, basic_elementwise)
+{
+    using value_t = TypeParam;
+
+    Tensor<value_t> A({2, 2}, MemoryLocation::DEVICE);
+    std::vector<value_t> a_vals = {
+        static_cast<value_t>(1), static_cast<value_t>(2),
+        static_cast<value_t>(3), static_cast<value_t>(4)
+    };
+    A = a_vals;
+
+    Tensor<value_t> B({2, 2}, MemoryLocation::DEVICE);
+    std::vector<value_t> b_vals = {
+        static_cast<value_t>(2), static_cast<value_t>(0),
+        static_cast<value_t>(1), static_cast<value_t>(3)
+    };
+    B = b_vals;
+
+    Tensor<value_t> R = math::pow<value_t>(A, B);
+
+    std::vector<value_t> host(4);
+    g_sycl_queue.memcpy(host.data(), R.m_p_data.get(),
+                        host.size() * sizeof(value_t)).wait();
+
+    std::vector<value_t> expected(4);
+    for (size_t i = 0; i < expected.size(); ++i)
+    {
+        if constexpr (std::is_floating_point<value_t>::value)
+        {
+            expected[i] = static_cast<value_t>(
+                std::pow(static_cast<double>(a_vals[i]),
+                         static_cast<double>(b_vals[i])));
+            EXPECT_FLOAT_EQ(static_cast<double>(host[i]),
+                            static_cast<double>(expected[i]));
+        }
+        else
+        {
+            value_t base = a_vals[i];
+            value_t exp  = b_vals[i];
+            value_t r = static_cast<value_t>(1);
+            for (value_t e = 0; e < exp; ++e) r *= base;
+            expected[i] = r;
+            EXPECT_EQ(host[i], expected[i]);
+        }
+    }
+}
+
+/**
+ * @test TypedPow.scalar_broadcast
+ * @brief broadcasting a scalar exponent across a tensor.
+ */
+TYPED_TEST(TypedPow, scalar_broadcast)
+{
+    using value_t = TypeParam;
+
+    Tensor<value_t> A({2, 3}, MemoryLocation::DEVICE);
+    std::vector<value_t> a_vals = {
+        static_cast<value_t>(1), static_cast<value_t>(2), static_cast<value_t>(3),
+        static_cast<value_t>(4), static_cast<value_t>(5), static_cast<value_t>(6)
+    };
+    A = a_vals;
+
+    Tensor<value_t> B({1}, MemoryLocation::DEVICE);
+    std::vector<value_t> b_vals = { static_cast<value_t>(2) };
+    B = b_vals;
+
+    Tensor<value_t> R = math::pow<value_t>(A, B);
+
+    std::vector<value_t> host(6);
+    g_sycl_queue.memcpy(host.data(), R.m_p_data.get(),
+                        host.size() * sizeof(value_t)).wait();
+
+    for (size_t i = 0; i < host.size(); ++i)
+    {
+        if constexpr (std::is_floating_point<value_t>::value)
+        {
+            value_t exp_v = static_cast<value_t>(
+                std::pow(static_cast<double>(a_vals[i]),
+                         static_cast<double>(b_vals[0])));
+            EXPECT_FLOAT_EQ(static_cast<double>(host[i]),
+                            static_cast<double>(exp_v));
+        }
+        else
+        {
+            value_t r = static_cast<value_t>(1);
+            for (uint64_t e = 0; e < static_cast<uint64_t>(b_vals[0]); ++e)
+                r *= a_vals[i];
+            EXPECT_EQ(host[i], r);
+        }
+    }
+}
+
+/**
+ * @test TypedPow.broadcast_dims
+ * @brief broadcasting across compatible shapes (A:(2,1,3), B:(1,3)).
+ */
+TYPED_TEST(TypedPow, broadcast_dims)
+{
+    using value_t = TypeParam;
+
+    const std::vector<uint64_t> a_shape = {2, 1, 3};
+    const std::vector<uint64_t> b_shape = {1, 3};
+
+    Tensor<value_t> A(a_shape, MemoryLocation::DEVICE);
+    Tensor<value_t> B(b_shape, MemoryLocation::DEVICE);
+
+    std::vector<value_t> a_vals(A.get_num_elements());
+    for (uint64_t i = 0; i < a_vals.size(); ++i)
+        a_vals[i] = static_cast<value_t>(i + 1);
+    A = a_vals;
+
+    std::vector<value_t> b_vals(B.get_num_elements());
+    for (uint64_t i = 0; i < b_vals.size(); ++i)
+        b_vals[i] = static_cast<value_t>(i + 2);
+    B = b_vals;
+
+    Tensor<value_t> R = math::pow<value_t>(A, B);
+
+    const uint64_t out_elems = R.get_num_elements();
+    std::vector<value_t> host(out_elems);
+    g_sycl_queue.memcpy(host.data(), R.m_p_data.get(),
+                        host.size() * sizeof(value_t)).wait();
+
+    for (uint64_t b0 = 0; b0 < 2; ++b0)
+    {
+        for (uint64_t k = 0; k < 3; ++k)
+        {
+            uint64_t out_idx = ((b0 * 1) + 0) * 3 + k;
+            value_t av = a_vals[b0 * 3 + k];
+            value_t bv = b_vals[k];
+            if constexpr (std::is_floating_point<value_t>::value)
+            {
+                value_t exp_v = static_cast<value_t>(
+                    std::pow(static_cast<double>(av),
+                             static_cast<double>(bv)));
+                EXPECT_FLOAT_EQ(static_cast<double>(host[out_idx]),
+                                static_cast<double>(exp_v));
+            }
+            else
+            {
+                value_t r = static_cast<value_t>(1);
+                for (uint64_t e = 0; e < static_cast<uint64_t>(bv); ++e) r *= av;
+                EXPECT_EQ(host[out_idx], r);
+            }
+        }
+    }
+}
+
+/**
+ * @test TypedPow.nan_throws
+ * @brief pow should throw std::runtime_error if inputs contain NaN
+ * (floats only).
+ */
+TYPED_TEST(TypedPow, nan_throws)
+{
+    using value_t = TypeParam;
+
+    if constexpr (!std::is_floating_point<value_t>::value)
+    {
+        // integral types cannot represent NaN; skip the test.
+        return;
+    }
+
+    Tensor<value_t> A({2, 2}, MemoryLocation::DEVICE);
+    std::vector<value_t> a_vals = {
+        static_cast<value_t>(1),
+        std::numeric_limits<value_t>::quiet_NaN(),
+        static_cast<value_t>(3), static_cast<value_t>(4)
+    };
+    A = a_vals;
+
+    Tensor<value_t> B({2, 2}, MemoryLocation::DEVICE);
+    std::vector<value_t> b_vals = {
+        static_cast<value_t>(1), static_cast<value_t>(2),
+        static_cast<value_t>(3), static_cast<value_t>(4)
+    };
+    B = b_vals;
+
+    EXPECT_THROW(math::pow<value_t>(A, B), std::runtime_error);
+}
+
+/**
+ * @test TypedPow.inf_throws
+ * @brief pow should throw std::runtime_error if result is non-finite
+ * (floats only)
+ */
+TYPED_TEST(TypedPow, inf_throws)
+{
+    using value_t = TypeParam;
+
+    if constexpr (!std::is_floating_point<value_t>::value)
+    {
+        // integral types cannot represent Inf; skip the test.
+        return;
+    }
+
+    Tensor<value_t> A({1, 2}, MemoryLocation::DEVICE);
+    std::vector<value_t> a_vals = {
+        std::numeric_limits<value_t>::infinity(),
+        static_cast<value_t>(2)
+    };
+    A = a_vals;
+
+    Tensor<value_t> B({2, 1}, MemoryLocation::DEVICE);
+    std::vector<value_t> b_vals = {
+        static_cast<value_t>(3), static_cast<value_t>(4)
+    };
+    B = b_vals;
+
+    EXPECT_THROW(math::pow<value_t>(A, B), std::runtime_error);
+}
+
+/**
+ * @test TypedPow.negative_exponent_float
+ * @brief negative exponent only meaningful for floating-point types
+ */
+TYPED_TEST(TypedPow, negative_exponent_float)
+{
+    using value_t = TypeParam;
+
+    if constexpr (!std::is_floating_point<value_t>::value)
+    {
+        // integral types don't represent negative exponents; skip.
+        return;
+    }
+
+    Tensor<value_t> A({2}, MemoryLocation::DEVICE);
+    std::vector<value_t> a_vals = {
+        static_cast<value_t>(2.0), static_cast<value_t>(4.0)
+    };
+    A = a_vals;
+
+    Tensor<value_t> B({2}, MemoryLocation::DEVICE);
+    std::vector<value_t> b_vals = {
+        static_cast<value_t>(-1.0), static_cast<value_t>(0.5)
+    };
+    B = b_vals;
+
+    Tensor<value_t> R = math::pow<value_t>(A, B);
+
+    std::vector<value_t> host(2);
+    g_sycl_queue.memcpy(host.data(), R.m_p_data.get(),
+                        host.size() * sizeof(value_t)).wait();
+
+    for (size_t i = 0; i < host.size(); ++i)
+    {
+        value_t expected = static_cast<value_t>(
+            std::pow(static_cast<double>(a_vals[i]),
+                     static_cast<double>(b_vals[i])));
+        EXPECT_FLOAT_EQ(static_cast<double>(host[i]),
+                        static_cast<double>(expected));
+    }
+}
+
+/**
+ * @test TypedPow.alias_views_noncontiguous_strides
+ * @brief both inputs are alias views with non-contiguous, positive strides
+ */
+TYPED_TEST(TypedPow, alias_views_noncontiguous_strides)
+{
+    using value_t = TypeParam;
+
+    Tensor<value_t> A_base({5, 6}, MemoryLocation::DEVICE);
+    Tensor<value_t> B_base({5, 6}, MemoryLocation::DEVICE);
+
+    std::vector<value_t> a_vals(A_base.get_num_elements());
+    for (uint64_t i = 0; i < a_vals.size(); ++i)
+        a_vals[i] = static_cast<value_t>(i + 1);
+    A_base = a_vals;
+
+    std::vector<value_t> b_vals(B_base.get_num_elements());
+    for (uint64_t i = 0; i < b_vals.size(); ++i)
+        b_vals[i] = static_cast<value_t>((i % 3) + 1);
+    B_base = b_vals;
+
+    std::vector<uint64_t> A_start   = {1ull, 1ull};
+    std::vector<uint64_t> B_start   = {0ull, 2ull};
+    std::vector<uint64_t> view_dims = {2ull, 3ull};
+    std::vector<uint64_t> A_strides = {3ull, 2ull};
+    std::vector<uint64_t> B_strides = {2ull, 3ull};
+
+    Tensor<value_t> A_view(A_base, A_start, view_dims, A_strides);
+    Tensor<value_t> B_view(B_base, B_start, view_dims, B_strides);
+
+    Tensor<value_t> R = math::pow<value_t>(A_view, B_view);
+
+    std::vector<value_t> host(R.get_num_elements());
+    g_sycl_queue.memcpy(host.data(), R.m_p_data.get(),
+                        host.size() * sizeof(value_t)).wait();
+
+    const uint64_t base_cols = 6;
+    for (uint64_t i = 0; i < view_dims[0]; ++i)
+    {
+        for (uint64_t j = 0; j < view_dims[1]; ++j)
+        {
+            uint64_t out_idx = i * view_dims[1] + j;
+
+            uint64_t a_linear = (A_start[0] * base_cols + A_start[1]) +
+                                i * A_strides[0] + j * A_strides[1];
+            uint64_t b_linear = (B_start[0] * base_cols + B_start[1]) +
+                                i * B_strides[0] + j * B_strides[1];
+
+            value_t av = a_vals[a_linear];
+            value_t bv = b_vals[b_linear];
+
+            if constexpr (std::is_floating_point<value_t>::value)
+            {
+                value_t expected = static_cast<value_t>(
+                    std::pow(static_cast<double>(av),
+                             static_cast<double>(bv)));
+                EXPECT_FLOAT_EQ(static_cast<double>(host[out_idx]),
+                                static_cast<double>(expected));
+            }
+            else
+            {
+                value_t r = static_cast<value_t>(1);
+                for (uint64_t e = 0; e < static_cast<uint64_t>(bv); ++e)
+                    r *= av;
+                EXPECT_EQ(host[out_idx], r);
+            }
+        }
+    }
+}
+
 /**
  * @test EIG.eig_empty
  * @brief Verify eig() throws when called on an empty tensor.

@@ -6,6 +6,8 @@
 #include "temper/Stats.hpp"
 #include "temper/Utils.hpp"
 #include "temper/SYCLUtils.hpp"
+#include "temper/Math.hpp"
+
 #include <random>
 
 namespace temper::stats
@@ -1133,6 +1135,36 @@ Tensor<value_t> rvs(const Tensor<value_t>& loc,
 }
 template Tensor<float> rvs<float>(const Tensor<float>&, const Tensor<float>&,
     const std::vector<uint64_t>&, MemoryLocation, uint64_t);
+
+template<typename value_t>
+Tensor<value_t> mean(const Tensor<value_t>& loc,
+    const Tensor<value_t>& scale)
+{
+    (void) scale;
+    return loc;
+}
+template Tensor<float> mean<float>
+(const Tensor<float>&, const Tensor<float>&);
+
+template<typename value_t>
+Tensor<value_t> var(const Tensor<value_t>& loc,
+    const Tensor<value_t>& scale)
+{
+    (void) loc;
+    return math::pow(scale, Tensor<value_t>(2));
+}
+template Tensor<float> var<float>
+(const Tensor<float>&, const Tensor<float>&);
+
+template<typename value_t>
+Tensor<value_t> stddev(const Tensor<value_t>& loc,
+    const Tensor<value_t>& scale)
+{
+    (void) loc;
+    return scale;
+}
+template Tensor<float> stddev<float>
+(const Tensor<float>&, const Tensor<float>&);
 
 } // namespace norm
 

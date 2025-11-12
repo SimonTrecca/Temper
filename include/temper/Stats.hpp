@@ -212,13 +212,68 @@ Tensor<value_t> rvs(const Tensor<value_t>& loc,
 /// Explicit instantiation of norm::rvs for float
 extern template Tensor<float> rvs<float>(const Tensor<float>&,
 const Tensor<float>&, const std::vector<uint64_t>&, MemoryLocation, uint64_t);
-        /*todo
-        isf
-        logpdf
-        mean
-        var
-        std
-        */
+
+/**
+ * @brief Mean of the normal distribution.
+ *
+ * Returns the mean of Normal(loc, scale) element-wise.
+ *
+ * For the normal distribution, the mean is equal to `loc`.
+ *
+ * @param loc Mean tensor of the distribution. Must be non-empty.
+ * @param scale Standard deviation tensor of the distribution. Not needed;
+ * kept for consistency.
+ * @return Tensor<value_t> Tensor containing the mean values.
+ */
+template<typename value_t>
+Tensor<value_t> mean(const Tensor<value_t>& loc,
+    const Tensor<value_t>& scale);
+/// Explicit instantiation of norm::mean for float
+extern template Tensor<float> mean<float>
+(const Tensor<float>&, const Tensor<float>&);
+
+/**
+ * @brief Computes the variance of a normal distribution.
+ *
+ * Returns a tensor containing the variance values of Normal(loc, scale).
+ * The variance is the square of the `scale` tensor.
+ *
+ * @param loc Mean tensor. Not needed; kept for consistency.
+ * @param scale Standard deviation tensor. Must be non-empty and positive.
+ * @return Tensor<value_t> Tensor containing variance values, broadcasted
+ *         to the shape of `loc` and `scale`.
+ *
+ * @throws std::invalid_argument If scale is empty.
+ * @throws std::bad_alloc If required host or device memory cannot be allocated.
+ * @throws std::runtime_error If NaN/Inf or other numeric/device errors occur
+ *         during computation.
+ */
+template<typename value_t>
+Tensor<value_t> var(const Tensor<value_t>& loc,
+    const Tensor<value_t>& scale);
+/// Explicit instantiation of norm::var for float
+extern template Tensor<float> var<float>
+(const Tensor<float>&, const Tensor<float>&);
+
+
+/**
+ * @brief Computes the standard deviation of a normal distribution.
+ *
+ * Returns a tensor containing the standard deviation values of
+ * Normal(loc, scale).
+ * The standard deviation is the same as the `scale` tensor.
+ *
+ * @param loc Mean tensor. Not needed; kept for consistency.
+ * @param scale Standard deviation tensor. Must be non-empty and positive.
+ * @return Tensor<value_t> Tensor containing standard deviation values.
+ */
+template<typename value_t>
+Tensor<value_t> stddev(const Tensor<value_t>& loc,
+    const Tensor<value_t>& scale);
+/// Explicit instantiation of norm::stddev for float
+extern template Tensor<float> stddev<float>
+(const Tensor<float>&, const Tensor<float>&);
+
 } // namespace norm
 
     namespace beta

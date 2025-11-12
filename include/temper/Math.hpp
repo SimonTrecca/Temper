@@ -771,6 +771,30 @@ Tensor<value_t> sqrt(const Tensor<value_t>& tensor);
 extern template Tensor<float> sqrt<float>(const Tensor<float>& tensor);
 
 /**
+ * @brief Elementwise power.
+ *
+ * Computes elementwise `a^b`, supporting broadcasting between the two inputs.
+ *
+ * @param a Base tensor.
+ * @param b Exponent tensor.
+ * @return Tensor<value_t> Tensor containing the elementwise powers.
+ *
+ * @throws std::invalid_argument If either input tensor is empty or the shapes
+ *         are not broadcastable.
+ * @throws std::bad_alloc If required host or device memory cannot be allocated.
+ * @throws std::runtime_error If NaN/Inf or other numeric/device errors occur
+ *         during computation.
+ */
+template<typename value_t>
+Tensor<value_t> pow(const Tensor<value_t> & a, const Tensor<value_t> & b);
+/// Explicit instantiation of pow for float
+extern template Tensor<float> pow<float>
+    (const Tensor<float>&, const Tensor<float>&);
+/// Explicit instantiation of pow for uint64_t
+extern template Tensor<uint64_t> pow<uint64_t>
+    (const Tensor<uint64_t>&, const Tensor<uint64_t>&);
+
+/**
  * @brief Elementwise natural exponential.
  *
  * Computes `exp(x)` for every element of @p tensor and returns a tensor

@@ -107,6 +107,48 @@ inline value_t sqrt(value_t v)
 }
 
 /**
+ * @brief Safe power wrapper.
+ *
+ * For floating types, forwards to sycl::pow(). For integral types, uses
+ * fast exponentiation by squaring. Negative integer exponents are computed
+ * via floating-point promotion.
+ *
+ * @param a Base value
+ * @param b Exponent value
+ * @return a raised to the power b
+ */
+template <typename value_t>
+inline value_t pow(value_t a, value_t b)
+{
+    if constexpr (std::is_floating_point_v<value_t>)
+    {
+        return sycl::pow(a, b);
+    }
+    else
+    {
+        if constexpr (std::is_signed_v<value_t>)
+        {
+            if (b < 0)
+            {
+                double r = sycl::pow(static_cast<double>(a),
+                                     static_cast<double>(b));
+                return static_cast<value_t>(r);
+            }
+        }
+        value_t base = a;
+        value_t exp = b;
+        value_t acc = 1;
+        while (exp)
+        {
+            if (exp & 1) acc = acc * base;
+            exp >>= 1;
+            if (exp) base = base * base;
+        }
+        return acc;
+    }
+}
+
+/**
  * @brief Safe fabs wrapper.
  *
  * For floating types forwards to sycl::fabs; for integral types returns the
