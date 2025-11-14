@@ -336,20 +336,50 @@ extern template Tensor<float> stddev<float>
         */
     } // namespace t
 
-    namespace chisquare
-    {
-        /*todo
-        pdf
-        cdf
-        ppf
-        rvs
-        isf
-        logpdf
-        mean
-        var
-        std
-        */
-    } // namespace chisquare
+namespace chisquare
+{
+/**
+ * @brief Probability density function of the chi-square distribution.
+ *
+ * Computes the chi-square PDF element-wise:
+ *     pdf(x; k) = (1 / (2^(k/2) * Gamma(k/2))) * x^(k/2 - 1) * exp(-x/2)
+ *
+ * Inputs `x` (values) and `k` (degrees of freedom) are broadcast together
+ * to produce the output shape. The PDF is defined for x >= 0 and for
+ * positive degrees of freedom `k`.
+ *
+ * @param x Values at which to evaluate the PDF. Must be non-empty. Values
+ *          less than zero are invalid and will be reported as an error.
+ * @param k Degrees of freedom. Must be non-empty. Values
+ *          less than zero are invalid and will be reported as an error.
+ * @return Tensor<value_t> Tensor containing PDF values with the broadcasted
+ *         shape.
+ *
+ * @throws std::invalid_argument if any input tensor is empty or NaN is
+ *         detected in inputs.
+ * @throws std::invalid_argument if any evaluated `x` element or 'k' element
+ *         is invalid.
+ * @throws std::runtime_error if a non-finite result (overflow or Inf) or
+ *         other numeric/device error occurs during computation.
+ */
+template<typename value_t>
+Tensor<value_t> pdf(const Tensor<value_t>& x,
+    const Tensor<value_t>& k);
+/// Explicit instantiation of chisquare::pdf for float
+extern template Tensor<float> pdf<float>
+(const Tensor<float>&, const Tensor<float>&);
+
+    /*todo
+    cdf
+    ppf
+    rvs
+    isf
+    logpdf
+    mean
+    var
+    std
+    */
+} // namespace chisquare
 
 } // namespace temper::stats
 

@@ -1280,4 +1280,159 @@ TEST(NORM, stddev_returns_scale)
     }
 }
 
+/**
+ * @test CHISQUARE.pdf_basic_values
+ * @brief Check that pdf returns known values for a few 1-D inputs (k scalar).
+ */
+TEST(CHISQUARE, pdf_basic_values)
+{
+    Tensor<float> x({3}, MemoryLocation::DEVICE);
+    x = std::vector<float>{0.5f, 1.0f, 2.0f};
+
+    Tensor<float> k({1}, MemoryLocation::DEVICE);
+    k = std::vector<float>{2.0f};
+
+    Tensor<float> out = stats::chisquare::pdf<float>(x, k);
+    std::vector<float> host_out(3);
+    g_sycl_queue.memcpy(host_out.data(),
+        out.m_p_data.get(), sizeof(float) * 3).wait();
+
+    std::vector<float> expected = {
+        0.38940039153570244f,
+        0.3032653298563167f,
+        0.18393972058572117f
+    };
+    const double tol = 1e-6;
+    for (size_t i = 0; i < expected.size(); ++i)
+    {
+        EXPECT_NEAR(static_cast<double>(host_out[i]),
+            static_cast<double>(expected[i]), tol);
+    }
+}
+
+/**
+ * @test CHISQUARE.pdf_broadcast_complex_shapes
+ * @brief Verify broadcasting where x is 2x3 and k is a length-3 vector
+ * (broadcast over rows).
+ */
+TEST(CHISQUARE, pdf_broadcast_complex_shapes)
+{
+    Tensor<float> x({2, 3}, MemoryLocation::DEVICE);
+    x = std::vector<float>{0.5f, 1.0f, 2.0f, 3.0f, 4.0f, 5.0f};
+
+    Tensor<float> k({3}, MemoryLocation::DEVICE);
+    k = std::vector<float>{2.0f, 3.0f, 4.0f};
+
+    Tensor<float> out = stats::chisquare::pdf<float>(x, k);
+    std::vector<float> host_out(6);
+    g_sycl_queue.memcpy(host_out.data(),
+        out.m_p_data.get(), sizeof(float) * 6).wait();
+
+    std::vector<float> expected = {
+        0.38940039153570244f,
+        0.24197072451914334f,
+        0.18393972058572117f,
+        0.11156508007421491f,
+        0.10798193302637610f,
+        0.10260624827987350f
+    };
+
+    const double tol = 1e-6;
+    for (size_t i = 0; i < expected.size(); ++i)
+    {
+        EXPECT_NEAR(static_cast<double>(host_out[i]),
+            static_cast<double>(expected[i]), tol);
+    }
+}
+
+/**
+ * @test CHISQUARE.pdf_view_with_weird_strides
+ * @brief Ensure pdf accepts non-contiguous/alias views for x and k.
+ */
+TEST(CHISQUARE, pdf_view_with_weird_strides)
+{
+    const uint64_t total = 6;
+
+    Tensor<float> x_owner({6}, MemoryLocation::DEVICE);
+    std::vector<float> x_owner_vals = {2.0f, 99.0f, 99.0f, 2.0f, 99.0f, 99.0f};
+    x_owner = x_owner_vals;
+    Tensor<float> x_alias(
+        x_owner,
+        std::vector<uint64_t>{0ull},
+        std::vector<uint64_t>{2ull, 1ull},
+        std::vector<uint64_t>{3ull, 2ull}
+    );
+
+    Tensor<float> k_owner({5}, MemoryLocation::DEVICE);
+    std::vector<float> k_owner_vals = {2.0f, 99.0f, 2.0f, 99.0f, 2.0f};
+    k_owner = k_owner_vals;
+    Tensor<float> k_alias(
+        k_owner,
+        std::vector<uint64_t>{0ull},
+        std::vector<uint64_t>{1ull, 3ull},
+        std::vector<uint64_t>{3ull, 2ull}
+    );
+
+    Tensor<float> out = stats::chisquare::pdf<float>(x_alias, k_alias);
+
+    std::vector<float> host_out(total);
+    g_sycl_queue.memcpy(host_out.data(),
+        out.m_p_data.get(), sizeof(float) * total).wait();
+
+    std::vector<float> expected(total, 0.18393972058572117f);
+    const double tol = 1e-6;
+    for (uint64_t i = 0; i < total; ++i)
+    {
+        EXPECT_NEAR(static_cast<double>(host_out[i]),
+            static_cast<double>(expected[i]), tol);
+    }
+}
+
+/**
+ * @test CHISQUARE.pdf_throws_on_negative_x
+ * @brief pdf should throw std::invalid_argument when k contains values <= 0.
+ */
+TEST(CHISQUARE, pdf_throws_on_negative_x)
+{
+    Tensor<float> x({1}, MemoryLocation::DEVICE);
+    x = std::vector<float>{-1.0f};
+    Tensor<float> k({1}, MemoryLocation::DEVICE);
+    k = std::vector<float>{0.0f};
+
+    EXPECT_THROW(stats::chisquare::pdf<float>(x, k), std::invalid_argument);
+}
+
+/**
+ * @test CHISQUARE.pdf_throws_on_negative_or_zero_k
+ * @brief pdf should throw std::invalid_argument when x contains negative values.
+ */
+TEST(CHISQUARE, pdf_throws_on_negative_or_zero_k)
+{
+    Tensor<float> x({1}, MemoryLocation::DEVICE);
+    x = std::vector<float>{1.0f};
+    Tensor<float> k({1}, MemoryLocation::DEVICE);
+    k = std::vector<float>{0.0f};
+
+    Tensor<float> k2({1}, MemoryLocation::DEVICE);
+    k2 = std::vector<float>{-1.0f};
+
+    EXPECT_THROW(stats::chisquare::pdf<float>(x, k), std::invalid_argument);
+    EXPECT_THROW(stats::chisquare::pdf<float>(x, k2), std::invalid_argument);
+}
+
+/**
+ * @test CHISQUARE.pdf_throws_on_nan_input
+ * @brief pdf should throw std::invalid_argument when x contains NaN.
+ */
+TEST(CHISQUARE, pdf_throws_on_nan_input)
+{
+    Tensor<float> x({1}, MemoryLocation::DEVICE);
+    float nanf = std::numeric_limits<float>::quiet_NaN();
+    x = nanf;
+    Tensor<float> k({1}, MemoryLocation::DEVICE);
+    k = std::vector<float>{2.0f};
+
+    EXPECT_THROW(stats::chisquare::pdf<float>(x, k), std::invalid_argument);
+}
+
 } // namespace Test
