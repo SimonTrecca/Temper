@@ -271,6 +271,74 @@ inline void device_check_finite_and_set(value_t v, int32_t* p_err)
 }
 
 /**
+ * @brief Compute the lower regularized incomplete gamma function P(s, x).
+ *
+ * This function calculates the regularized lower incomplete gamma function
+ * P(s, x), which is the integral from 0 to x of t^(s-1) * exp(-t), divided
+ * by the gamma function of s.
+ *
+ * For x < s + 1, a series expansion is used. For x >= s + 1, a continued
+ * fraction method (Lentz's method) is used. This ensures numerical stability
+ * across different values of s and x.
+ *
+ * @param s Shape parameter (must be greater than 0)
+ * @param x Upper limit of integration (must be non-negative)
+ * @return The regularized gamma value P(s, x), between 0 and 1. Returns NaN
+ *         if s <= 0 or x < 0.
+ *
+ * @note The function uses std::tgamma for normalization and avoids division
+ *       by very small numbers using a minimum threshold (FPMIN).
+ */
+inline double regularized_gamma(double s, double x)
+{
+    if (x < 0 || s <= 0) return std::numeric_limits<double>::quiet_NaN();
+    if (x == 0.0) return 0.0;
+
+    const double EPS = std::numeric_limits<double>::epsilon();
+    // FPMIN: a small number to avoid division by zero in Lentz's method.
+    const double FPMIN = std::numeric_limits<double>::min() / EPS;
+    const int MAX_ITER = 1000;
+
+    // Series expansion for x < s + 1.
+    if (x < s + 1.0)
+    {
+        double sum = 1.0 / s;
+        double term = sum;
+        for (int n = 1; n < MAX_ITER; ++n)
+        {
+            term *= x / (s + n);
+            sum += term;
+            if (std::fabs(term) < EPS * std::fabs(sum)) break;
+        }
+        // Divide by Gamma(s) to get the regularized value.
+        return std::exp(-x + s * std::log(x)) * sum / std::tgamma(s);
+    }
+
+    // Continued fraction (Lentz's method) for x >= s + 1.
+    double b = x + 1.0 - s;
+    double c = 1.0 / FPMIN;
+    double d = 1.0 / b;
+    double h = d;
+
+    for (int i = 1; i < MAX_ITER; ++i)
+    {
+        double an = i * (s - i);
+        b += 2.0;
+        d = an * d + b;
+        if (std::fabs(d) < FPMIN) d = FPMIN;
+        c = b + an / c;
+        if (std::fabs(c) < FPMIN) c = FPMIN;
+        d = 1.0 / d;
+        double delta = d * c;
+        h *= delta;
+        if (std::fabs(delta - 1.0) < EPS) break;
+    }
+
+    // Divide by Gamma(s) here as well.
+    return 1.0 - std::exp(-x + s * std::log(x)) * h / std::tgamma(s);
+}
+
+/**
  * @brief Atomically set an error flag if divisor is zero.
  *
  * @tparam value_t Floating-point type

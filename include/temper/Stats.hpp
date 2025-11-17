@@ -369,8 +369,36 @@ Tensor<value_t> pdf(const Tensor<value_t>& x,
 extern template Tensor<float> pdf<float>
 (const Tensor<float>&, const Tensor<float>&);
 
+/**
+ * @brief Cumulative distribution function of the chi-square distribution.
+ *
+ * Computes the chi-square CDF element-wise:
+ *     cdf(x; k) = P(k/2, x/2)
+ * where P is the lower regularized gamma function.
+ *
+ * Inputs `x` (values) and `k` (degrees of freedom) are broadcast together
+ * to produce the output shape. The CDF is defined for x >= 0 and k > 0.
+ *
+ * @param x Values at which to evaluate the CDF. Must be non-empty. Values
+ *          less than zero are invalid and will be reported as an error.
+ * @param k Degrees of freedom. Must be non-empty and positive. Values
+ *          less than or equal to zero are invalid.
+ * @return Tensor<value_t> Tensor containing CDF values in [0,1] with the
+ *         broadcasted shape.
+ *
+ * @throws std::invalid_argument if any input tensor is empty, contains NaN,
+ *         or if any element of x < 0 or k <= 0.
+ * @throws std::runtime_error if a non-finite result (overflow, Inf) or
+ *         other numeric/device error occurs during computation.
+ */
+template<typename value_t>
+Tensor<value_t> cdf(const Tensor<value_t>& x,
+    const Tensor<value_t>& k);
+/// Explicit instantiation of chisquare::cdf for float
+extern template Tensor<float> cdf<float>
+(const Tensor<float>&, const Tensor<float>&);
+
     /*todo
-    cdf
     ppf
     rvs
     isf
