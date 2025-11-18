@@ -270,36 +270,99 @@ inline void device_check_finite_and_set(value_t v, int32_t* p_err)
     }
 }
 
+inline double erfinv(double x)
+{
+    const double a[] = {
+        -3.969683028665376e+01,
+         2.209460984245205e+02,
+        -2.759285104469687e+02,
+         1.383577518672690e+02,
+        -3.066479806614716e+01,
+         2.506628277459239e+00
+    };
+
+    const double b[] = {
+        -5.447609879822406e+01,
+         1.615858368580409e+02,
+        -1.556989798598866e+02,
+         6.680131188771972e+01,
+        -1.328068155288572e+01
+    };
+
+    const double c[] = {
+        -7.784894002430293e-03,
+        -3.223964580411365e-01,
+        -2.400758277161838e+00,
+        -2.549732539343734e+00,
+         4.374664141464968e+00,
+         2.938163982698783e+00
+    };
+
+    const double d[] = {
+         7.784695709041462e-03,
+         3.224671290700398e-01,
+         2.445134137142996e+00,
+         3.754408661907416e+00
+    };
+
+    const double p_low  = 0.02425;
+    const double p_high = 1.0 - p_low;
+
+    if (x <= -1.0) return -std::numeric_limits<double>::infinity();
+    if (x >=  1.0) return  std::numeric_limits<double>::infinity();
+
+    double p = (x + 1.0) * 0.5;
+
+    double q, r;
+    if (p < p_low)
+    {
+        q = std::sqrt(-2.0 * std::log(p));
+        return (((((c[0]*q + c[1])*q + c[2])*q + c[3])*q + c[4])*q + c[5]) /
+               ((((d[0]*q + d[1])*q + d[2])*q + d[3])*q + 1.0);
+    }
+    else if (p <= p_high)
+    {
+        q = p - 0.5;
+        r = q * q;
+        return (((((a[0]*r + a[1])*r + a[2])*r + a[3])*r + a[4])*r + a[5]) * q /
+               (((((b[0]*r + b[1])*r + b[2])*r + b[3])*r + b[4])*r + 1.0);
+    }
+    else
+    {
+        q = std::sqrt(-2.0 * std::log(1.0 - p));
+        return -(((((c[0]*q + c[1])*q + c[2])*q + c[3])*q + c[4])*q + c[5]) /
+                 ((((d[0]*q + d[1])*q + d[2])*q + d[3])*q + 1.0);
+    }
+}
+
 /**
- * @brief Compute the lower regularized incomplete gamma function P(s, x).
- *
- * This function calculates the regularized lower incomplete gamma function
- * P(s, x), which is the integral from 0 to x of t^(s-1) * exp(-t), divided
- * by the gamma function of s.
- *
- * For x < s + 1, a series expansion is used. For x >= s + 1, a continued
- * fraction method (Lentz's method) is used. This ensures numerical stability
- * across different values of s and x.
- *
- * @param s Shape parameter (must be greater than 0)
- * @param x Upper limit of integration (must be non-negative)
- * @return The regularized gamma value P(s, x), between 0 and 1. Returns NaN
- *         if s <= 0 or x < 0.
- *
- * @note The function uses std::tgamma for normalization and avoids division
- *       by very small numbers using a minimum threshold (FPMIN).
- */
+* @brief Compute the lower regularized incomplete gamma function P(s, x).
+*
+* This function calculates the regularized lower incomplete gamma function
+* P(s, x) = (1 / Gamma(s)) * integral_0^x t^{s-1} e^{-t} dt.
+*
+* Implementation notes:
+* - The function operates in log-space for normalization using std::lgamma()
+* to avoid overflow/underflow when s or x are large.
+* - For x < s + 1 a series expansion (convergent for small x) is used.
+* - For x >= s + 1 Lentz's continued fraction is used to evaluate the
+* complementary value Q(s,x) = Gamma(s,x)/Gamma(s) and P = 1 - Q.
+*
+* @param s Shape parameter (must be > 0).
+* @param x Upper limit of integration (must be >= 0).
+* @return P(s, x) in [0,1], or NaN if inputs are invalid.
+*/
 inline double regularized_gamma(double s, double x)
 {
-    if (x < 0 || s <= 0) return std::numeric_limits<double>::quiet_NaN();
+    if (s <= 0.0 || x < 0.0) return std::numeric_limits<double>::quiet_NaN();
     if (x == 0.0) return 0.0;
 
+    const int MAX_ITER = 2000;
     const double EPS = std::numeric_limits<double>::epsilon();
-    // FPMIN: a small number to avoid division by zero in Lentz's method.
     const double FPMIN = std::numeric_limits<double>::min() / EPS;
-    const int MAX_ITER = 1000;
 
-    // Series expansion for x < s + 1.
+    double log_front = -x + s * std::log(x) - std::lgamma(s);
+
     if (x < s + 1.0)
     {
         double sum = 1.0 / s;
@@ -310,19 +373,24 @@ inline double regularized_gamma(double s, double x)
             sum += term;
             if (std::fabs(term) < EPS * std::fabs(sum)) break;
         }
-        // Divide by Gamma(s) to get the regularized value.
-        return std::exp(-x + s * std::log(x)) * sum / std::tgamma(s);
+        double front = std::exp(log_front);
+        double result = front * sum;
+
+        if (!std::isfinite(result))
+        {
+            if (log_front < -700) return 0.0;
+            return std::numeric_limits<double>::quiet_NaN();
+        }
+        return result;
     }
 
-    // Continued fraction (Lentz's method) for x >= s + 1.
     double b = x + 1.0 - s;
     double c = 1.0 / FPMIN;
     double d = 1.0 / b;
     double h = d;
-
     for (int i = 1; i < MAX_ITER; ++i)
     {
-        double an = i * (s - i);
+        double an = -static_cast<double>(i) * (static_cast<double>(i) - s);
         b += 2.0;
         d = an * d + b;
         if (std::fabs(d) < FPMIN) d = FPMIN;
@@ -334,8 +402,145 @@ inline double regularized_gamma(double s, double x)
         if (std::fabs(delta - 1.0) < EPS) break;
     }
 
-    // Divide by Gamma(s) here as well.
-    return 1.0 - std::exp(-x + s * std::log(x)) * h / std::tgamma(s);
+    double front = std::exp(log_front);
+    double Q = front * h;
+    double P = 1.0 - Q;
+    if (P < 0.0 && P > -1e-16) P = 0.0;
+    return P;
+}
+
+/**
+* @brief Compute the inverse of the lower regularized incomplete gamma.
+*
+* Solve for x given a>0 and 0<p<1 such that P(a, x) == p. The routine
+* returns x in (0, +inf). The solver uses a Wilson–Hilferty initial guess
+* for a>1 and a small-a heuristic otherwise. A hybrid Newton + bisection
+* iteration follows, with the PDF computed in log-space to preserve
+* numerical stability.
+*
+* @param a Shape parameter (must be > 0).
+* @param p Target probability in (0,1).
+* @return x such that P(a, x) = p, or NaN/inf for invalid inputs.
+*/
+inline double inverse_regularized_gamma(double a, double p)
+{
+    if (p <= 0.0) return 0.0;
+    if (p >= 1.0) return std::numeric_limits<double>::infinity();
+    if (a <= 0.0) return std::numeric_limits<double>::quiet_NaN();
+
+    const int MAX_ITER = 200;
+    const double TOL = 1e-14;
+
+    double x;
+    if (a > 1.0)
+    {
+        double z = std::sqrt(2.0) * erfinv(2.0 * p - 1.0);
+        double w = 1.0 - 1.0 / (9.0 * a) + z * std::sqrt(1.0 / (9.0 * a));
+        x = a * w * w * w;
+        if (x <= 0.0) x = std::numeric_limits<double>::min();
+    }
+    else
+    {
+        double log_gamma_ap1 = std::lgamma(a + 1.0);
+        double log_x = (std::log(p) + log_gamma_ap1) / a;
+        if (log_x < -700.0) x = std::exp(log_x);
+        else x = std::exp(log_x);
+        if (!(x > 0.0) || x < 1e-300)
+        {
+            x = std::min(1e-2, std::max(std::exp(std::log(p) / a), 1e-8));
+        }
+    }
+
+    double lo = 0.0;
+    double hi = x;
+    if (!(hi > 0.0)) hi = 1.0;
+    double P_hi = regularized_gamma(a, hi);
+    int safety = 0;
+    while (P_hi < p && safety < 2000)
+    {
+        hi *= 2.0;
+        P_hi = regularized_gamma(a, hi);
+        ++safety;
+        if (hi > 1e300) break;
+    }
+
+    if (!std::isfinite(P_hi))
+    {
+        hi = std::max(hi * 1e-6, std::numeric_limits<double>::min());
+        P_hi = regularized_gamma(a, hi);
+        if (!std::isfinite(P_hi))
+        {
+            return x;
+        }
+    }
+
+    if (std::fabs(P_hi - p) < 1e-16) return hi;
+
+    double x_curr = std::min(std::max(x, std::numeric_limits<double>::min()),
+        hi);
+    double f_curr = regularized_gamma(a, x_curr) - p;
+    if (f_curr > 0.0)
+    {
+        hi = x_curr;
+        P_hi = regularized_gamma(a, hi);
+    } else
+    {
+        lo = x_curr;
+    }
+
+    for (int iter = 0; iter < MAX_ITER; ++iter)
+    {
+        double log_pdf;
+        if (x_curr <= 0.0)
+        {
+            log_pdf = (a - 1.0) * std::log(std::numeric_limits<double>::min()) -
+                std::numeric_limits<double>::max();
+        }
+        else
+        {
+            log_pdf = (a - 1.0) * std::log(x_curr) - x_curr - std::lgamma(a);
+        }
+        double pdf = std::exp(std::max(-700.0, std::min(700.0, log_pdf)));
+        double F = regularized_gamma(a, x_curr);
+        double f = F - p;
+
+        double x_new;
+        if (pdf > 0.0)
+        {
+            x_new = x_curr - f / pdf;
+            if (!(x_new > lo && x_new < hi) || !std::isfinite(x_new))
+            {
+                x_new = 0.5 * (lo + hi);
+            }
+        }
+        else
+        {
+            x_new = 0.5 * (lo + hi);
+        }
+
+        double F_new = regularized_gamma(a, x_new);
+        double f_new = F_new - p;
+
+        if (f_new > 0.0)
+        {
+            hi = x_new;
+            P_hi = F_new;
+        }
+        else
+        {
+            lo = x_new;
+        }
+
+        x_curr = x_new;
+        f_curr = f_new;
+
+        if (std::fabs(hi - lo) <= TOL * (1.0 + std::fabs(x_curr)))
+            break;
+
+        if (std::fabs(f_curr) <= 1e-15) break;
+    }
+
+    return x_curr;
 }
 
 /**

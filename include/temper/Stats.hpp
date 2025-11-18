@@ -398,8 +398,39 @@ Tensor<value_t> cdf(const Tensor<value_t>& x,
 extern template Tensor<float> cdf<float>
 (const Tensor<float>&, const Tensor<float>&);
 
+/**
+ * @brief Inverse CDF (percent-point function) of the chi-square distribution.
+ *
+ * Computes the chi-square quantile x for given cumulative probabilities `q`
+ * and degrees of freedom `k`, element-wise with broadcasting:
+ *     x = 2 * inverse_regularized_gamma(k/2, q)
+ *
+ * Inputs `q` (probabilities) and `k` (degrees of freedom) are broadcast
+ * together to produce the output shape. `q` values must lie in [0,1]; `k`
+ * elements must be strictly positive. Note that `q == 0` maps to `x == 0`,
+ * while `q == 1` can produce infinite intermediate values in the kernel and
+ * will be treated as a numeric error by this implementation.
+ *
+ * @param q Probabilities in [0,1]. Must be non-empty.
+ * @param k Degrees of freedom, must be non-empty and strictly positive.
+ * @return Tensor<value_t> Quantiles with the broadcasted shape.
+ *
+ * @throws std::invalid_argument if any input tensor is empty or contains NaN.
+ * @throws std::invalid_argument if any element of `k` is non-positive.
+ * @throws std::invalid_argument if any `q` value is outside [0,1].
+ * @throws std::runtime_error if a non-finite result (overflow or Inf) is
+ *         produced by the underlying kernel or if other numeric/device
+ *         errors occur during computation.
+ */
+
+template<typename value_t>
+Tensor<value_t> ppf(const Tensor<value_t>& q,
+    const Tensor<value_t>& k);
+/// Explicit instantiation of chisquare::ppf for float
+extern template Tensor<float> ppf<float>
+(const Tensor<float>&, const Tensor<float>&);
+
     /*todo
-    ppf
     rvs
     isf
     logpdf
