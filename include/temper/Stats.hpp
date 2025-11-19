@@ -370,6 +370,36 @@ extern template Tensor<float> pdf<float>
 (const Tensor<float>&, const Tensor<float>&);
 
 /**
+ * @brief Logarithm of the chi-square probability density function.
+ *
+ * Computes the log-PDF element-wise:
+ *     logpdf(x; k) = (k/2 - 1) * log(x) - x/2
+ *                     - (k/2) * log(2) - lgamma(k/2)
+ *
+ * Inputs `x` (values) and `k` (degrees of freedom) are broadcast together
+ * to produce the output shape.
+ *
+ * @param x Values at which to evaluate the log-PDF. Must be non-empty.
+ *          Values less than zero are invalid and reported as an error.
+ * @param k Degrees of freedom. Must be non-empty and strictly positive.
+ *          Non-positive values are invalid and reported as an error.
+ * @return Tensor<value_t> Tensor containing element-wise log-PDF values
+ *         with the broadcasted shape.
+ *
+ * @throws std::invalid_argument if any input tensor is empty, if NaN is
+ *         detected in the inputs, or if any element of `k` is non-positive
+ *         or any element of `x` is negative.
+ * @throws std::runtime_error if a non-finite result (overflow or Inf) or
+ *         other numeric/device error occurs during computation.
+ */
+template<typename value_t>
+Tensor<value_t> logpdf(const Tensor<value_t>& x,
+    const Tensor<value_t>& k);
+/// Explicit instantiation of chisquare::logpdf for float
+extern template Tensor<float> logpdf<float>
+(const Tensor<float>&, const Tensor<float>&);
+
+/**
  * @brief Cumulative distribution function of the chi-square distribution.
  *
  * Computes the chi-square CDF element-wise:

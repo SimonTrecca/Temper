@@ -1031,7 +1031,6 @@ Tensor<value_t> isf(const Tensor<value_t>& q,
 template Tensor<float> isf<float>
 (const Tensor<float>&, const Tensor<float>&, const Tensor<float>&);
 
-
 template<typename value_t>
 Tensor<value_t> rvs(const Tensor<value_t>& loc,
     const Tensor<value_t>& scale,
@@ -1322,6 +1321,157 @@ Tensor<value_t> pdf(const Tensor<value_t>& x,
     return result;
 }
 template Tensor<float> pdf<float>
+(const Tensor<float>&, const Tensor<float>&);
+
+template<typename value_t>
+Tensor<value_t> logpdf(const Tensor<value_t>& x,
+    const Tensor<value_t>& k)
+{
+    const std::vector<uint64_t> & x_shape = x.get_dimensions();
+    const std::vector<uint64_t> & k_shape = k.get_dimensions();
+
+    if (x_shape.empty())
+    {
+        throw std::invalid_argument(R"(chisquare::logpdf:
+            x tensor has no elements.)");
+    }
+    if (k_shape.empty())
+    {
+        throw std::invalid_argument(R"(chisquare::logpdf:
+            k tensor has no elements.)");
+    }
+
+    temper::utils::TensorDesc x_desc{x_shape, x.get_strides()};
+    temper::utils::TensorDesc k_desc{k_shape, k.get_strides()};
+
+    temper::utils::BroadcastResult res =
+        temper::utils::compute_broadcast({x_desc, k_desc});
+
+    const std::vector<uint64_t> out_shape = res.shape;
+    const int64_t out_rank = static_cast<int64_t>(out_shape.size());
+
+    const std::vector<uint64_t> x_bcast = res.strides[0];
+    const std::vector<uint64_t> k_bcast = res.strides[1];
+
+    Tensor<value_t> result(out_shape, x.get_memory_location());
+
+    uint64_t* p_out_divs = static_cast<uint64_t*>(
+        sycl::malloc_device(sizeof(uint64_t) * out_rank, g_sycl_queue));
+    uint64_t* p_x_bcast = static_cast<uint64_t*>(
+        sycl::malloc_device(sizeof(uint64_t) * out_rank, g_sycl_queue));
+    uint64_t* p_k_bcast = static_cast<uint64_t*>(
+        sycl::malloc_device(sizeof(uint64_t) * out_rank, g_sycl_queue));
+
+    int32_t* p_error_flag = static_cast<int32_t*>(
+        sycl::malloc_shared(sizeof(int32_t), g_sycl_queue));
+
+    if (!p_out_divs || !p_x_bcast || !p_k_bcast || !p_error_flag)
+    {
+        sycl::free(p_out_divs, g_sycl_queue);
+        sycl::free(p_x_bcast, g_sycl_queue);
+        sycl::free(p_k_bcast, g_sycl_queue);
+        sycl::free(p_error_flag, g_sycl_queue);
+        throw std::bad_alloc();
+    }
+
+    const std::vector<uint64_t> out_divs = res.divisors;
+
+    g_sycl_queue.memcpy(p_out_divs, out_divs.data(),
+        sizeof(uint64_t) * out_rank).wait();
+    g_sycl_queue.memcpy(p_x_bcast, x_bcast.data(),
+        sizeof(uint64_t) * out_rank).wait();
+    g_sycl_queue.memcpy(p_k_bcast, k_bcast.data(),
+        sizeof(uint64_t) * out_rank).wait();
+
+    *p_error_flag = 0;
+
+    const value_t* p_x = x.get_data();
+    const value_t* p_k = k.get_data();
+    value_t* p_out = result.get_data();
+
+    const uint64_t total_output_elems = result.get_num_elements();
+
+    g_sycl_queue.submit([&](sycl::handler& cgh)
+    {
+        cgh.parallel_for(sycl::range<1>(total_output_elems),
+            [=](sycl::id<1> id)
+        {
+            const uint64_t flat = id[0];
+
+            const uint64_t x_idx = temper::sycl_utils::idx_of(
+                flat, p_out_divs, p_x_bcast, out_rank);
+            const uint64_t k_idx = temper::sycl_utils::idx_of(
+                flat, p_out_divs, p_k_bcast, out_rank);
+
+            double xp = static_cast<double>(p_x[x_idx]);
+            double kp = static_cast<double>(p_k[k_idx]);
+
+            temper::sycl_utils::device_check_nan_and_set<double>
+                (xp, p_error_flag);
+            temper::sycl_utils::device_check_nan_and_set<double>
+                (kp, p_error_flag);
+
+            if (kp <= 0.0)
+            {
+                p_error_flag[0] = 3;
+                p_out[flat] = std::numeric_limits<value_t>::quiet_NaN();
+                return;
+            }
+            if (xp < 0.0)
+            {
+                p_error_flag[0] = 4;
+                p_out[flat] = std::numeric_limits<value_t>::quiet_NaN();
+                return;
+            }
+
+            double log_part =
+                  (kp * 0.5 - 1.0) * std::log(xp)
+                - 0.5 * xp
+                - (kp * 0.5) * std::log(2.0)
+                - std::lgamma(kp * 0.5);
+
+            temper::sycl_utils::device_check_finite_and_set<double>
+                (log_part, p_error_flag);
+            p_out[flat] = static_cast<value_t>(log_part);
+        });
+    }).wait();
+
+    int32_t err = *p_error_flag;
+
+    sycl::free(p_out_divs, g_sycl_queue);
+    sycl::free(p_x_bcast, g_sycl_queue);
+    sycl::free(p_k_bcast, g_sycl_queue);
+    sycl::free(p_error_flag, g_sycl_queue);
+
+    if (err != 0)
+    {
+        if (err == 1)
+        {
+            throw std::invalid_argument(R"(chisquare::logpdf:
+                NaN detected in inputs.)");
+        }
+        if (err == 2)
+        {
+            throw std::runtime_error(R"(chisquare::logpdf:
+                non-finite result (overflow or Inf) produced.)");
+        }
+        if (err == 3)
+        {
+            throw std::invalid_argument(R"(chisquare::logpdf:
+                k must be positive.)");
+        }
+        if (err == 4)
+        {
+            throw std::invalid_argument(R"(chisquare::logpdf:
+                x must be positive.)");
+        }
+        throw std::runtime_error(R"(chisquare::logpdf:
+            numeric error during pdf computation.)");
+    }
+
+    return result;
+}
+template Tensor<float> logpdf<float>
 (const Tensor<float>&, const Tensor<float>&);
 
 template<typename value_t>

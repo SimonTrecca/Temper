@@ -1355,6 +1355,82 @@ TEST(CHISQUARE, pdf_throws_on_nan_input)
     EXPECT_THROW(stats::chisquare::pdf<float>(x, k), std::invalid_argument);
 }
 
+#include "stats/chisquare_logpdf.cpp"
+
+/**
+ * @test CHISQUARE.logpdf_throws_on_empty_x
+ * @brief logcdf should throw std::invalid_argument when x is empty.
+ */
+TEST(CHISQUARE, logpdf_throws_on_empty_x)
+{
+    Tensor<float> x;
+    Tensor<float> k({1}, MemoryLocation::DEVICE);
+    k = std::vector<float>{0.0f};
+
+    EXPECT_THROW(stats::chisquare::logpdf<float>(x, k), std::invalid_argument);
+}
+
+/**
+ * @test CHISQUARE.logpdf_throws_on_empty_k
+ * @brief logpdf should throw std::invalid_argument when k is empty.
+ */
+TEST(CHISQUARE, logpdf_throws_on_empty_k)
+{
+    Tensor<float> x({1}, MemoryLocation::DEVICE);
+    x = std::vector<float>{1.0f};
+    Tensor<float> k;
+
+    EXPECT_THROW(stats::chisquare::logpdf<float>(x, k), std::invalid_argument);
+}
+
+/**
+ * @test CHISQUARE.logpdf_throws_on_negative_x
+ * @brief logpdf should throw std::invalid_argument when k contains values <= 0.
+ */
+TEST(CHISQUARE, logpdf_throws_on_negative_x)
+{
+    Tensor<float> x({1}, MemoryLocation::DEVICE);
+    x = std::vector<float>{-1.0f};
+    Tensor<float> k({1}, MemoryLocation::DEVICE);
+    k = std::vector<float>{0.0f};
+
+    EXPECT_THROW(stats::chisquare::logpdf<float>(x, k), std::invalid_argument);
+}
+
+/**
+ * @test CHISQUARE.logpdf_throws_on_negative_or_zero_k
+ * @brief logpdf should throw std::invalid_argument when x
+ * contains negative values.
+ */
+TEST(CHISQUARE, logpdf_throws_on_negative_or_zero_k)
+{
+    Tensor<float> x({1}, MemoryLocation::DEVICE);
+    x = std::vector<float>{1.0f};
+    Tensor<float> k({1}, MemoryLocation::DEVICE);
+    k = std::vector<float>{0.0f};
+
+    Tensor<float> k2({1}, MemoryLocation::DEVICE);
+    k2 = std::vector<float>{-1.0f};
+
+    EXPECT_THROW(stats::chisquare::logpdf<float>(x, k), std::invalid_argument);
+    EXPECT_THROW(stats::chisquare::logpdf<float>(x, k2), std::invalid_argument);
+}
+
+/**
+ * @test CHISQUARE.logpdf_throws_on_nan_input
+ * @brief logpdf should throw std::invalid_argument when x contains NaN.
+ */
+TEST(CHISQUARE, logpdf_throws_on_nan_input)
+{
+    Tensor<float> x({1}, MemoryLocation::DEVICE);
+    float nanf = std::numeric_limits<float>::quiet_NaN();
+    x = nanf;
+    Tensor<float> k({1}, MemoryLocation::DEVICE);
+    k = std::vector<float>{2.0f};
+
+    EXPECT_THROW(stats::chisquare::logpdf<float>(x, k), std::invalid_argument);
+}
+
 #include "stats/chisquare_cdf.cpp"
 
 /**
