@@ -1571,7 +1571,7 @@ TEST(CHISQUARE, isf_throws_on_negative_or_zero_k)
 }
 
 /**
-* @test CHISQUARE.ppf_throws_on_nan_input
+* @test CHISQUARE.isf_throws_on_nan_input
 * @brief isf should throw runtime_error when inputs contain NaN.
 */
 TEST(CHISQUARE, isf_throws_on_nan_input)
@@ -1584,6 +1584,61 @@ TEST(CHISQUARE, isf_throws_on_nan_input)
     k = std::vector<float>{0.0f};
 
     EXPECT_THROW(stats::chisquare::isf<float>(q, k), std::invalid_argument);
+}
+
+#include "stats/chisquare_rvs.cpp"
+
+/**
+ * @test CHISQUARE.rvs_throws_on_empty_k
+ * @brief rvs should throw std::invalid_argument when k is empty.
+ */
+TEST(CHISQUARE, rvs_throws_on_empty_k)
+{
+    Tensor<float> k;
+
+    EXPECT_THROW(stats::chisquare::rvs<float>(k, {2}), std::invalid_argument);
+}
+
+/**
+ * @test CHISQUARE.rvs_throws_on_empty_dimensions
+ * @brief rvs should throw std::invalid_argument when the shape argument
+ * is empty.
+ */
+TEST(CHISQUARE, rvs_throws_on_empty_dimensions)
+{
+    Tensor<float> k({1}, MemoryLocation::DEVICE);
+    k = std::vector<float>{1.0f};
+
+    EXPECT_THROW(stats::chisquare::rvs<float>(k, {}), std::invalid_argument);
+}
+
+/**
+ * @test CHISQUARE.rvs_throws_on_negative_or_zero_k
+ * @brief rvs should throw std::invalid_argument when k contains negative values.
+ */
+TEST(CHISQUARE, rvs_throws_on_negative_or_zero_k)
+{
+    Tensor<float> k({1}, MemoryLocation::DEVICE);
+    k = std::vector<float>{0.0f};
+
+    Tensor<float> k2({1}, MemoryLocation::DEVICE);
+    k2 = std::vector<float>{-1.0f};
+
+    EXPECT_THROW(stats::chisquare::rvs<float>(k, {2}), std::invalid_argument);
+    EXPECT_THROW(stats::chisquare::rvs<float>(k2, {2}), std::invalid_argument);
+}
+
+/**
+* @test CHISQUARE.rvs_throws_on_nan_input
+* @brief rvs should throw runtime_error when inputs contain NaN.
+*/
+TEST(CHISQUARE, rvs_throws_on_nan_input)
+{
+    Tensor<float> k({1}, MemoryLocation::DEVICE);
+    float nanf = std::numeric_limits<float>::quiet_NaN();
+    k = nanf;
+
+    EXPECT_THROW(stats::chisquare::rvs<float>(k, {2}), std::invalid_argument);
 }
 
 } // namespace Test

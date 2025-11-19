@@ -1105,7 +1105,7 @@ Tensor<value_t> rvs(const Tensor<value_t>& loc,
 
             if (!(u >= 0.0 && u < 1.0))
             {
-                p_error_flag[0] = 2;
+                p_error_flag[0] = 1;
                 p_q[flat] = std::numeric_limits<value_t>::quiet_NaN();
                 return;
             }
@@ -1120,11 +1120,6 @@ Tensor<value_t> rvs(const Tensor<value_t>& loc,
 
     if (err != 0)
     {
-        if (err == 1)
-        {
-            throw std::runtime_error(R"(norm::rvs:
-                NaN detected while generating uniforms.)");
-        }
         throw std::runtime_error(R"(norm::rvs:
             numeric error during uniform generation.)");
     }
@@ -1663,6 +1658,96 @@ Tensor<value_t> isf(const Tensor<value_t>& q,
 }
 template Tensor<float> isf<float>
 (const Tensor<float>&, const Tensor<float>&);
+
+template<typename value_t>
+Tensor<value_t> rvs(const Tensor<value_t>& k,
+    const std::vector<uint64_t>& out_shape,
+    MemoryLocation res_loc,
+    uint64_t seed)
+{
+    const std::vector<uint64_t> & k_shape = k.get_dimensions();
+
+    if (k_shape.empty())
+    {
+        throw std::invalid_argument(R"(chisquare::rvs:
+            k tensor has no elements.)");
+    }
+
+    Tensor<value_t> q(out_shape, res_loc);
+    const uint64_t total_output_elems = q.get_num_elements();
+
+    const int64_t out_rank = static_cast<int64_t>(out_shape.size());
+    std::vector<uint64_t> out_divs = temper::utils::compute_divisors(out_shape);
+    uint64_t* p_out_divs = static_cast<uint64_t*>(
+        sycl::malloc_device(sizeof(uint64_t) * out_rank, g_sycl_queue));
+
+    int32_t* p_error_flag = static_cast<int32_t*>(
+        sycl::malloc_shared(sizeof(int32_t), g_sycl_queue));
+
+    bool alloc_ok = (p_out_divs && p_error_flag);
+    if (!alloc_ok)
+    {
+        sycl::free(p_out_divs, g_sycl_queue);
+        sycl::free(p_error_flag, g_sycl_queue);
+        throw std::bad_alloc();
+    }
+
+    g_sycl_queue.memcpy(p_out_divs,
+        out_divs.data(), sizeof(uint64_t) * out_rank).wait();
+    *p_error_flag = 0;
+
+    value_t* p_q = q.get_data();
+
+    if (seed == 0ULL)
+    {
+        std::random_device rd;
+        seed = (static_cast<uint64_t>(rd()) << 32) ^ static_cast<uint64_t>(rd());
+        if (seed == 0ULL) seed = 0x9e3779b97f4a7c15ULL;
+    }
+
+    g_sycl_queue.submit([&](sycl::handler& cgh)
+    {
+        cgh.parallel_for(sycl::range<1>(static_cast<size_t>(total_output_elems)),
+            [=](sycl::id<1> id)
+        {
+            const uint64_t flat = static_cast<uint64_t>(id[0]);
+
+            uint64_t s = seed ^ (flat + 0x9e3779b97f4a7c15ULL);
+            s ^= s >> 12;
+            s ^= s << 25;
+            s ^= s >> 27;
+            uint64_t rnd = s * 2685821657736338717ULL;
+
+            double u = static_cast<double>(rnd) / 18446744073709551616.0;
+
+            if (u < 1e-16) u = 1e-16;
+            if (u > 1.0 - 1e-16) u = 1.0 - 1e-16;
+
+            if (!(u >= 0.0 && u < 1.0))
+            {
+                p_error_flag[0] = 1;
+                p_q[flat] = std::numeric_limits<value_t>::quiet_NaN();
+                return;
+            }
+
+            p_q[flat] = static_cast<value_t>(u);
+        });
+    }).wait();
+
+    int32_t err = *p_error_flag;
+    sycl::free(p_out_divs, g_sycl_queue);
+    sycl::free(p_error_flag, g_sycl_queue);
+
+    if (err != 0)
+    {
+        throw std::runtime_error(R"(chisquare::rvs:
+            numeric error during uniform generation.)");
+    }
+
+    return ppf(q, k);
+}
+template Tensor<float> rvs<float>(const Tensor<float>&,
+const std::vector<uint64_t>&, MemoryLocation, uint64_t);
 
 } // namespace chisquare
 

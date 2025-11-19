@@ -207,7 +207,7 @@ template<typename value_t>
 Tensor<value_t> rvs(const Tensor<value_t>& loc,
     const Tensor<value_t>& scale,
     const std::vector<uint64_t>& out_shape,
-    MemoryLocation res_loc,
+    MemoryLocation res_loc = MemoryLocation::DEVICE,
     uint64_t seed = 0ULL);
 /// Explicit instantiation of norm::rvs for float
 extern template Tensor<float> rvs<float>(const Tensor<float>&,
@@ -465,8 +465,41 @@ Tensor<value_t> isf(const Tensor<value_t>& q,
 extern template Tensor<float> isf<float>
 (const Tensor<float>&, const Tensor<float>&);
 
+/**
+ * @brief Draw samples from the chi-square distribution.
+ *
+ * Generates samples from ChiSquare(k) with shape `out_shape`. The implementation
+ * generates uniform variates on the device using a xorshift64* style generator,
+ * clamps them to the open interval (1e-16, 1-1e-16) to avoid extreme
+ * probabilities, and maps them through the chi-square ppf:
+ *     samples = ppf(u, k)
+ *
+ * Inputs `k` (degrees of freedom) is broadcastable to `out_shape`. The returned
+ * tensor has shape `out_shape` and is allocated in `res_loc`.
+ *
+ * @param k Degrees of freedom tensor. Must be non-empty.
+ * @param out_shape Desired output shape for the samples. Must be non-empty.
+ * @param res_loc MemoryLocation where the result will be allocated.
+ * @param seed RNG seed. If zero the implementation seeds from
+ * std::random_device; non-zero seeds produce deterministic output.
+ * @return Tensor<value_t> Tensor of shape `out_shape` containing chi-square
+ *         samples.
+ *
+ * @throws std::invalid_argument if `k` is empty, if `out_shape` is empty, or if
+ *         inputs contain NaN.
+ * @throws std::runtime_error if numeric or device errors occur during uniform
+ *         variate generation or other internal computations.
+ */
+template<typename value_t>
+Tensor<value_t> rvs(const Tensor<value_t>& k,
+    const std::vector<uint64_t>& out_shape,
+    MemoryLocation res_loc = MemoryLocation::DEVICE,
+    uint64_t seed = 0ULL);
+/// Explicit instantiation of chisquare::rvs for float
+extern template Tensor<float> rvs<float>(const Tensor<float>&,
+const std::vector<uint64_t>&, MemoryLocation, uint64_t);
+
     /*todo
-    rvs
     logpdf
     mean
     var
