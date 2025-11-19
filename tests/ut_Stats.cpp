@@ -1447,7 +1447,7 @@ TEST(CHISQUARE, ppf_throws_on_empty_q)
 
 /**
  * @test CHISQUARE.ppf_throws_on_empty_k
- * @brief cdf should throw std::invalid_argument when k is empty.
+ * @brief ppf should throw std::invalid_argument when k is empty.
  */
 TEST(CHISQUARE, ppf_throws_on_empty_k)
 {
@@ -1506,6 +1506,84 @@ TEST(CHISQUARE, ppf_throws_on_nan_input)
     k = std::vector<float>{0.0f};
 
     EXPECT_THROW(stats::chisquare::ppf<float>(q, k), std::invalid_argument);
+}
+
+#include "stats/chisquare_isf.cpp"
+
+/**
+ * @test CHISQUARE.isf_throws_on_empty_q
+ * @brief isf should throw std::invalid_argument when q is empty.
+ */
+TEST(CHISQUARE, isf_throws_on_empty_q)
+{
+    Tensor<float> q;
+    Tensor<float> k({1}, MemoryLocation::DEVICE);
+    k = std::vector<float>{0.0f};
+
+    EXPECT_THROW(stats::chisquare::isf<float>(q, k), std::invalid_argument);
+}
+
+/**
+ * @test CHISQUARE.isf_throws_on_empty_k
+ * @brief isf should throw std::invalid_argument when k is empty.
+ */
+TEST(CHISQUARE, isf_throws_on_empty_k)
+{
+    Tensor<float> q({1}, MemoryLocation::DEVICE);
+    q = std::vector<float>{1.0f};
+    Tensor<float> k;
+
+    EXPECT_THROW(stats::chisquare::isf<float>(q, k), std::invalid_argument);
+}
+
+/**
+* @test CHISQUARE.isf_throws_on_q_out_of_range
+* @brief isf should throw invalid_argument when q contains values outside [0,1].
+*/
+TEST(CHISQUARE, isf_throws_on_q_out_of_range)
+{
+    Tensor<float> q({1}, MemoryLocation::DEVICE);
+    std::vector<float> q_vals = {1.5f};
+    q = q_vals;
+
+    Tensor<float> k({1}, MemoryLocation::DEVICE);
+    k = std::vector<float>{0.0f};
+
+    EXPECT_THROW(stats::chisquare::isf<float>(q, k), std::invalid_argument);
+}
+
+/**
+ * @test CHISQUARE.isf_throws_on_negative_or_zero_k
+ * @brief isf should throw std::invalid_argument when x contains negative values.
+ */
+TEST(CHISQUARE, isf_throws_on_negative_or_zero_k)
+{
+    Tensor<float> q({1}, MemoryLocation::DEVICE);
+    q = std::vector<float>{0.5f};
+    Tensor<float> k({1}, MemoryLocation::DEVICE);
+    k = std::vector<float>{0.0f};
+
+    Tensor<float> k2({1}, MemoryLocation::DEVICE);
+    k2 = std::vector<float>{-1.0f};
+
+    EXPECT_THROW(stats::chisquare::isf<float>(q, k), std::invalid_argument);
+    EXPECT_THROW(stats::chisquare::isf<float>(q, k2), std::invalid_argument);
+}
+
+/**
+* @test CHISQUARE.ppf_throws_on_nan_input
+* @brief isf should throw runtime_error when inputs contain NaN.
+*/
+TEST(CHISQUARE, isf_throws_on_nan_input)
+{
+    Tensor<float> q({1}, MemoryLocation::DEVICE);
+    float nanf = std::numeric_limits<float>::quiet_NaN();
+    q = nanf;
+
+    Tensor<float> k({1}, MemoryLocation::DEVICE);
+    k = std::vector<float>{0.0f};
+
+    EXPECT_THROW(stats::chisquare::isf<float>(q, k), std::invalid_argument);
 }
 
 } // namespace Test

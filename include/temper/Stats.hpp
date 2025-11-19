@@ -177,7 +177,7 @@ extern template Tensor<float> ppf<float>
  * or other numeric error occurs during computation.
  */
 template<typename value_t>
-Tensor<value_t> isf(const Tensor<value_t>& s,
+Tensor<value_t> isf(const Tensor<value_t>& q,
     const Tensor<value_t>& loc,
     const Tensor<value_t>& scale);
 /// Explicit instantiation of norm::isf for float
@@ -422,7 +422,6 @@ extern template Tensor<float> cdf<float>
  *         produced by the underlying kernel or if other numeric/device
  *         errors occur during computation.
  */
-
 template<typename value_t>
 Tensor<value_t> ppf(const Tensor<value_t>& q,
     const Tensor<value_t>& k);
@@ -430,9 +429,44 @@ Tensor<value_t> ppf(const Tensor<value_t>& q,
 extern template Tensor<float> ppf<float>
 (const Tensor<float>&, const Tensor<float>&);
 
+/**
+ * @brief Inverse survival function (ISF) / upper-tail quantile of
+ * the chi-square.
+ *
+ * Computes the inverse survival function element-wise using the identity
+ *     isf(q; k) = ppf(1 - q; k)
+ * with standard broadcasting of `q` and `k` to determine the output shape.
+ *
+ * For a scalar q this returns the value x such that
+ *     q = 1 - CDF(x; k)
+ * i.e. the returned x satisfies CDF(x; k) = 1 - q.
+ *
+ * Inputs `q` (upper-tail probabilities) and `k` (degrees of freedom) must be
+ * non-empty and broadcastable. Values of `q` must lie in [0,1], and `k` values
+ * must be strictly positive. Note that `q == 0` maps to ppf(1), which may lead
+ * to infinite intermediate values and is treated as a numeric error by this
+ * implementation.
+ *
+ * @param q Probabilities in [0,1], broadcastable to the output shape. Must be
+ *          non-empty.
+ * @param k Degrees of freedom, must be non-empty and strictly positive.
+ * @return Tensor<value_t> Quantiles (ISF values) with the broadcasted shape.
+ *
+ * @throws std::invalid_argument if any input tensor is empty, if any `q`
+ *         value is outside [0,1], if any `k` element is non-positive, or if
+ *         NaN is detected in the inputs.
+ * @throws std::runtime_error if a non-finite result (overflow or Inf) or
+ *         other numeric/device error occurs during computation.
+ */
+template<typename value_t>
+Tensor<value_t> isf(const Tensor<value_t>& q,
+    const Tensor<value_t>& k);
+/// Explicit instantiation of chisquare::isf for float
+extern template Tensor<float> isf<float>
+(const Tensor<float>&, const Tensor<float>&);
+
     /*todo
     rvs
-    isf
     logpdf
     mean
     var

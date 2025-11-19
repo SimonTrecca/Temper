@@ -952,7 +952,7 @@ Tensor<value_t> Tensor<value_t>::operator+(const Tensor & other) const
     {
         if (err == 1)
         {
-            throw std::runtime_error(R"(Tensor(operator+):
+            throw std::invalid_argument(R"(Tensor(operator+):
                 NaN detected in inputs.)");
         }
         if (err == 2)
@@ -1078,7 +1078,7 @@ Tensor<value_t> Tensor<value_t>::operator-(const Tensor & other) const
     {
         if (err == 1)
         {
-            throw std::runtime_error(R"(Tensor(operator-):
+            throw std::invalid_argument(R"(Tensor(operator-):
                 NaN detected in inputs.)");
         }
         if (err == 2)
@@ -1204,7 +1204,7 @@ Tensor<value_t> Tensor<value_t>::operator*(const Tensor & other) const
     {
         if (err == 1)
         {
-            throw std::runtime_error(R"(Tensor(operator*):
+            throw std::invalid_argument(R"(Tensor(operator*):
                 NaN detected in inputs.)");
         }
         if (err == 2)
@@ -1329,7 +1329,7 @@ Tensor<value_t> Tensor<value_t>::operator/(const Tensor & other) const
     {
         if (err == 1)
         {
-            throw std::runtime_error(R"(Tensor(operator/):
+            throw std::invalid_argument(R"(Tensor(operator/):
                 NaN detected in inputs.)");
         }
         if (err == 2)
@@ -1415,7 +1415,7 @@ Tensor<value_t> Tensor<value_t>::operator-() const
 
     if (err != 0)
     {
-        throw std::runtime_error(R"(Tensor(operator-):
+        throw std::invalid_argument(R"(Tensor(operator-):
             NaN detected in input.)");
     }
 

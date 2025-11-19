@@ -37,9 +37,9 @@ Tensor<value_t> pdf(const Tensor<value_t>& x,
     const Tensor<value_t>& loc,
     const Tensor<value_t>& scale)
 {
-    const std::vector<uint64_t> x_shape = x.get_dimensions();
-    const std::vector<uint64_t> loc_shape = loc.get_dimensions();
-    const std::vector<uint64_t> scale_shape = scale.get_dimensions();
+    const std::vector<uint64_t> & x_shape = x.get_dimensions();
+    const std::vector<uint64_t> & loc_shape = loc.get_dimensions();
+    const std::vector<uint64_t> & scale_shape = scale.get_dimensions();
 
     if (x_shape.empty())
     {
@@ -207,9 +207,9 @@ Tensor<value_t> logpdf(const Tensor<value_t>& x,
     const Tensor<value_t>& loc,
     const Tensor<value_t>& scale)
 {
-    const std::vector<uint64_t> x_shape = x.get_dimensions();
-    const std::vector<uint64_t> loc_shape = loc.get_dimensions();
-    const std::vector<uint64_t> scale_shape = scale.get_dimensions();
+    const std::vector<uint64_t> & x_shape = x.get_dimensions();
+    const std::vector<uint64_t> & loc_shape = loc.get_dimensions();
+    const std::vector<uint64_t> & scale_shape = scale.get_dimensions();
 
     if (x_shape.empty())
     {
@@ -379,9 +379,9 @@ Tensor<value_t> cdf(const Tensor<value_t>& x,
     const Tensor<value_t>& loc,
     const Tensor<value_t>& scale)
 {
-    const std::vector<uint64_t> x_shape = x.get_dimensions();
-    const std::vector<uint64_t> loc_shape = loc.get_dimensions();
-    const std::vector<uint64_t> scale_shape = scale.get_dimensions();
+    const std::vector<uint64_t> & x_shape = x.get_dimensions();
+    const std::vector<uint64_t> & loc_shape = loc.get_dimensions();
+    const std::vector<uint64_t> & scale_shape = scale.get_dimensions();
 
     if (x_shape.empty())
     {
@@ -551,9 +551,9 @@ Tensor<value_t> ppf(const Tensor<value_t>& q,
     const Tensor<value_t>& loc,
     const Tensor<value_t>& scale)
 {
-    const std::vector<uint64_t> q_shape = q.get_dimensions();
-    const std::vector<uint64_t> loc_shape = loc.get_dimensions();
-    const std::vector<uint64_t> scale_shape = scale.get_dimensions();
+    const std::vector<uint64_t> & q_shape = q.get_dimensions();
+    const std::vector<uint64_t> & loc_shape = loc.get_dimensions();
+    const std::vector<uint64_t> & scale_shape = scale.get_dimensions();
 
     if (q_shape.empty())
     {
@@ -793,9 +793,9 @@ Tensor<value_t> isf(const Tensor<value_t>& q,
     const Tensor<value_t>& loc,
     const Tensor<value_t>& scale)
 {
-    const std::vector<uint64_t> q_shape = q.get_dimensions();
-    const std::vector<uint64_t> loc_shape = loc.get_dimensions();
-    const std::vector<uint64_t> scale_shape = scale.get_dimensions();
+    const std::vector<uint64_t> & q_shape = q.get_dimensions();
+    const std::vector<uint64_t> & loc_shape = loc.get_dimensions();
+    const std::vector<uint64_t> & scale_shape = scale.get_dimensions();
 
     if (q_shape.empty())
     {
@@ -1039,8 +1039,8 @@ Tensor<value_t> rvs(const Tensor<value_t>& loc,
     MemoryLocation res_loc,
     uint64_t seed)
 {
-    const std::vector<uint64_t> loc_shape = loc.get_dimensions();
-    const std::vector<uint64_t> scale_shape = scale.get_dimensions();
+    const std::vector<uint64_t> & loc_shape = loc.get_dimensions();
+    const std::vector<uint64_t> & scale_shape = scale.get_dimensions();
 
     if (loc_shape.empty())
     {
@@ -1175,8 +1175,8 @@ template<typename value_t>
 Tensor<value_t> pdf(const Tensor<value_t>& x,
     const Tensor<value_t>& k)
 {
-    const std::vector<uint64_t> x_shape = x.get_dimensions();
-    const std::vector<uint64_t> k_shape = k.get_dimensions();
+    const std::vector<uint64_t> & x_shape = x.get_dimensions();
+    const std::vector<uint64_t> & k_shape = k.get_dimensions();
 
     if (x_shape.empty())
     {
@@ -1333,8 +1333,8 @@ template<typename value_t>
 Tensor<value_t> cdf(const Tensor<value_t>& x,
     const Tensor<value_t>& k)
 {
-    const std::vector<uint64_t> x_shape = x.get_dimensions();
-    const std::vector<uint64_t> k_shape = k.get_dimensions();
+    const std::vector<uint64_t> & x_shape = x.get_dimensions();
+    const std::vector<uint64_t> & k_shape = k.get_dimensions();
 
     if (x_shape.empty())
     {
@@ -1489,8 +1489,8 @@ template<typename value_t>
 Tensor<value_t> ppf(const Tensor<value_t>& q,
     const Tensor<value_t>& k)
 {
-    const std::vector<uint64_t> q_shape = q.get_dimensions();
-    const std::vector<uint64_t> k_shape = k.get_dimensions();
+    const std::vector<uint64_t> & q_shape = q.get_dimensions();
+    const std::vector<uint64_t> & k_shape = k.get_dimensions();
 
     if (q_shape.empty())
     {
@@ -1640,6 +1640,28 @@ Tensor<value_t> ppf(const Tensor<value_t>& q,
     return result;
 }
 template Tensor<float> ppf<float>
+(const Tensor<float>&, const Tensor<float>&);
+
+template<typename value_t>
+Tensor<value_t> isf(const Tensor<value_t>& q,
+    const Tensor<value_t>& k)
+{
+    const std::vector<uint64_t> & q_shape = q.get_dimensions();
+    const std::vector<uint64_t> & k_shape = k.get_dimensions();
+
+    if (q_shape.empty())
+    {
+        throw std::invalid_argument(R"(chisquare::isf:
+            q tensor has no elements.)");
+    }
+    if (k_shape.empty())
+    {
+        throw std::invalid_argument(R"(chisquare::isf:
+            k tensor has no elements.)");
+    }
+    return ppf((Tensor<value_t>(static_cast<value_t>(1)) - q), k);
+}
+template Tensor<float> isf<float>
 (const Tensor<float>&, const Tensor<float>&);
 
 } // namespace chisquare

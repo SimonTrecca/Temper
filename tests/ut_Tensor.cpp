@@ -3208,7 +3208,7 @@ TYPED_TEST(TypedTensor, operator_addition_both_host_result_mem_location)
 
 /**
  * @test TypedTensor.operator_addition_nan_inputs_throws
- * @brief Addition detects NaN inputs and triggers a runtime_error.
+ * @brief Addition detects NaN inputs and triggers an std::invalid_argument.
  */
 TYPED_TEST(TypedTensor, operator_addition_nan_inputs_throws)
 {
@@ -3230,7 +3230,7 @@ TYPED_TEST(TypedTensor, operator_addition_nan_inputs_throws)
     {
         // Do nothing.
     } else {
-        EXPECT_THROW({ Tensor<value_t> R = A + B; }, std::runtime_error);
+        EXPECT_THROW({ Tensor<value_t> R = A + B; }, std::invalid_argument);
     }
 }
 
@@ -3698,7 +3698,7 @@ TYPED_TEST(TypedTensor, operator_subtraction_both_host_result_mem_location)
 
 /**
  * @test TypedTensor.operator_subtraction_nan_inputs_throws
- * @brief Subtraction detects NaN inputs and triggers a runtime_error.
+ * @brief Subtraction detects NaN inputs and triggers an std::invalid_argument.
  */
 TYPED_TEST(TypedTensor, operator_subtraction_nan_inputs_throws)
 {
@@ -3717,7 +3717,7 @@ TYPED_TEST(TypedTensor, operator_subtraction_nan_inputs_throws)
     if constexpr (!std::is_floating_point_v<value_t>) {
         // Do nothing.
     } else {
-        EXPECT_THROW({ Tensor<value_t> R = A - B; }, std::runtime_error);
+        EXPECT_THROW({ Tensor<value_t> R = A - B; }, std::invalid_argument);
     }
 }
 
@@ -4187,7 +4187,8 @@ TYPED_TEST(TypedTensor,
 
 /**
  * @test TypedTensor.operator_multiplication_nan_inputs_throws
- * @brief Multiplication detects NaN inputs and triggers a runtime_error.
+ * @brief Multiplication detects NaN inputs and triggers an
+ * std::invalid_argument.
  */
 TYPED_TEST(TypedTensor, operator_multiplication_nan_inputs_throws)
 {
@@ -4207,7 +4208,7 @@ TYPED_TEST(TypedTensor, operator_multiplication_nan_inputs_throws)
     if constexpr (!std::is_floating_point_v<value_t>) {
         // Do nothing for not floating point types.
     } else {
-        EXPECT_THROW({ Tensor<value_t> R = A * B; }, std::runtime_error);
+        EXPECT_THROW({ Tensor<value_t> R = A * B; }, std::invalid_argument);
     }
 }
 
@@ -4707,7 +4708,7 @@ TYPED_TEST(TypedTensor, operator_division_by_zero_throws)
 
 /**
  * @test TypedTensor.operator_division_nan_inputs_throws
- * @brief Division detects NaN inputs and triggers a runtime_error.
+ * @brief Division detects NaN inputs and triggers an std::invalid_argument.
  */
 TYPED_TEST(TypedTensor, operator_division_nan_inputs_throws)
 {
@@ -4728,7 +4729,7 @@ TYPED_TEST(TypedTensor, operator_division_nan_inputs_throws)
     {
         // Do nothing.
     } else {
-        EXPECT_THROW({ Tensor<value_t> R = A / B; }, std::runtime_error);
+        EXPECT_THROW({ Tensor<value_t> R = A / B; }, std::invalid_argument);
     }
 }
 
@@ -5026,7 +5027,8 @@ TYPED_TEST(TypedTensor, operator_unary_negation_result_mem_location_host)
 
 /**
  * @test TypedTensor.operator_unary_negation_nan_input_throws
- * @brief NaN in input should cause the operation to throw.
+ * @brief NaN in input should cause the operation to throw
+ * an std::invalid_argument.
  */
 TYPED_TEST(TypedTensor, operator_unary_negation_nan_input_throws)
 {
@@ -5041,7 +5043,7 @@ TYPED_TEST(TypedTensor, operator_unary_negation_nan_input_throws)
     if constexpr (!std::is_floating_point_v<value_t>) {
         // Do nothing for not floating types.
     } else {
-        EXPECT_THROW({ Tensor<value_t> N = -A; }, std::runtime_error);
+        EXPECT_THROW({ Tensor<value_t> N = -A; }, std::invalid_argument);
     }
 }
 
