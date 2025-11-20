@@ -1570,7 +1570,7 @@ TEST(CHISQUARE, ppf_throws_on_negative_or_zero_k)
 
 /**
 * @test CHISQUARE.ppf_throws_on_nan_input
-* @brief ppf should throw runtime_error when inputs contain NaN.
+* @brief ppf should throw std::invalid_argument when inputs contain NaN.
 */
 TEST(CHISQUARE, ppf_throws_on_nan_input)
 {
@@ -1648,7 +1648,7 @@ TEST(CHISQUARE, isf_throws_on_negative_or_zero_k)
 
 /**
 * @test CHISQUARE.isf_throws_on_nan_input
-* @brief isf should throw runtime_error when inputs contain NaN.
+* @brief isf should throw std::invalid_argument when inputs contain NaN.
 */
 TEST(CHISQUARE, isf_throws_on_nan_input)
 {
@@ -1706,7 +1706,7 @@ TEST(CHISQUARE, rvs_throws_on_negative_or_zero_k)
 
 /**
 * @test CHISQUARE.rvs_throws_on_nan_input
-* @brief rvs should throw runtime_error when inputs contain NaN.
+* @brief rvs should throw std::invalid_argument when inputs contain NaN.
 */
 TEST(CHISQUARE, rvs_throws_on_nan_input)
 {
@@ -1715,6 +1715,161 @@ TEST(CHISQUARE, rvs_throws_on_nan_input)
     k = nanf;
 
     EXPECT_THROW(stats::chisquare::rvs<float>(k, {2}), std::invalid_argument);
+}
+
+#include "stats/chisquare_mean.cpp"
+
+/**
+ * @test CHISQUARE.mean_throws_on_empty_k
+ * @brief mean should throw std::invalid_argument when k is empty.
+ */
+TEST(CHISQUARE, mean_throws_on_empty_k)
+{
+    Tensor<float> k;
+
+    EXPECT_THROW(stats::chisquare::mean<float>(k), std::invalid_argument);
+}
+
+/**
+ * @test CHISQUARE.mean_throws_on_negative_or_zero_k
+ * @brief mean should throw std::invalid_argument when k
+ * contains negative values.
+ */
+TEST(CHISQUARE, mean_throws_on_negative_or_zero_k)
+{
+    Tensor<float> k({1}, MemoryLocation::DEVICE);
+    k = std::vector<float>{0.0f};
+
+    Tensor<float> k2({1}, MemoryLocation::DEVICE);
+    k2 = std::vector<float>{-1.0f};
+
+    EXPECT_THROW(stats::chisquare::mean<float>(k), std::invalid_argument);
+    EXPECT_THROW(stats::chisquare::mean<float>(k2), std::invalid_argument);
+}
+
+/**
+* @test CHISQUARE.mean_throws_on_nan_input
+* @brief mean should throw std::invalid_argument when inputs contain NaN.
+*/
+TEST(CHISQUARE, mean_throws_on_nan_input)
+{
+    Tensor<float> k({1}, MemoryLocation::DEVICE);
+    float nanf = std::numeric_limits<float>::quiet_NaN();
+    k = nanf;
+
+    EXPECT_THROW(stats::chisquare::mean<float>(k), std::invalid_argument);
+}
+
+#include "stats/chisquare_var.cpp"
+
+/**
+ * @test CHISQUARE.var_throws_on_empty_k
+ * @brief var should throw std::invalid_argument when k is empty.
+ */
+TEST(CHISQUARE, var_throws_on_empty_k)
+{
+    Tensor<float> k;
+
+    EXPECT_THROW(stats::chisquare::var<float>(k), std::invalid_argument);
+}
+
+/**
+ * @test CHISQUARE.var_throws_on_negative_or_zero_k
+ * @brief var should throw std::invalid_argument when k
+ * contains negative values.
+ */
+TEST(CHISQUARE, var_throws_on_negative_or_zero_k)
+{
+    Tensor<float> k({1}, MemoryLocation::DEVICE);
+    k = std::vector<float>{0.0f};
+
+    Tensor<float> k2({1}, MemoryLocation::DEVICE);
+    k2 = std::vector<float>{-1.0f};
+
+    EXPECT_THROW(stats::chisquare::var<float>(k), std::invalid_argument);
+    EXPECT_THROW(stats::chisquare::var<float>(k2), std::invalid_argument);
+}
+
+/**
+* @test CHISQUARE.var_throws_on_nan_input
+* @brief var should throw std::invalid_argument when inputs contain NaN.
+*/
+TEST(CHISQUARE, var_throws_on_nan_input)
+{
+    Tensor<float> k({1}, MemoryLocation::DEVICE);
+    float nanf = std::numeric_limits<float>::quiet_NaN();
+    k = nanf;
+
+    EXPECT_THROW(stats::chisquare::var<float>(k), std::invalid_argument);
+}
+
+/**
+* @test CHISQUARE.var_throws_on_inf
+* @brief var should throw runtime_error when result is inf.
+*/
+TEST(CHISQUARE, var_throws_on_inf)
+{
+    Tensor<float> k({1}, MemoryLocation::DEVICE);
+    float inf = std::numeric_limits<float>::infinity();
+    k =  inf;
+
+    EXPECT_THROW(stats::chisquare::var<float>(k), std::runtime_error);
+}
+
+#include "stats/chisquare_stddev.cpp"
+
+/**
+ * @test CHISQUARE.stddev_throws_on_empty_k
+ * @brief stddev should throw std::invalid_argument when k is empty.
+ */
+TEST(CHISQUARE, stddev_throws_on_empty_k)
+{
+    Tensor<float> k;
+
+    EXPECT_THROW(stats::chisquare::stddev<float>(k), std::invalid_argument);
+}
+
+/**
+ * @test CHISQUARE.stddev_throws_on_negative_or_zero_k
+ * @brief stddev should throw std::invalid_argument when k
+ * contains negative values.
+ */
+TEST(CHISQUARE, stddev_throws_on_negative_or_zero_k)
+{
+    Tensor<float> k({1}, MemoryLocation::DEVICE);
+    k = std::vector<float>{0.0f};
+
+    Tensor<float> k2({1}, MemoryLocation::DEVICE);
+    k2 = std::vector<float>{-1.0f};
+
+    EXPECT_THROW(stats::chisquare::stddev<float>(k), std::invalid_argument);
+    EXPECT_THROW(stats::chisquare::stddev<float>(k2), std::invalid_argument);
+}
+
+/**
+* @test CHISQUARE.stddev_throws_on_nan_input
+* @brief stddev should throw std::invalid_argument when inputs contain NaN.
+*/
+TEST(CHISQUARE, stddev_throws_on_nan_input)
+{
+    Tensor<float> k({1}, MemoryLocation::DEVICE);
+    float nanf = std::numeric_limits<float>::quiet_NaN();
+    k = nanf;
+
+    EXPECT_THROW(stats::chisquare::stddev<float>(k), std::invalid_argument);
+}
+
+/**
+* @test CHISQUARE.stddev_throws_on_inf
+* @brief stddev should throw runtime_error when result is inf.
+*/
+TEST(CHISQUARE, stddev_throws_on_inf)
+{
+    Tensor<float> k({1}, MemoryLocation::DEVICE);
+    float inf = std::numeric_limits<float>::infinity();
+    k =  inf;
+
+    EXPECT_THROW(stats::chisquare::stddev<float>(k), std::runtime_error);
 }
 
 } // namespace Test

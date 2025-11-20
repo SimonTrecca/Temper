@@ -1899,6 +1899,205 @@ Tensor<value_t> rvs(const Tensor<value_t>& k,
 template Tensor<float> rvs<float>(const Tensor<float>&,
 const std::vector<uint64_t>&, MemoryLocation, uint64_t);
 
+template<typename value_t>
+Tensor<value_t> mean(const Tensor<value_t>& k)
+{
+    const int64_t rank = k.get_rank();
+    if (rank == 0)
+    {
+        throw std::invalid_argument(R"(chisquare::mean:
+            input tensor has no elements.)");
+    }
+    const std::vector<uint64_t>& dims = k.get_dimensions();
+
+    const uint64_t total_elems = k.get_num_elements();
+    MemoryLocation mem_loc = k.get_memory_location();
+    Tensor<value_t> result(dims, mem_loc);
+
+    const std::vector<uint64_t> divisors =
+        temper::utils::compute_divisors(dims);
+    const std::vector<uint64_t> strides = k.get_strides();
+
+    uint64_t* p_divs = static_cast<uint64_t*>(
+        sycl::malloc_device(sizeof(uint64_t) * rank, g_sycl_queue));
+    uint64_t* p_strides = static_cast<uint64_t*>(
+        sycl::malloc_device(sizeof(uint64_t) * rank, g_sycl_queue));
+    int32_t* p_error_flag = static_cast<int32_t*>(
+        sycl::malloc_shared(sizeof(int32_t), g_sycl_queue));
+
+    if (!p_divs || !p_strides || !p_error_flag)
+    {
+        sycl::free(p_divs, g_sycl_queue);
+        sycl::free(p_strides, g_sycl_queue);
+        sycl::free(p_error_flag, g_sycl_queue);
+        throw std::bad_alloc();
+    }
+
+    g_sycl_queue.memcpy(p_divs, divisors.data(),
+                        sizeof(uint64_t) * rank).wait();
+    g_sycl_queue.memcpy(p_strides, strides.data(),
+                        sizeof(uint64_t) * rank).wait();
+    *p_error_flag = 0;
+
+    const value_t* p_in = k.get_data();
+    value_t* p_out = result.get_data();
+
+    g_sycl_queue.submit([&](sycl::handler& cgh) {
+        cgh.parallel_for(sycl::range<1>(static_cast<size_t>(total_elems)),
+            [=](sycl::id<1> id)
+        {
+            const uint64_t flat = static_cast<uint64_t>(id[0]);
+            uint64_t idx = temper::sycl_utils::idx_of(
+                flat, p_divs, p_strides, rank);
+
+            value_t val = p_in[idx];
+            temper::sycl_utils::device_check_nan_and_set<value_t>
+                (val, p_error_flag);
+
+            if (val <= 0.0)
+            {
+                p_error_flag[0] = 2;
+                p_out[flat] = std::numeric_limits<value_t>::quiet_NaN();
+                return;
+            }
+
+            p_out[flat] = val;
+        });
+    }).wait();
+
+    int32_t err = *p_error_flag;
+    sycl::free(p_error_flag, g_sycl_queue);
+    sycl::free(p_divs, g_sycl_queue);
+    sycl::free(p_strides, g_sycl_queue);
+
+    if (err != 0)
+    {
+        if (err == 1)
+        {
+            throw std::invalid_argument(R"(chisquare::mean:
+                NaN detected in inputs.)");
+        }
+        if (err == 2)
+        {
+            throw std::invalid_argument(R"(chisquare::mean:
+                k must be positive.)");
+        }
+        throw std::runtime_error(R"(chisquare::mean:
+            numeric error during computation.)");
+    }
+
+    return result;
+}
+template Tensor<float> mean<float>(const Tensor<float>&);
+
+template<typename value_t>
+Tensor<value_t> var(const Tensor<value_t>& k)
+{
+    const int64_t rank = k.get_rank();
+    if (rank == 0)
+    {
+        throw std::invalid_argument(R"(chisquare::var:
+            input tensor has no elements.)");
+    }
+    const std::vector<uint64_t>& dims = k.get_dimensions();
+
+    const uint64_t total_elems = k.get_num_elements();
+    MemoryLocation mem_loc = k.get_memory_location();
+    Tensor<value_t> result(dims, mem_loc);
+
+    const std::vector<uint64_t> divisors =
+        temper::utils::compute_divisors(dims);
+    const std::vector<uint64_t> strides = k.get_strides();
+
+    uint64_t* p_divs = static_cast<uint64_t*>(
+        sycl::malloc_device(sizeof(uint64_t) * rank, g_sycl_queue));
+    uint64_t* p_strides = static_cast<uint64_t*>(
+        sycl::malloc_device(sizeof(uint64_t) * rank, g_sycl_queue));
+    int32_t* p_error_flag = static_cast<int32_t*>(
+        sycl::malloc_shared(sizeof(int32_t), g_sycl_queue));
+
+    if (!p_divs || !p_strides || !p_error_flag)
+    {
+        sycl::free(p_divs, g_sycl_queue);
+        sycl::free(p_strides, g_sycl_queue);
+        sycl::free(p_error_flag, g_sycl_queue);
+        throw std::bad_alloc();
+    }
+
+    g_sycl_queue.memcpy(p_divs, divisors.data(),
+                        sizeof(uint64_t) * rank).wait();
+    g_sycl_queue.memcpy(p_strides, strides.data(),
+                        sizeof(uint64_t) * rank).wait();
+    *p_error_flag = 0;
+
+    const value_t* p_in = k.get_data();
+    value_t* p_out = result.get_data();
+
+    g_sycl_queue.submit([&](sycl::handler& cgh) {
+        cgh.parallel_for(sycl::range<1>(static_cast<size_t>(total_elems)),
+            [=](sycl::id<1> id)
+        {
+            const uint64_t flat = static_cast<uint64_t>(id[0]);
+            uint64_t idx = temper::sycl_utils::idx_of(
+                flat, p_divs, p_strides, rank);
+
+            double val = static_cast<double>(p_in[idx]);
+            temper::sycl_utils::device_check_nan_and_set<double>
+                (val, p_error_flag);
+
+            if (val <= 0.0)
+            {
+                p_error_flag[0] = 3;
+                p_out[flat] = std::numeric_limits<double>::quiet_NaN();
+                return;
+            }
+
+            double outv = 2.0f * val;
+
+            temper::sycl_utils::device_check_finite_and_set<double>
+                (outv, p_error_flag);
+
+            p_out[flat] = static_cast<value_t>(outv);
+        });
+    }).wait();
+
+    int32_t err = *p_error_flag;
+    sycl::free(p_error_flag, g_sycl_queue);
+    sycl::free(p_divs, g_sycl_queue);
+    sycl::free(p_strides, g_sycl_queue);
+
+    if (err != 0)
+    {
+        if (err == 1)
+        {
+            throw std::invalid_argument(R"(chisquare::var:
+                NaN detected in inputs.)");
+        }
+        if (err == 2)
+        {
+            throw std::runtime_error(R"(chisquare::var:
+                non-finite result (overflow or Inf) produced.)");
+        }
+        if (err == 3)
+        {
+            throw std::invalid_argument(R"(chisquare::var:
+                k must be positive.)");
+        }
+        throw std::runtime_error(R"(chisquare::var:
+            numeric error during computation.)");
+    }
+
+    return result;
+}
+template Tensor<float> var<float>(const Tensor<float>&);
+
+template<typename value_t>
+Tensor<value_t> stddev(const Tensor<value_t>& k)
+{
+    return math::sqrt(var(k));
+}
+template Tensor<float> stddev<float>(const Tensor<float>&);
+
 } // namespace chisquare
 
 } // namespace temper::stats

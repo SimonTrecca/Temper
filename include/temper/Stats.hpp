@@ -529,12 +529,74 @@ Tensor<value_t> rvs(const Tensor<value_t>& k,
 extern template Tensor<float> rvs<float>(const Tensor<float>&,
 const std::vector<uint64_t>&, MemoryLocation, uint64_t);
 
-    /*todo
-    logpdf
-    mean
-    var
-    std
-    */
+/**
+ * @brief Mean of the chi-square distribution.
+ *
+ * Returns the mean of the ChiSquare(k) distribution element-wise.
+ *
+ * The mean of a chi-square distribution with degrees of freedom `k` is
+ * equal to `k`.
+ *
+ * @param k Degrees of freedom tensor. Must be non-empty and contain strictly
+ *          positive values (each element of `k` > 0).
+ * @return Tensor<value_t> Tensor containing the mean values (element-wise `k`).
+ *
+ * @throws std::invalid_argument if `k` is empty, contains NaN, or contains
+ *         non-positive elements.
+ */
+template<typename value_t>
+Tensor<value_t> mean(const Tensor<value_t>& k);
+/// Explicit instantiation of chisquare::mean for float
+extern template Tensor<float> mean<float>(const Tensor<float>&);
+
+/**
+ * @brief Variance of the chi-square distribution.
+ *
+ * Returns the variance of the ChiSquare(k) distribution element-wise.
+ *
+ * The variance of a chi-square distribution with degrees of freedom `k` is
+ * equal to `2 * k`.
+ *
+ * @param k Degrees of freedom tensor. Must be non-empty and contain strictly
+ *          positive values (each element of `k` > 0).
+ * @return Tensor<value_t> Tensor containing the variance values
+ * (element-wise `2 * k`).
+ *
+ * @throws std::invalid_argument if `k` is empty, contains NaN, or contains
+ *         non-positive elements.
+ * @throws std::runtime_error if a non-finite result (overflow or Inf) or
+ *         other numeric/device error occurs during computation.
+ */
+template<typename value_t>
+Tensor<value_t> var(const Tensor<value_t>& k);
+/// Explicit instantiation of chisquare::var for float
+extern template Tensor<float> var<float>(const Tensor<float>&);
+
+/**
+ * @brief Standard deviation of the chi-square distribution.
+ *
+ * Returns the standard deviation of the ChiSquare(k) distribution element-wise.
+ *
+ * The standard deviation is the square root of the variance:
+ *     stddev = sqrt(2 * k)
+ * The input `k` is broadcasted as needed and the returned tensor has the same
+ * broadcasted shape.
+ *
+ * @param k Degrees of freedom tensor. Must be non-empty and contain strictly
+ *          positive values (each element of `k` > 0).
+ * @return Tensor<value_t> Tensor containing the standard deviation values
+ *         (element-wise `sqrt(2 * k)`).
+ *
+ * @throws std::invalid_argument if `k` is empty, contains NaN, or contains
+ *         non-positive elements.
+ * @throws std::runtime_error if a non-finite result (overflow, Inf) or other
+ *         numeric/device error occurs during computation (e.g. failure in sqrt).
+ */
+template<typename value_t>
+Tensor<value_t> stddev(const Tensor<value_t>& k);
+/// Explicit instantiation of chisquare::stddev for float
+extern template Tensor<float> stddev<float>(const Tensor<float>&);
+
 } // namespace chisquare
 
 } // namespace temper::stats
