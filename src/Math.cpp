@@ -11,8 +11,8 @@ namespace temper::math
 {
 
 template <typename value_t>
-temper::Tensor<value_t> matmul(const temper::Tensor<value_t>& first,
-                               const temper::Tensor<value_t>& second)
+Tensor<value_t> matmul(const Tensor<value_t> & first,
+    const Tensor<value_t> & second)
 {
     if (first.get_dimensions().empty() || second.get_dimensions().empty())
     {

@@ -53,12 +53,12 @@ Tensor<value_t> one_hot_expand_at(const Tensor<value_t>& tensor,
     uint64_t depth,
     value_t on_value = static_cast<value_t>(1),
     value_t off_value = static_cast<value_t>(0));
-/// Explicit instantiation of one_hot_expand_at for float
+/// \cond
 extern template Tensor<float> one_hot_expand_at<float>
     (const Tensor<float>&, int64_t, uint64_t, uint64_t, float, float);
-/// Explicit instantiation of one_hot_expand_at for uint64_t
 extern template Tensor<uint64_t> one_hot_expand_at<uint64_t>
     (const Tensor<uint64_t>&, int64_t, uint64_t, uint64_t, uint64_t, uint64_t);
+/// \endcond
 
 /**
  * @brief Compute the softmax along a single axis.
@@ -82,9 +82,10 @@ extern template Tensor<uint64_t> one_hot_expand_at<uint64_t>
 template<typename value_t>
 Tensor<value_t> softmax(const Tensor<value_t> & tensor,
     std::optional<int64_t> axis_opt = std::nullopt);
-/// Explicit instantiation of softmax for float
+/// \cond
 extern template Tensor<float> softmax<float>
     (const Tensor<float>&, std::optional<int64_t>);
+/// \endcond
 
 /**
  * @brief Compute categorical cross-entropy between predictions and targets.
@@ -123,7 +124,7 @@ Tensor<value_t> cross_entropy(const Tensor<value_t> & logits,
     std::optional<int64_t> axis_opt = std::nullopt,
     bool from_logits = true,
     bool reduction_mean = true);
-/// Explicit instantiation of cross_entropy for float
+/// \cond
 extern template Tensor<float> cross_entropy<float>
 (const Tensor<float>&, const Tensor<float>&, std::optional<int64_t>, bool, bool);
 
@@ -153,9 +154,10 @@ Tensor<value_t> mean_squared_error(const Tensor<value_t>& predictions,
     const Tensor<value_t>& targets,
     std::optional<int64_t> axis_opt = std::nullopt,
     bool reduction_mean = true);
-/// Explicit instantiation of mean_squared_error for float
+/// \cond
 extern template Tensor<float> mean_squared_error<float>
 (const Tensor<float>&, const Tensor<float>&, std::optional<int64_t>, bool);
+/// \endcond
 
 /**
  * @brief Result container for Principal Component Analysis (PCA).
@@ -195,9 +197,10 @@ template<typename value_t>
 PCAResult<value_t> pca(const Tensor<value_t> & data,
     std::optional<uint64_t> n_components = std::nullopt,
     bool standardize = true);
-/// Explicit instantiation of pca for float
+/// \cond
 extern template PCAResult<float> pca<float>
 (const Tensor<float>&, std::optional<uint64_t>, bool);
+/// \endcond
 
 /* todo
     regularization penalties

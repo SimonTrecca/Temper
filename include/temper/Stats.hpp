@@ -30,9 +30,10 @@ template<typename value_t>
 Tensor<value_t> randn(const std::vector<uint64_t>& out_shape,
     MemoryLocation res_loc = MemoryLocation::DEVICE,
     uint64_t seed = 0ULL);
-/// Explicit instantiation of randn for float
+/// \cond
 extern template Tensor<float> randn<float>
 (const std::vector<uint64_t>&, MemoryLocation, uint64_t);
+/// \endcond
 
 namespace norm
 {
@@ -62,17 +63,18 @@ template<typename value_t>
 Tensor<value_t> pdf(const Tensor<value_t>& x,
     const Tensor<value_t>& loc,
     const Tensor<value_t>& scale);
-/// Explicit instantiation of norm::pdf for float
+/// \cond
 extern template Tensor<float> pdf<float>
 (const Tensor<float>&, const Tensor<float>&, const Tensor<float>&);
+/// \endcond
 
 /**
  * @brief Logarithm of the normal probability density function.
  *
  * Computes the log-PDF element-wise:
- * logpdf(x; loc, scale) = -0.5 * ((x - loc) / scale)^2 
+ * logpdf(x; loc, scale) = -0.5 * ((x - loc) / scale)^2
  *  - log(scale) - 0.5*log(2*pi)
- * 
+ *
  * Inputs `x`, `loc` and `scale` are broadcast together to produce the
  * output shape.
  *
@@ -92,7 +94,7 @@ template<typename value_t>
 Tensor<value_t> logpdf(const Tensor<value_t>& x,
 const Tensor<value_t>& loc,
 const Tensor<value_t>& scale);
-/// Explicit instantiation of norm::logpdf for float
+/// \cond
 extern template Tensor<float> logpdf<float>
 (const Tensor<float>&, const Tensor<float>&, const Tensor<float>&);
 
@@ -121,7 +123,7 @@ template<typename value_t>
 Tensor<value_t> cdf(const Tensor<value_t>& x,
     const Tensor<value_t>& loc,
     const Tensor<value_t>& scale);
-/// Explicit instantiation of norm::cdf for float
+/// \cond
 extern template Tensor<float> cdf<float>
 (const Tensor<float>&, const Tensor<float>&, const Tensor<float>&);
 
@@ -143,12 +145,14 @@ template<typename value_t>
 Tensor<value_t> ppf(const Tensor<value_t>& q,
     const Tensor<value_t>& loc,
     const Tensor<value_t>& scale);
-/// Explicit instantiation of norm::ppf for float
+/// \cond
 extern template Tensor<float> ppf<float>
 (const Tensor<float>&, const Tensor<float>&, const Tensor<float>&);
+/// \endcond
 
 /**
  * @brief Inverse survival function (ISF) / quantile of the normal.
+ *
  *
  * Computes the inverse survival function element-wise. The relation
  * used is: isf(q; loc, scale) == ppf(1 - q; loc, scale). Inputs `q`,
@@ -180,9 +184,10 @@ template<typename value_t>
 Tensor<value_t> isf(const Tensor<value_t>& q,
     const Tensor<value_t>& loc,
     const Tensor<value_t>& scale);
-/// Explicit instantiation of norm::isf for float
+/// \cond
 extern template Tensor<float> isf<float>
 (const Tensor<float>&, const Tensor<float>&, const Tensor<float>&);
+/// \endcond
 
 /**
  * @brief Draw samples from Normal(loc, scale) with shape out_shape.
@@ -209,9 +214,10 @@ Tensor<value_t> rvs(const Tensor<value_t>& loc,
     const std::vector<uint64_t>& out_shape,
     MemoryLocation res_loc = MemoryLocation::DEVICE,
     uint64_t seed = 0ULL);
-/// Explicit instantiation of norm::rvs for float
+/// \cond
 extern template Tensor<float> rvs<float>(const Tensor<float>&,
 const Tensor<float>&, const std::vector<uint64_t>&, MemoryLocation, uint64_t);
+/// \endcond
 
 /**
  * @brief Mean of the normal distribution.
@@ -228,9 +234,10 @@ const Tensor<float>&, const std::vector<uint64_t>&, MemoryLocation, uint64_t);
 template<typename value_t>
 Tensor<value_t> mean(const Tensor<value_t>& loc,
     const Tensor<value_t>& scale);
-/// Explicit instantiation of norm::mean for float
+/// \cond
 extern template Tensor<float> mean<float>
 (const Tensor<float>&, const Tensor<float>&);
+/// \endcond
 
 /**
  * @brief Computes the variance of a normal distribution.
@@ -251,10 +258,10 @@ extern template Tensor<float> mean<float>
 template<typename value_t>
 Tensor<value_t> var(const Tensor<value_t>& loc,
     const Tensor<value_t>& scale);
-/// Explicit instantiation of norm::var for float
+/// \cond
 extern template Tensor<float> var<float>
 (const Tensor<float>&, const Tensor<float>&);
-
+/// \endcond
 
 /**
  * @brief Computes the standard deviation of a normal distribution.
@@ -270,9 +277,10 @@ extern template Tensor<float> var<float>
 template<typename value_t>
 Tensor<value_t> stddev(const Tensor<value_t>& loc,
     const Tensor<value_t>& scale);
-/// Explicit instantiation of norm::stddev for float
+/// \cond
 extern template Tensor<float> stddev<float>
 (const Tensor<float>&, const Tensor<float>&);
+/// \endcond
 
 } // namespace norm
 
@@ -365,9 +373,10 @@ namespace chisquare
 template<typename value_t>
 Tensor<value_t> pdf(const Tensor<value_t>& x,
     const Tensor<value_t>& k);
-/// Explicit instantiation of chisquare::pdf for float
+/// \cond
 extern template Tensor<float> pdf<float>
 (const Tensor<float>&, const Tensor<float>&);
+/// \endcond
 
 /**
  * @brief Logarithm of the chi-square probability density function.
@@ -395,9 +404,10 @@ extern template Tensor<float> pdf<float>
 template<typename value_t>
 Tensor<value_t> logpdf(const Tensor<value_t>& x,
     const Tensor<value_t>& k);
-/// Explicit instantiation of chisquare::logpdf for float
+/// \cond
 extern template Tensor<float> logpdf<float>
 (const Tensor<float>&, const Tensor<float>&);
+/// \endcond
 
 /**
  * @brief Cumulative distribution function of the chi-square distribution.
@@ -424,9 +434,10 @@ extern template Tensor<float> logpdf<float>
 template<typename value_t>
 Tensor<value_t> cdf(const Tensor<value_t>& x,
     const Tensor<value_t>& k);
-/// Explicit instantiation of chisquare::cdf for float
+/// \cond
 extern template Tensor<float> cdf<float>
 (const Tensor<float>&, const Tensor<float>&);
+/// \endcond
 
 /**
  * @brief Inverse CDF (percent-point function) of the chi-square distribution.
@@ -455,9 +466,10 @@ extern template Tensor<float> cdf<float>
 template<typename value_t>
 Tensor<value_t> ppf(const Tensor<value_t>& q,
     const Tensor<value_t>& k);
-/// Explicit instantiation of chisquare::ppf for float
+/// \cond
 extern template Tensor<float> ppf<float>
 (const Tensor<float>&, const Tensor<float>&);
+/// \endcond
 
 /**
  * @brief Inverse survival function (ISF) / upper-tail quantile of
@@ -491,9 +503,10 @@ extern template Tensor<float> ppf<float>
 template<typename value_t>
 Tensor<value_t> isf(const Tensor<value_t>& q,
     const Tensor<value_t>& k);
-/// Explicit instantiation of chisquare::isf for float
+/// \cond
 extern template Tensor<float> isf<float>
 (const Tensor<float>&, const Tensor<float>&);
+/// \endcond
 
 /**
  * @brief Draw samples from the chi-square distribution.
@@ -525,9 +538,10 @@ Tensor<value_t> rvs(const Tensor<value_t>& k,
     const std::vector<uint64_t>& out_shape,
     MemoryLocation res_loc = MemoryLocation::DEVICE,
     uint64_t seed = 0ULL);
-/// Explicit instantiation of chisquare::rvs for float
+/// \cond
 extern template Tensor<float> rvs<float>(const Tensor<float>&,
 const std::vector<uint64_t>&, MemoryLocation, uint64_t);
+/// \endcond
 
 /**
  * @brief Mean of the chi-square distribution.
@@ -546,8 +560,9 @@ const std::vector<uint64_t>&, MemoryLocation, uint64_t);
  */
 template<typename value_t>
 Tensor<value_t> mean(const Tensor<value_t>& k);
-/// Explicit instantiation of chisquare::mean for float
+/// \cond
 extern template Tensor<float> mean<float>(const Tensor<float>&);
+/// \endcond
 
 /**
  * @brief Variance of the chi-square distribution.
@@ -569,8 +584,9 @@ extern template Tensor<float> mean<float>(const Tensor<float>&);
  */
 template<typename value_t>
 Tensor<value_t> var(const Tensor<value_t>& k);
-/// Explicit instantiation of chisquare::var for float
+/// \cond
 extern template Tensor<float> var<float>(const Tensor<float>&);
+/// \endcond
 
 /**
  * @brief Standard deviation of the chi-square distribution.
@@ -594,8 +610,9 @@ extern template Tensor<float> var<float>(const Tensor<float>&);
  */
 template<typename value_t>
 Tensor<value_t> stddev(const Tensor<value_t>& k);
-/// Explicit instantiation of chisquare::stddev for float
+/// \cond
 extern template Tensor<float> stddev<float>(const Tensor<float>&);
+/// \endcond
 
 } // namespace chisquare
 

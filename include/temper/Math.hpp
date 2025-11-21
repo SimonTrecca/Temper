@@ -46,13 +46,13 @@ namespace temper::math
  */
 template <typename value_t>
 Tensor<value_t> matmul(const Tensor<value_t> & first,
-                        const Tensor<value_t> & second);
-/// Explicit instantiation of matmul for float
+    const Tensor<value_t> & second);
+/// \cond
 extern template Tensor<float> matmul<float>
     (const Tensor<float>&, const Tensor<float>&);
-/// Explicit instantiation of matmul for uint64_t
 extern template Tensor<uint64_t> matmul<uint64_t>
     (const Tensor<uint64_t>&, const Tensor<uint64_t>&);
+/// \endcond
 
 /**
  * @brief Reshape a tensor (free function wrapper).
@@ -75,13 +75,13 @@ extern template Tensor<uint64_t> matmul<uint64_t>
  */
 template <typename value_t>
 Tensor<value_t> reshape(const Tensor<value_t> & tensor,
-                        const std::vector<uint64_t>& new_dimensions);
-/// Explicit instantiation of reshape for float
+    const std::vector<uint64_t>& new_dimensions);
+/// \cond
 extern template Tensor<float> reshape<float>
     (const Tensor<float>&, const std::vector<uint64_t>&);
-/// Explicit instantiation of reshape for uint64_t
 extern template Tensor<uint64_t> reshape<uint64_t>
     (const Tensor<uint64_t>&, const std::vector<uint64_t>&);
+/// \endcond
 
 /**
  * @brief Sort tensor elements (free function wrapper).
@@ -100,12 +100,12 @@ extern template Tensor<uint64_t> reshape<uint64_t>
 template <typename value_t>
 Tensor<value_t> sort(const Tensor<value_t> & tensor,
     std::optional<int64_t> axis_opt = std::nullopt);
-/// Explicit instantiation of sort for float
+/// \cond
 extern template Tensor<float> sort<float>
     (const Tensor<float>&, std::optional<int64_t>);
-/// Explicit instantiation of sort for uint64_t
 extern template Tensor<uint64_t> sort<uint64_t>
     (const Tensor<uint64_t>&, std::optional<int64_t>);
+/// \endcond
 
 /**
  * @brief Compute the sum of tensor elements (free function wrapper).
@@ -126,12 +126,12 @@ extern template Tensor<uint64_t> sort<uint64_t>
 template <typename value_t>
 Tensor<value_t> sum(const Tensor<value_t> & tensor,
     std::optional<int64_t> axis_opt = std::nullopt);
-/// Explicit instantiation of sum for float
+/// \cond
 extern template Tensor<float> sum<float>
     (const Tensor<float>&, std::optional<int64_t>);
-/// Explicit instantiation of sum for uint64_t
 extern template Tensor<uint64_t> sum<uint64_t>
     (const Tensor<uint64_t>&, std::optional<int64_t>);
+/// \endcond
 
 /**
  * @brief Compute the cumulative sum of tensor elements (free function wrapper).
@@ -152,12 +152,12 @@ extern template Tensor<uint64_t> sum<uint64_t>
 template <typename value_t>
 Tensor<value_t> cumsum(const Tensor<value_t> & tensor,
     std::optional<int64_t> axis_opt = std::nullopt);
-/// Explicit instantiation of cumsum for float
+/// \cond
 extern template Tensor<float> cumsum<float>
     (const Tensor<float>&, std::optional<int64_t>);
-/// Explicit instantiation of cumsum for uint64_t
 extern template Tensor<uint64_t> cumsum<uint64_t>
     (const Tensor<uint64_t>&, std::optional<int64_t>);
+/// \endcond
 
 /**
  * @brief Transpose a tensor (free function wrapper, full reversal).
@@ -172,10 +172,10 @@ extern template Tensor<uint64_t> cumsum<uint64_t>
  */
 template<typename value_t>
 Tensor<value_t> transpose(const Tensor<value_t> & tensor);
-/// Explicit instantiation of transpose() for float
+/// \cond
 extern template Tensor<float> transpose<float>(const Tensor<float>&);
-/// Explicit instantiation of transpose() for uint64_t
 extern template Tensor<uint64_t> transpose<uint64_t>(const Tensor<uint64_t>&);
+/// \endcond
 
 /**
  * @brief Transpose a tensor with a custom axis order (free function wrapper).
@@ -194,13 +194,13 @@ extern template Tensor<uint64_t> transpose<uint64_t>(const Tensor<uint64_t>&);
  */
 template<typename value_t>
 Tensor<value_t> transpose(const Tensor<value_t> & tensor,
-                        const std::vector<int64_t> & axes);
-/// Explicit instantiation of transpose(axes) for float
+    const std::vector<int64_t> & axes);
+/// \cond
 extern template Tensor<float> transpose<float>
     (const Tensor<float>&, const std::vector<int64_t>&);
-/// Explicit instantiation of transpose(axes) for uint64_t
 extern template Tensor<uint64_t> transpose<uint64_t>
     (const Tensor<uint64_t>&, const std::vector<int64_t>&);
+/// \endcond
 
 /**
  * @brief Pad the last two dimensions (height, width) with a constant.
@@ -224,12 +224,12 @@ Tensor<value_t> pad(const Tensor<value_t> & tensor,
     uint64_t pad_left,
     uint64_t pad_right,
     value_t pad_value);
-/// Explicit instantiation of pad for float
+/// \cond
 extern template Tensor<float> pad<float>
     (const Tensor<float>&, uint64_t, uint64_t, uint64_t, uint64_t, float);
-/// Explicit instantiation of pad for uint64_t
 extern template Tensor<uint64_t> pad<uint64_t>
     (const Tensor<uint64_t>&, uint64_t, uint64_t, uint64_t, uint64_t, uint64_t);
+/// \endcond
 
 /**
  * @brief Symmetric pad helper: pad height/width on both sides.
@@ -248,12 +248,12 @@ Tensor<value_t> pad(const Tensor<value_t> & tensor,
     uint64_t pad_height,
     uint64_t pad_width,
     value_t pad_value);
-/// Explicit instantiation of pad (height, width) for float
+/// \cond
 extern template Tensor<float> pad<float>
     (const Tensor<float>&, uint64_t, uint64_t, float);
-/// Explicit instantiation of pad (height, width) for uint64_t
 extern template Tensor<uint64_t> pad<uint64_t>
     (const Tensor<uint64_t>&, uint64_t, uint64_t, uint64_t);
+/// \endcond
 
 /**
 * @brief Compute indices of maximum elements along a specified axis.
@@ -277,12 +277,12 @@ extern template Tensor<uint64_t> pad<uint64_t>
 template<typename value_t>
 Tensor<uint64_t> argmax(const Tensor<value_t> & tensor,
     std::optional<int64_t> axis_opt = std::nullopt);
-/// Explicit instantiation of argmax for float
+/// \cond
 extern template Tensor<uint64_t> argmax<float>
     (const Tensor<float>&, std::optional<int64_t>);
-/// Explicit instantiation of argmax for uint64_t
 extern template Tensor<uint64_t> argmax<uint64_t>
     (const Tensor<uint64_t>&, std::optional<int64_t>);
+/// \endcond
 
 /**
  * @brief Compute the indices that would sort a tensor.
@@ -305,12 +305,12 @@ template<typename value_t>
 Tensor<uint64_t> argsort(const Tensor<value_t> & tensor,
     std::optional<int64_t> axis_opt = std::nullopt,
     bool descending = false);
-/// Explicit instantiation of argsort for float
+/// \cond
 extern template Tensor<uint64_t> argsort<float>
 (const Tensor<float>&, std::optional<int64_t>, bool);
-/// Explicit instantiation of argsort for uint64_t
 extern template Tensor<uint64_t> argsort<uint64_t>
 (const Tensor<uint64_t>&, std::optional<int64_t>, bool);
+/// \endcond
 
 /**
  * @brief Gather elements from a tensor using integer indices.
@@ -338,12 +338,12 @@ template<typename value_t>
 Tensor<value_t> gather(const Tensor<value_t> & tensor,
     const Tensor<uint64_t> & indexes,
     std::optional<int64_t> axis_opt = std::nullopt);
-/// Explicit instantiation of gather for float
+/// \cond
 extern template Tensor<float> gather<float>
 (const Tensor<float>&, const Tensor<uint64_t>&, std::optional<int64_t>);
-/// Explicit instantiation of gather for uint64_t
 extern template Tensor<uint64_t> gather<uint64_t>
 (const Tensor<uint64_t>&, const Tensor<uint64_t>&, std::optional<int64_t>);
+/// \endcond
 
 /**
  * @brief Elementwise linear interpolation between two tensors.
@@ -378,9 +378,10 @@ Tensor<value_t> linspace(const Tensor<value_t>& start,
     int64_t axis = 0,
     bool endpoint = true,
     Tensor<value_t>* step_out = nullptr);
-/// Explicit instantiation of linspace for float
+/// \cond
 extern template Tensor<float> linspace<float>(const Tensor<float>&,
 const Tensor<float>&, uint64_t, MemoryLocation, int64_t, bool, Tensor<float>*);
+/// \endcond
 
 /**
  * @brief Generate a 1-D tensor of linearly spaced samples between two scalars.
@@ -404,9 +405,10 @@ Tensor<value_t> linspace(value_t start,
     MemoryLocation res_loc = MemoryLocation::DEVICE,
     bool endpoint = true,
     Tensor<value_t>* step_out = nullptr);
-/// Explicit instantiation of linspace(scalars) for float
+/// \cond
 extern template Tensor<float> linspace<float>(float,
 float, uint64_t, MemoryLocation, bool, Tensor<float>*);
+/// \endcond
 
 /**
  * @brief Generate a 1-D tensor with values in the half-open interval
@@ -433,11 +435,11 @@ Tensor<value_t> arange(value_t start,
     value_t stop,
     value_t step,
     MemoryLocation res_loc);
-/// Explicit instantiation of arange for float
+/// \cond
 extern template Tensor<float> arange<float>(float, float, float, MemoryLocation);
-/// Explicit instantiation of arange for uint64_t
 extern template Tensor<uint64_t> arange<uint64_t>
 (uint64_t, uint64_t, uint64_t, MemoryLocation);
+/// \endcond
 
 /**
  * @brief Generate a 1-D tensor with values from 0 up to stop-1.
@@ -456,10 +458,10 @@ extern template Tensor<uint64_t> arange<uint64_t>
 template<typename value_t>
 Tensor<value_t> arange(value_t stop,
     MemoryLocation res_loc = MemoryLocation::DEVICE);
-/// Explicit instantiation of arange(stop) for float
+/// \cond
 extern template Tensor<float> arange<float>(float, MemoryLocation);
-/// Explicit instantiation of arange(stop) for uint64_t
 extern template Tensor<uint64_t> arange<uint64_t>(uint64_t, MemoryLocation);
+/// \endcond
 
 /**
  * @brief Create a tensor filled with zeros.
@@ -480,12 +482,12 @@ extern template Tensor<uint64_t> arange<uint64_t>(uint64_t, MemoryLocation);
 template<typename value_t>
 Tensor<value_t> zeros(const std::vector<uint64_t> & shape,
     MemoryLocation res_loc = MemoryLocation::DEVICE);
-/// Explicit instantiation of zeros for float
+/// \cond
 extern template Tensor<float> zeros<float>
     (const std::vector<uint64_t>&, MemoryLocation);
-/// Explicit instantiation of zeros for uint64_t
 extern template Tensor<uint64_t> zeros<uint64_t>
     (const std::vector<uint64_t>&, MemoryLocation);
+/// \endcond
 
 /**
  * @brief Approximate the integral of f over [a, b] using Simpson's rule.
@@ -506,9 +508,10 @@ value_t integral(std::function<value_t(value_t)> f,
     value_t a,
     value_t b,
     uint64_t n_bins = 1000);
-/// Explicit instantiation of integral for float
+/// \cond
 extern template float integral<float>
     (std::function<float(float)>, float, float, uint64_t);
+/// \endcond
 
 /**
  * @brief Elementwise factorial computed on the device.
@@ -527,10 +530,10 @@ extern template float integral<float>
  */
 template<typename value_t>
 Tensor<value_t> factorial(const Tensor<value_t> & tensor);
-/// Explicit instantiation of factorial for float
+/// \cond
 extern template Tensor<float> factorial<float>(const Tensor<float>&);
-/// Explicit instantiation of factorial for uint64_t
 extern template Tensor<uint64_t> factorial<uint64_t>(const Tensor<uint64_t>&);
+/// \endcond
 
 /**
  * @brief Elementwise natural logarithm computed on the device.
@@ -548,8 +551,9 @@ extern template Tensor<uint64_t> factorial<uint64_t>(const Tensor<uint64_t>&);
  */
 template<typename value_t>
 Tensor<value_t> log(const Tensor<value_t> & tensor);
-/// Explicit instantiation of log for float
+/// \cond
 extern template Tensor<float> log<float>(const Tensor<float>&);
+/// \endcond
 
 /**
  * @brief Compute the mean (average) of tensor elements.
@@ -573,9 +577,10 @@ extern template Tensor<float> log<float>(const Tensor<float>&);
 template <typename value_t>
 Tensor<value_t> mean(const Tensor<value_t> & tensor,
     std::optional<int64_t> axis_opt = std::nullopt);
-/// Explicit instantiation of mean for float
+/// \cond
 extern template Tensor<float> mean<float>
     (const Tensor<float>&, std::optional<int64_t>);
+/// \endcond
 
 /**
  * @brief Compute the variance of tensor elements.
@@ -599,9 +604,10 @@ template <typename value_t>
 Tensor<value_t> var(const Tensor<value_t> & tensor,
     std::optional<int64_t> axis_opt = std::nullopt,
     int64_t ddof = 0);
-/// Explicit instantiation of var for float
+/// \cond
 extern template Tensor<float> var<float>
     (const Tensor<float>&, std::optional<int64_t>, int64_t);
+/// \endcond
 
 /**
  * @brief Compute covariance matrices over specified sample and event axes.
@@ -643,12 +649,13 @@ extern template Tensor<float> var<float>
  */
 template <typename value_t>
 Tensor<value_t> cov(const Tensor<value_t> & tensor,
-                    std::vector<int64_t> sample_axes,
-                    std::vector<int64_t> event_axes,
-                    int64_t ddof = 0);
-/// Explicit instantiation of cov for float
+    std::vector<int64_t> sample_axes,
+    std::vector<int64_t> event_axes,
+    int64_t ddof = 0);
+/// \cond
 extern template Tensor<float> cov<float> (const Tensor<float>&,
     std::vector<int64_t>, std::vector<int64_t>, int64_t);
+/// \endcond
 
 /**
  * @brief Convenience overload — covariance for the last two axes.
@@ -675,8 +682,9 @@ extern template Tensor<float> cov<float> (const Tensor<float>&,
  */
 template <typename value_t>
 Tensor<value_t> cov(const Tensor<value_t> & tensor, int64_t ddof = 0);
-/// Explicit instantiation of cov(no axes) for float
+/// \cond
 extern template Tensor<float> cov<float> (const Tensor<float>&, int64_t);
+/// \endcond
 
 /**
  * @brief Compute the standard deviation of tensor elements.
@@ -707,9 +715,10 @@ template<typename value_t>
 Tensor<value_t> stddev(const Tensor<value_t>& input,
     std::optional<int64_t> axis_opt = std::nullopt,
     int64_t ddof = 0);
-/// Explicit instantiation of stddev for float
+/// \cond
 extern template Tensor<float> stddev<float>
     (const Tensor<float>&, std::optional<int64_t>, int64_t);
+/// \endcond
 
 /**
  * @brief Compute the eigenvalues and right eigenvectors of the last
@@ -747,9 +756,10 @@ template <typename value_t>
 std::pair<Tensor<value_t>, Tensor<value_t>> eig(const Tensor<value_t> & tensor,
     uint64_t max_iters = 100,
     value_t tol = static_cast<value_t>(1e-4));
-/// Explicit instantiation of eig for float
+/// \cond
 extern template std::pair<Tensor<float>, Tensor<float>> eig<float>
     (const Tensor<float>&, uint64_t, float);
+/// \endcond
 
 /**
  * @brief Elementwise square root.
@@ -767,8 +777,9 @@ extern template std::pair<Tensor<float>, Tensor<float>> eig<float>
  */
 template <typename value_t>
 Tensor<value_t> sqrt(const Tensor<value_t>& tensor);
-/// Explicit instantiation of sqrt for float
+/// \cond
 extern template Tensor<float> sqrt<float>(const Tensor<float>& tensor);
+/// \endcond
 
 /**
  * @brief Elementwise power.
@@ -787,12 +798,12 @@ extern template Tensor<float> sqrt<float>(const Tensor<float>& tensor);
  */
 template<typename value_t>
 Tensor<value_t> pow(const Tensor<value_t> & a, const Tensor<value_t> & b);
-/// Explicit instantiation of pow for float
+/// \cond
 extern template Tensor<float> pow<float>
     (const Tensor<float>&, const Tensor<float>&);
-/// Explicit instantiation of pow for uint64_t
 extern template Tensor<uint64_t> pow<uint64_t>
     (const Tensor<uint64_t>&, const Tensor<uint64_t>&);
+/// \endcond
 
 /**
  * @brief Elementwise natural exponential.
@@ -812,8 +823,9 @@ extern template Tensor<uint64_t> pow<uint64_t>
  */
 template<typename value_t>
 Tensor<value_t> exp(const Tensor<value_t> & tensor);
-/// Explicit instantiation of exp for float
+/// \cond
 extern template Tensor<float> exp<float>(const Tensor<float>&);
+/// \endcond
 
 /* todo
     diag
