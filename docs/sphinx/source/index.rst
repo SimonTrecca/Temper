@@ -1,8 +1,7 @@
-# Temper Documentation
+Temper Documentation
+====================
 
 Welcome — developer notes and the API are below.
-
-* :doc:`specifications`
 
 .. toctree::
    :caption: Contents
