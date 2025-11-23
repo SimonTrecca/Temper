@@ -8,6 +8,8 @@
 
 #include <gtest/gtest.h>
 
+#include "temper/Errors.hpp"
+
 #define private public
 #define protected public
 #include "temper/ML.hpp"
@@ -139,7 +141,8 @@ TYPED_TEST(TypedOnehot, axis_index_out_of_range_throws)
 
 /**
  * @test TypedOnehot.nan_label_throws
- * @brief NaN at the targeted axis index should produce runtime_error.
+ * @brief NaN at the targeted axis index should trigger a temper::nan_error,
+ * as specified in the error handling policy.
  */
 TYPED_TEST(TypedOnehot, nan_label_throws)
 {
@@ -160,7 +163,7 @@ TYPED_TEST(TypedOnehot, nan_label_throws)
 
     EXPECT_THROW(ml::one_hot_expand_at<value_t>(
         t, /*axis=*/0, /*axis_index=*/1, /*depth=*/3),
-        std::runtime_error);
+        temper::nan_error);
 }
 
 /**
@@ -621,7 +624,8 @@ TEST(SOFTMAX, axis_out_of_range_throws)
 
 /**
  * @test SOFTMAX.nan_input_throws
- * @brief NaN in input should produce a runtime_error (propagated from exp).
+ * @brief NaN in input should trigger a temper::nan_error,
+ * as specified in the error handling policy.
  */
 TEST(SOFTMAX, nan_input_throws)
 {
@@ -629,7 +633,7 @@ TEST(SOFTMAX, nan_input_throws)
     std::vector<float> vals = {1.0f,
         std::numeric_limits<float>::quiet_NaN(), 2.0f};
     t = vals;
-    EXPECT_THROW(ml::softmax<float>(t, /*axis=*/0), std::runtime_error);
+    EXPECT_THROW(ml::softmax<float>(t, /*axis=*/0), temper::nan_error);
 }
 
 /**
@@ -898,6 +902,30 @@ TEST(CROSS_ENTROPY, axis_out_of_range_throws)
     std::optional<int64_t> axis = 2;
     EXPECT_THROW(ml::cross_entropy<float>(logits, labels, axis),
         std::invalid_argument);
+}
+
+/**
+ * @test CROSS_ENTROPY.nan_throws
+ * @brief NaN in input should trigger a temper::nan_error,
+ * as specified in the error handling policy.
+ */
+TEST(CROSS_ENTROPY, nan_throws)
+{
+    Tensor<float> logits({2,2}, MemoryLocation::DEVICE);
+    logits = std::vector<float>{0.0f, 0.0f,
+                                0.0f, 0.0f};
+
+    Tensor<float> labels({1,2,2}, MemoryLocation::DEVICE);
+    labels = std::vector<float>{
+        1.0f, std::numeric_limits<float>::quiet_NaN(),
+        0.0f, 1.0f
+    };
+
+    std::optional<int64_t> axis = 2;
+
+    EXPECT_THROW(ml::cross_entropy<float>(logits, labels,
+        axis, /*from_logits=*/true, /*reduction_mean=*/true),
+        temper::nan_error);
 }
 
 /**
@@ -1180,6 +1208,27 @@ TEST(MSE, empty_targets_throws)
     EXPECT_THROW(ml::mean_squared_error<float>
         (preds, targets, std::nullopt, true),
         std::invalid_argument);
+}
+
+/**
+ * @test MSE.nan_throws
+ * @brief NaN at the targeted axis index should trigger a temper::nan_error,
+ * as specified in the error handling policy.
+ */
+TEST(MSE, nan_throws)
+{
+    Tensor<float> preds({2,2}, MemoryLocation::DEVICE);
+    preds = std::vector<float>{0.0f, 0.0f,
+                                0.0f, 0.0f};
+    Tensor<float> targets({1,2,2}, MemoryLocation::DEVICE);
+    targets = std::vector<float>{
+        1.0f, std::numeric_limits<float>::quiet_NaN(),
+        0.0f, 1.0f
+    };
+
+    EXPECT_THROW(ml::mean_squared_error<float>
+        (preds, targets, std::nullopt, true),
+        temper::nan_error);
 }
 
 /**
@@ -2066,6 +2115,26 @@ TEST(PCA, pca_n_components_zero_throws)
     EXPECT_THROW({
         ml::pca(t, 0, true);
     }, std::invalid_argument);
+}
+
+/**
+ * @test PCA.pca_nan_throws
+ * @brief NaN in the input should trigger a temper::nan_error,
+ * as specified in the error handling policy.
+ */
+TEST(PCA, pca_nan_throws)
+{
+    Tensor<float> t({2, 2});
+
+    t =
+    {
+        0, std::numeric_limits<float>::quiet_NaN(),
+        2, 3
+    };
+
+    EXPECT_THROW({
+        ml::pca(t, 2, true);
+    }, temper::nan_error);
 }
 
 } // namespace Test

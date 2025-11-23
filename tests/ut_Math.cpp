@@ -9,6 +9,8 @@
 #include <gtest/gtest.h>
 #include <type_traits>
 
+#include "temper/Errors.hpp"
+
 #define private public
 #define protected public
 #include "temper/Math.hpp"
@@ -391,7 +393,8 @@ TYPED_TEST(TypedMatmul, empty_throws)
 
 /**
  * @test TypedMatmul.nan_throws
- * @brief matmul should throw std::runtime_error if inputs contain NaN.
+ * @brief matmul should throw temper::nan_error if inputs contain NaN,
+ * as specified in the error handling policy.
  */
 TYPED_TEST(TypedMatmul, nan_throws)
 {
@@ -417,7 +420,7 @@ TYPED_TEST(TypedMatmul, nan_throws)
     };
     B = b_vals;
 
-    EXPECT_THROW(math::matmul<value_t>(A, B), std::runtime_error);
+    EXPECT_THROW(math::matmul<value_t>(A, B), temper::nan_error);
 }
 
 /**
@@ -1272,8 +1275,8 @@ TYPED_TEST(TypedSum, sum_alias_view_tensor_overlapping_stride_zero)
 
 /**
  * @test TypedSum.sum_nan_throws
- * @brief Tests that sum throws std::runtime_error when the tensor
- * contains NaN values.
+ * @brief Tests that sum throws temper::nan_error when the tensor
+ * contains NaN values, as specified in the error handling policy.
  */
 TYPED_TEST(TypedSum, sum_nan_throws)
 {
@@ -1290,7 +1293,7 @@ TYPED_TEST(TypedSum, sum_nan_throws)
     };
     t = vals;
 
-    EXPECT_THROW(math::sum<value_t>(t, -1), std::runtime_error);
+    EXPECT_THROW(math::sum<value_t>(t, -1), temper::nan_error);
 }
 
 /**
@@ -1820,8 +1823,8 @@ TYPED_TEST(TypedCumsum, cumsum_axis_out_of_bounds)
 
 /**
  * @test TypedCumsum.cumsum_nan_throws
- * @brief Tests that cumsum throws std::runtime_error when the tensor
- * contains NaN values.
+ * @brief Tests that cumsumsum throws temper::nan_error when the tensor
+ * contains NaN values, as specified in the error handling policy.
  */
 TYPED_TEST(TypedCumsum, cumsum_nan_throws)
 {
@@ -1838,7 +1841,7 @@ TYPED_TEST(TypedCumsum, cumsum_nan_throws)
     };
     t = vals;
 
-    EXPECT_THROW(math::cumsum<value_t>(t, -1), std::runtime_error);
+    EXPECT_THROW(math::cumsum<value_t>(t, -1), temper::nan_error);
 }
 
 /**
@@ -2936,7 +2939,8 @@ TYPED_TEST(TypedArgmax, argmax_axis_out_of_range)
 
 /**
  * @test TypedArgmax.argmax_nan_throws
- * @brief argmax should throw std::runtime_error when input contains NaN.
+ * @brief argmax should throw temper::nan_error when input contains NaN,
+ * as specified in the error handling policy.
  */
 TYPED_TEST(TypedArgmax, argmax_nan_throws)
 {
@@ -2955,7 +2959,7 @@ TYPED_TEST(TypedArgmax, argmax_nan_throws)
     };
     t = vals;
 
-    EXPECT_THROW(math::argmax<value_t>(t), std::runtime_error);
+    EXPECT_THROW(math::argmax<value_t>(t), temper::nan_error);
 }
 
 /**
@@ -4255,7 +4259,8 @@ TEST(LINSPACE, linspace_axis_negative)
 
 /**
  * @test LINSPACE.nan_inputs_throw
- * @brief If start or stop contains NaN the function should throw.
+ * @brief Tests that linspace throws temper::nan_error when start or stop
+ * contain NaN values, as specified in the error handling policy.
  */
 TEST(LINSPACE, nan_inputs_throw)
 {
@@ -4269,7 +4274,15 @@ TEST(LINSPACE, nan_inputs_throw)
             auto r = math::linspace
                 (start, stop, 3, MemoryLocation::DEVICE, 0, true);
         },
-        std::runtime_error
+        temper::nan_error
+    );
+
+    EXPECT_THROW(
+        {
+            auto r = math::linspace
+                (stop, start, 3, MemoryLocation::DEVICE, 0, true);
+        },
+        temper::nan_error
     );
 }
 
@@ -5153,7 +5166,8 @@ TYPED_TEST(TypedFactorial, alias_view_strided)
 
 /**
  * @test TypedFactorial.nan_throws
- * @brief factorial should throw std::runtime_error if input contains NaN.
+ * @brief Tests that factorial throws temper::nan_error when the tensor
+ * contains NaN values, as specified in the error handling policy.
  */
 TYPED_TEST(TypedFactorial, nan_throws)
 {
@@ -5172,7 +5186,7 @@ TYPED_TEST(TypedFactorial, nan_throws)
     };
     t = vals;
 
-    EXPECT_THROW(math::factorial<value_t>(t), std::runtime_error);
+    EXPECT_THROW(math::factorial<value_t>(t), temper::nan_error);
 }
 
 /**
@@ -5337,14 +5351,15 @@ TEST(LOG, alias_view_strided)
 
 /**
  * @test LOG.nan_throws
- * @brief log should throw std::runtime_error if input contains NaN.
+ * @brief Tests that log throws temper::nan_error when the tensor
+ * contains NaN values, as specified in the error handling policy.
  */
 TEST(LOG, nan_throws)
 {
     Tensor<float> t({3}, MemoryLocation::DEVICE);
     t = std::vector<float>{1.0f, std::numeric_limits<float>::quiet_NaN(), 2.0f};
 
-    EXPECT_THROW(math::log(t), std::runtime_error);
+    EXPECT_THROW(math::log(t), temper::nan_error);
 }
 
 /**
@@ -5700,7 +5715,8 @@ TEST(MEAN, mean_alias_view_tensor_overlapping_stride_zero)
 
 /**
  * @test MEAN.mean_nan_throws
- * @brief mean() throws when tensor contains NaN values.
+ * @brief Tests that mean throws temper::nan_error when the tensor
+ * contains NaN values, as specified in the error handling policy.
  */
 TEST(MEAN, mean_nan_throws)
 {
@@ -5709,7 +5725,7 @@ TEST(MEAN, mean_nan_throws)
         {1.0f, std::numeric_limits<float>::quiet_NaN(), 3.0f};
     t = vals;
 
-    EXPECT_THROW(math::mean(t), std::runtime_error);
+    EXPECT_THROW(math::mean(t), temper::nan_error);
 }
 
 /**
@@ -5835,13 +5851,14 @@ TEST(VAR, var_view_and_alias)
 
 /**
  * @test VAR.var_nan_throws
- * @brief var() throws when inputs contain NaN.
+ * @brief Tests that var throws temper::nan_error when the tensor
+ * contains NaN values, as specified in the error handling policy.
  */
 TEST(VAR, var_nan_throws)
 {
     Tensor<float> t({3}, MemoryLocation::DEVICE);
     t = std::vector<float>{1.0f, std::numeric_limits<float>::quiet_NaN(), 3.0f};
-    EXPECT_THROW(math::var(t, std::nullopt, 0), std::runtime_error);
+    EXPECT_THROW(math::var(t, std::nullopt, 0), temper::nan_error);
 }
 
 /**
@@ -5936,6 +5953,25 @@ TEST(COV, cov_ddof_too_high)
     Tensor<float> t({2, 3});
     EXPECT_THROW(math::cov(t, {0}, {1}, 2), std::invalid_argument);
 }
+
+/**
+ * @test COV.cov_nan_throws
+ * @brief Tests that cov throws temper::nan_error when the tensor
+ * contains NaN values, as specified in the error handling policy.
+ */
+TEST(COV, cov_nan_throws)
+{
+    Tensor<float> t({3, 2});
+    std::vector<float> vals = {
+        1.0f, std::numeric_limits<float>::quiet_NaN(),
+        2.0f, 1.0f,
+        3.0f, 4.0f
+    };
+    t = vals;
+
+    EXPECT_THROW(math::cov(t, {0}, {1}, 2), temper::nan_error);
+}
+
 
 /**
  * @test TENSOR.cov_basic
@@ -6233,7 +6269,6 @@ TEST(COV, cov_alias_view_higherdim)
         }
     }
 }
-
 
 /**
  * @test COV.cov_scattered_no_batch
@@ -6655,14 +6690,15 @@ TEST(STDDEV, stddev_alias_stride14)
 
 /**
  * @test STDDEV.stddev_nan_throws
- * @brief math::std throws when inputs contain NaN.
+ * @brief Tests that stddev throws temper::nan_error when the tensor
+ * contains NaN values, as specified in the error handling policy.
  */
 TEST(STDDEV, stddev_nan_throws)
 {
     Tensor<float> t({3}, MemoryLocation::DEVICE);
     t = std::vector<float>{1.0f, std::numeric_limits<float>::quiet_NaN(), 3.0f};
 
-    EXPECT_THROW(math::stddev(t, std::nullopt, 0), std::runtime_error);
+    EXPECT_THROW(math::stddev(t, std::nullopt, 0), temper::nan_error);
 }
 
 /**
@@ -6882,8 +6918,8 @@ TYPED_TEST(TypedPow, broadcast_dims)
 
 /**
  * @test TypedPow.nan_throws
- * @brief pow should throw std::runtime_error if inputs contain NaN
- * (floats only).
+ * @brief Tests that pow throws temper::nan_error when the tensor
+ * contains NaN values, as specified in the error handling policy.
  */
 TYPED_TEST(TypedPow, nan_throws)
 {
@@ -6910,7 +6946,7 @@ TYPED_TEST(TypedPow, nan_throws)
     };
     B = b_vals;
 
-    EXPECT_THROW(math::pow<value_t>(A, B), std::runtime_error);
+    EXPECT_THROW(math::pow<value_t>(A, B), temper::nan_error);
 }
 
 /**
@@ -7084,6 +7120,23 @@ TEST(EIG, eig_last_two_not_square)
 {
     Tensor<float> t({2, 3, 4});
     EXPECT_THROW(math::eig(t, 100, 1e-6f), std::invalid_argument);
+}
+
+/**
+ * @test EIG.eig_nan_throws
+ * @brief Tests that eig throws temper::nan_error when the tensor
+ * contains NaN values, as specified in the error handling policy.
+ */
+TEST(EIG, eig_nan_throws)
+{
+    Tensor<float> t({2, 2});
+
+    t =
+    {
+        1, std::numeric_limits<float>::quiet_NaN(),
+        3, 4,
+    };
+    EXPECT_THROW(math::eig(t, 100, 1e-6f), temper::nan_error);
 }
 
 /**
@@ -7706,14 +7759,15 @@ TEST(SQRT, sqrt_negative_throws)
 
 /**
  * @test SQRT.sqrt_nan_throws
- * @brief NaN elements in input cause std::runtime_error.
+ * @brief Tests that sqrt throws temper::nan_error when the tensor
+ * contains NaN values, as specified in the error handling policy.
  */
 TEST(SQRT, sqrt_nan_throws)
 {
     Tensor<float> t({2}, MemoryLocation::DEVICE);
     t = std::vector<float>{1.0f, std::numeric_limits<float>::quiet_NaN()};
 
-    EXPECT_THROW(math::sqrt(t), std::runtime_error);
+    EXPECT_THROW(math::sqrt(t), temper::nan_error);
 }
 
 /**
@@ -7847,14 +7901,15 @@ TEST(EXP, exp_large_overflow_throws)
 
 /**
  * @test EXP.exp_nan_throws
- * @brief NaN in input should cause std::runtime_error.
+ * @brief Tests that exp throws temper::nan_error when the tensor
+ * contains NaN values, as specified in the error handling policy.
  */
 TEST(EXP, exp_nan_throws)
 {
     Tensor<float> t({2}, MemoryLocation::DEVICE);
     t = std::vector<float>{1.0f, std::numeric_limits<float>::quiet_NaN()};
 
-    EXPECT_THROW(math::exp(t), std::runtime_error);
+    EXPECT_THROW(math::exp(t), temper::nan_error);
 }
 
 /**

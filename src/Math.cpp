@@ -345,13 +345,12 @@ Tensor<value_t> matmul(const Tensor<value_t> & first,
     sycl::free(p_b_batch, g_sycl_queue);
     sycl::free(p_res_strides, g_sycl_queue);
 
+    TEMPER_CHECK(err == 1,
+        nan_error,
+        R"(matmul: NaN detected in inputs.)");
+
     if (err != 0)
     {
-        if (err == 1)
-        {
-            throw std::runtime_error(
-                R"(matmul: NaN detected in inputs.)");
-        }
         if (err == 2)
         {
             throw std::runtime_error(
@@ -767,14 +766,9 @@ Tensor<uint64_t> argmax(const Tensor<value_t> & tensor,
     sycl::free(p_in_strides, g_sycl_queue);
     if (p_res_full_divs) sycl::free(p_res_full_divs, g_sycl_queue);
 
-    if (err != 0)
-    {
-        if (err == 1)
-        {
-            throw std::runtime_error(R"(argmax: NaN detected in inputs.)");
-        }
-        throw std::runtime_error(R"(argmax: numeric error during argmax.)");
-    }
+    TEMPER_CHECK(err == 1,
+        nan_error,
+        R"(argmax: NaN detected in inputs.)");
 
     return result;
 }
@@ -1739,13 +1733,12 @@ Tensor<value_t> linspace(const Tensor<value_t>& start,
     sycl::free(p_res_strides_expanded, g_sycl_queue);
     sycl::free(p_error_flag, g_sycl_queue);
 
+    TEMPER_CHECK(err == 1,
+        nan_error,
+        R"(linspace: NaN detected in inputs or computed values.)");
+
     if (err != 0)
     {
-        if (err == 1)
-        {
-            throw std::runtime_error(R"(linspace:
-                NaN detected in inputs or computed values.)");
-        }
         if (err == 2)
         {
             throw std::runtime_error(R"(linspace:
@@ -1848,8 +1841,6 @@ Tensor<value_t> arange(value_t start,
             value_t val = static_cast<value_t>
                 (start + static_cast<double>(idx) * static_cast<double>(step));
 
-            temper::sycl_utils::device_check_nan_and_set<value_t>
-                (val, p_error_flag);
             temper::sycl_utils::device_check_finite_and_set<value_t>
                 (val, p_error_flag);
 
@@ -1862,11 +1853,6 @@ Tensor<value_t> arange(value_t start,
 
     if (err != 0)
     {
-        if (err == 1)
-        {
-            throw std::runtime_error(R"(arange:
-                NaN detected in computed values.)");
-        }
         if (err == 2)
         {
             throw std::runtime_error(R"(arange:
@@ -2037,12 +2023,12 @@ Tensor<value_t> factorial(const Tensor<value_t> & tensor)
     sycl::free(p_in_divs, g_sycl_queue);
     sycl::free(p_in_strides, g_sycl_queue);
 
+    TEMPER_CHECK(err == 1,
+        nan_error,
+        R"(factorial: NaN detected in inputs.)");
+
     if (err != 0)
     {
-        if (err == 1)
-        {
-            throw std::runtime_error(R"(factorial: NaN detected in inputs.)");
-        }
         if (err == 2)
         {
             throw std::runtime_error(R"(factorial:
@@ -2136,12 +2122,12 @@ Tensor<value_t> log(const Tensor<value_t> & tensor)
     sycl::free(p_in_divs, g_sycl_queue);
     sycl::free(p_in_strides, g_sycl_queue);
 
+    TEMPER_CHECK(err == 1,
+        nan_error,
+        R"(log: NaN detected in inputs.)");
+
     if (err != 0)
     {
-        if (err == 1)
-        {
-            throw std::runtime_error(R"(log: NaN detected in inputs.)");
-        }
         if (err == 2)
         {
             throw std::runtime_error(R"(log:
@@ -2447,82 +2433,7 @@ Tensor<value_t> stddev(const Tensor<value_t> & tensor,
             input tensor has no elements.)");
     }
     Tensor<value_t> v = math::var(tensor, axis_opt, ddof);
-
-    const std::vector<uint64_t> & in_shape = v.get_dimensions();
-
-    const uint64_t total_output_elems = v.get_num_elements();
-    MemoryLocation res_loc = v.get_memory_location();
-    Tensor<value_t> result(in_shape, res_loc);
-
-    const std::vector<uint64_t> in_divs =
-        temper::utils::compute_divisors(in_shape);
-    const std::vector<uint64_t> in_strides = v.get_strides();
-
-    uint64_t* p_in_divs = static_cast<uint64_t*>(
-        sycl::malloc_device(sizeof(uint64_t) * rank, g_sycl_queue));
-    uint64_t* p_in_strides = static_cast<uint64_t*>(
-        sycl::malloc_device(sizeof(uint64_t) * rank, g_sycl_queue));
-    int32_t* p_error_flag = static_cast<int32_t*>(
-        sycl::malloc_shared(sizeof(int32_t), g_sycl_queue));
-
-    bool alloc_ok = (p_in_divs && p_in_strides && p_error_flag);
-    if (!alloc_ok)
-    {
-        sycl::free(p_in_divs, g_sycl_queue);
-        sycl::free(p_in_strides, g_sycl_queue);
-        sycl::free(p_error_flag, g_sycl_queue);
-        throw std::bad_alloc();
-    }
-
-    g_sycl_queue.memcpy(p_in_divs, in_divs.data(),
-        sizeof(uint64_t) * rank).wait();
-    g_sycl_queue.memcpy(p_in_strides, in_strides.data(),
-        sizeof(uint64_t) * rank).wait();
-    *p_error_flag = 0;
-
-    const value_t* p_in_data = v.get_data();
-    value_t* p_out = result.get_data();
-
-    g_sycl_queue.submit([&](sycl::handler& cgh) {
-        cgh.parallel_for(sycl::range<1>(static_cast<size_t>(total_output_elems)),
-            [=](sycl::id<1> id)
-        {
-            const uint64_t flat = static_cast<uint64_t>(id[0]);
-            uint64_t in_idx = temper::sycl_utils::idx_of(flat,
-                                                    p_in_divs,
-                                                    p_in_strides,
-                                                    rank);
-            value_t val = p_in_data[in_idx];
-            temper::sycl_utils::device_check_nan_and_set<value_t>
-                (val, p_error_flag);
-            value_t outv = sycl_utils::sqrt(val);
-            temper::sycl_utils::device_check_finite_and_set<value_t>
-                (outv, p_error_flag);
-            p_out[flat] = outv;
-        });
-    }).wait();
-
-    int32_t err = *p_error_flag;
-    sycl::free(p_error_flag, g_sycl_queue);
-    sycl::free(p_in_divs, g_sycl_queue);
-    sycl::free(p_in_strides, g_sycl_queue);
-
-    if (err != 0)
-    {
-        if (err == 1)
-        {
-            throw std::runtime_error(R"(std: NaN detected in inputs.)");
-        }
-        if (err == 2)
-        {
-            throw std::runtime_error(R"(std:
-                non-finite result (Inf/overflow/NaN) produced.)");
-        }
-        throw std::runtime_error(R"(std:
-            numeric error during sqrt computation.)");
-    }
-
-    return result;
+    return math::sqrt(v);
 }
 template Tensor<float> stddev<float>
     (const Tensor<float>&, std::optional<int64_t>, int64_t);
@@ -2783,8 +2694,6 @@ std::pair<Tensor<value_t>, Tensor<value_t>> eig(const Tensor<value_t> & tensor,
                         value_t val = sycl_utils::fabs
                             (p_A[b * matrix_size + i * n + j]);
 
-                        sycl_utils::device_check_nan_and_set
-                            (val, p_error_flag);
                         sycl_utils::device_check_finite_and_set
                             (val, p_error_flag);
 
@@ -2827,7 +2736,6 @@ std::pair<Tensor<value_t>, Tensor<value_t>> eig(const Tensor<value_t> & tensor,
             uint64_t b = flat / n;
             uint64_t i = flat % n;
             value_t v = p_A[b * matrix_size + i * n + i];
-            sycl_utils::device_check_nan_and_set(v, p_error_flag);
             sycl_utils::device_check_finite_and_set(v, p_error_flag);
             p_eigvals[flat] = v;
         });
@@ -2840,7 +2748,6 @@ std::pair<Tensor<value_t>, Tensor<value_t>> eig(const Tensor<value_t> & tensor,
         {
             uint64_t flat = static_cast<uint64_t>(idx[0]);
             value_t v = p_Q[flat];
-            sycl_utils::device_check_nan_and_set(v, p_error_flag);
             sycl_utils::device_check_finite_and_set(v, p_error_flag);
             p_eigvecs[flat] = v;
         });
@@ -2853,13 +2760,12 @@ std::pair<Tensor<value_t>, Tensor<value_t>> eig(const Tensor<value_t> & tensor,
     sycl::free(p_batch_divisors, g_sycl_queue);
     sycl::free(p_batch_strides, g_sycl_queue);
 
+    TEMPER_CHECK(err == 1,
+        nan_error,
+        R"(eig: NaN detected in inputs.)");
+
     if (err != 0)
     {
-        if (err == 1)
-        {
-            throw std::runtime_error(R"(eig:
-                NaN detected in inputs or during computation.)");
-        }
         if (err == 2)
         {
             throw std::runtime_error(R"(eig:
@@ -2945,12 +2851,12 @@ Tensor<value_t> sqrt(const Tensor<value_t>& tensor)
     sycl::free(p_divs, g_sycl_queue);
     sycl::free(p_strides, g_sycl_queue);
 
+    TEMPER_CHECK(err == 1,
+        nan_error,
+        "sqrt: NaN detected in inputs.");
+
     if (err != 0)
     {
-        if (err == 1)
-        {
-            throw std::runtime_error("sqrt: NaN detected in inputs.");
-        }
         if (err == 2)
         {
             throw std::runtime_error("sqrt: non-finite result produced.");
@@ -3070,14 +2976,13 @@ Tensor<value_t> pow(const Tensor<value_t> & a, const Tensor<value_t> & b)
     sycl::free(p_a_strides, g_sycl_queue);
     sycl::free(p_b_strides, g_sycl_queue);
 
+    TEMPER_CHECK(err == 1,
+        nan_error,
+        R"(pow: NaN detected in inputs.)");
+
     if (err != 0)
     {
-        if (err == 1)
-        {
-            throw std::runtime_error(R"(pow:
-                NaN detected in inputs.)");
-        }
-        else if (err == 2)
+        if (err == 2)
         {
             throw std::runtime_error(R"(pow:
                 non-finite or overflow result detected.)");
@@ -3166,18 +3071,19 @@ Tensor<value_t> exp(const Tensor<value_t> & tensor)
     sycl::free(p_in_divs, g_sycl_queue);
     sycl::free(p_in_strides, g_sycl_queue);
 
+    TEMPER_CHECK(err == 1,
+        nan_error,
+        R"(exp: NaN detected in inputs.)");
+
     if (err != 0)
     {
-        if (err == 1)
-        {
-            throw std::runtime_error(R"(exp: NaN detected in inputs.)");
-        }
         if (err == 2)
         {
             throw std::runtime_error(R"(exp:
                 non-finite result (Inf/overflow/NaN) produced.)");
         }
-        throw std::runtime_error(R"(exp: numeric error during exp computation.)");
+        throw std::runtime_error(R"(exp:
+            numeric error during exp computation.)");
     }
 
     return result;

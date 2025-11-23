@@ -6,6 +6,7 @@
 #include "temper/ML.hpp"
 #include "temper/SYCLUtils.hpp"
 #include "temper/Utils.hpp"
+#include "temper/Errors.hpp"
 #include "temper/Math.hpp"
 
 namespace temper::ml
@@ -215,13 +216,12 @@ Tensor<value_t> one_hot_expand_at(const Tensor<value_t>& tensor,
     int32_t err = *p_error_flag;
     sycl::free(p_error_flag, g_sycl_queue);
 
+    TEMPER_CHECK(err == 1,
+        nan_error,
+        R"(one_hot_expand_at: NaN detected in inputs.)");
+
     if (err != 0)
     {
-        if (err == 1)
-        {
-            throw std::runtime_error(R"(one_hot_expand_at:
-            	NaN detected in inputs.)");
-        }
         if (err == 2)
         {
             throw std::runtime_error(R"(one_hot_expand_at:

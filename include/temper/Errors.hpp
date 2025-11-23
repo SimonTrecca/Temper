@@ -11,6 +11,20 @@
 #include <stdexcept>
 #include <string>
 
+namespace temper
+{
+
+/**
+@brief nan error class for temper library.*/
+class nan_error : public std::invalid_argument
+{
+public:
+    explicit nan_error(const std::string& message)
+        : std::invalid_argument(message) {}
+};
+
+} // namespace temper
+
 /**
  * @brief Error checking macro.
  *

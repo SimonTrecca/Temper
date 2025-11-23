@@ -54,8 +54,8 @@ namespace norm
  * @return Tensor<value_t> Tensor containing PDF values with the broadcasted
  * shape.
  *
- * @throws std::invalid_argument if any input tensor is empty, if any
- * `scale` element is non-positive, or if NaN is detected in inputs.
+ * @throws std::invalid_argument if any input tensor is empty or if any
+ * `scale` element is non-positive.
  * @throws std::runtime_error if a non-finite result (overflow or Inf) or
  * other numeric error occurs during computation.
  */
@@ -86,7 +86,7 @@ extern template Tensor<float> pdf<float>
  * broadcasted shape.
  *
  * @throws std::invalid_argument if any input tensor is empty, if any
- * `scale` element is non-positive, or if NaN is detected in inputs.
+ * `scale` element is non-positive.
  * @throws std::runtime_error if a non-finite result (overflow or Inf)
  * or other numeric error occurs during computation.
  */
@@ -115,7 +115,7 @@ extern template Tensor<float> logpdf<float>
  * broadcasted shape.
  *
  * @throws std::invalid_argument if any input tensor is empty, if any
- * `scale` element is non-positive, or if NaN is detected in inputs.
+ * `scale` element is non-positive.
  * @throws std::runtime_error if a non-finite result (overflow or Inf) or
  * other numeric error occurs during computation.
  */
@@ -139,7 +139,7 @@ extern template Tensor<float> cdf<float>
  *
  * @throws std::invalid_argument if any input is empty, any q is outside
  *         [0,1], or any scale is <= 0.
- * @throws std::runtime_error if NaN or non-finite results occur.
+ * @throws std::runtime_error if non-finite results occur.
  */
 template<typename value_t>
 Tensor<value_t> ppf(const Tensor<value_t>& q,
@@ -176,7 +176,7 @@ extern template Tensor<float> ppf<float>
  *
  * @throws std::invalid_argument if any input tensor is empty, if any
  * `q` value is outside [0,1], if any `scale` element is
- * non-positive, or if NaN is detected in inputs.
+ * non-positive.
  * @throws std::runtime_error if a non-finite result (overflow or Inf)
  * or other numeric error occurs during computation.
  */
@@ -363,8 +363,7 @@ namespace chisquare
  * @return Tensor<value_t> Tensor containing PDF values with the broadcasted
  *         shape.
  *
- * @throws std::invalid_argument if any input tensor is empty or NaN is
- *         detected in inputs.
+ * @throws std::invalid_argument if any input tensor is empty.
  * @throws std::invalid_argument if any evaluated `x` element or 'k' element
  *         is invalid.
  * @throws std::runtime_error if a non-finite result (overflow or Inf) or
@@ -395,9 +394,8 @@ extern template Tensor<float> pdf<float>
  * @return Tensor<value_t> Tensor containing element-wise log-PDF values
  *         with the broadcasted shape.
  *
- * @throws std::invalid_argument if any input tensor is empty, if NaN is
- *         detected in the inputs, or if any element of `k` is non-positive
- *         or any element of `x` is negative.
+ * @throws std::invalid_argument if any input tensor is empty, if any element
+ * of `k` is non-positive, or any element of `x` is negative.
  * @throws std::runtime_error if a non-finite result (overflow or Inf) or
  *         other numeric/device error occurs during computation.
  */
@@ -426,8 +424,8 @@ extern template Tensor<float> logpdf<float>
  * @return Tensor<value_t> Tensor containing CDF values in [0,1] with the
  *         broadcasted shape.
  *
- * @throws std::invalid_argument if any input tensor is empty, contains NaN,
- *         or if any element of x < 0 or k <= 0.
+ * @throws std::invalid_argument if any input tensor is empty, 
+ * or if any element of x < 0 or k <= 0.
  * @throws std::runtime_error if a non-finite result (overflow, Inf) or
  *         other numeric/device error occurs during computation.
  */
@@ -456,7 +454,7 @@ extern template Tensor<float> cdf<float>
  * @param k Degrees of freedom, must be non-empty and strictly positive.
  * @return Tensor<value_t> Quantiles with the broadcasted shape.
  *
- * @throws std::invalid_argument if any input tensor is empty or contains NaN.
+ * @throws std::invalid_argument if any input tensor is empty.
  * @throws std::invalid_argument if any element of `k` is non-positive.
  * @throws std::invalid_argument if any `q` value is outside [0,1].
  * @throws std::runtime_error if a non-finite result (overflow or Inf) is
@@ -495,8 +493,7 @@ extern template Tensor<float> ppf<float>
  * @return Tensor<value_t> Quantiles (ISF values) with the broadcasted shape.
  *
  * @throws std::invalid_argument if any input tensor is empty, if any `q`
- *         value is outside [0,1], if any `k` element is non-positive, or if
- *         NaN is detected in the inputs.
+ *         value is outside [0,1], if any `k` element is non-positive.
  * @throws std::runtime_error if a non-finite result (overflow or Inf) or
  *         other numeric/device error occurs during computation.
  */
@@ -528,8 +525,7 @@ extern template Tensor<float> isf<float>
  * @return Tensor<value_t> Tensor of shape `out_shape` containing chi-square
  *         samples.
  *
- * @throws std::invalid_argument if `k` is empty, if `out_shape` is empty, or if
- *         inputs contain NaN.
+ * @throws std::invalid_argument if `k` is empty, if `out_shape` is empty.
  * @throws std::runtime_error if numeric or device errors occur during uniform
  *         variate generation or other internal computations.
  */
@@ -555,7 +551,7 @@ const std::vector<uint64_t>&, MemoryLocation, uint64_t);
  *          positive values (each element of `k` > 0).
  * @return Tensor<value_t> Tensor containing the mean values (element-wise `k`).
  *
- * @throws std::invalid_argument if `k` is empty, contains NaN, or contains
+ * @throws std::invalid_argument if `k` is empty, or contains
  *         non-positive elements.
  */
 template<typename value_t>
@@ -577,7 +573,7 @@ extern template Tensor<float> mean<float>(const Tensor<float>&);
  * @return Tensor<value_t> Tensor containing the variance values
  * (element-wise `2 * k`).
  *
- * @throws std::invalid_argument if `k` is empty, contains NaN, or contains
+ * @throws std::invalid_argument if `k` is empty, or contains
  *         non-positive elements.
  * @throws std::runtime_error if a non-finite result (overflow or Inf) or
  *         other numeric/device error occurs during computation.
@@ -603,7 +599,7 @@ extern template Tensor<float> var<float>(const Tensor<float>&);
  * @return Tensor<value_t> Tensor containing the standard deviation values
  *         (element-wise `sqrt(2 * k)`).
  *
- * @throws std::invalid_argument if `k` is empty, contains NaN, or contains
+ * @throws std::invalid_argument if `k` is empty, or contains
  *         non-positive elements.
  * @throws std::runtime_error if a non-finite result (overflow, Inf) or other
  *         numeric/device error occurs during computation (e.g. failure in sqrt).

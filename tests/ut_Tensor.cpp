@@ -10,6 +10,8 @@
 #include <cstdint>
 #include <type_traits>
 
+#include "temper/Errors.hpp"
+
 #define private public
 #define protected public
 #include "temper/Tensor.hpp"
@@ -3208,7 +3210,8 @@ TYPED_TEST(TypedTensor, operator_addition_both_host_result_mem_location)
 
 /**
  * @test TypedTensor.operator_addition_nan_inputs_throws
- * @brief Addition detects NaN inputs and triggers an std::invalid_argument.
+ * @brief Addition detects NaN inputs and triggers a temper::nan_error,
+ * as specified in the error handling policy.
  */
 TYPED_TEST(TypedTensor, operator_addition_nan_inputs_throws)
 {
@@ -3230,7 +3233,7 @@ TYPED_TEST(TypedTensor, operator_addition_nan_inputs_throws)
     {
         // Do nothing.
     } else {
-        EXPECT_THROW({ Tensor<value_t> R = A + B; }, std::invalid_argument);
+        EXPECT_THROW({ Tensor<value_t> R = A + B; }, temper::nan_error);
     }
 }
 
@@ -3698,7 +3701,8 @@ TYPED_TEST(TypedTensor, operator_subtraction_both_host_result_mem_location)
 
 /**
  * @test TypedTensor.operator_subtraction_nan_inputs_throws
- * @brief Subtraction detects NaN inputs and triggers an std::invalid_argument.
+ * @brief Subtraction detects NaN inputs and triggers a temper::nan_error,
+ * as specified in the error handling policy.
  */
 TYPED_TEST(TypedTensor, operator_subtraction_nan_inputs_throws)
 {
@@ -3717,7 +3721,7 @@ TYPED_TEST(TypedTensor, operator_subtraction_nan_inputs_throws)
     if constexpr (!std::is_floating_point_v<value_t>) {
         // Do nothing.
     } else {
-        EXPECT_THROW({ Tensor<value_t> R = A - B; }, std::invalid_argument);
+        EXPECT_THROW({ Tensor<value_t> R = A - B; }, temper::nan_error);
     }
 }
 
@@ -4187,8 +4191,8 @@ TYPED_TEST(TypedTensor,
 
 /**
  * @test TypedTensor.operator_multiplication_nan_inputs_throws
- * @brief Multiplication detects NaN inputs and triggers an
- * std::invalid_argument.
+ * @brief Multiplication detects NaN inputs and triggers a temper::nan_error,
+ * as specified in the error handling policy.
  */
 TYPED_TEST(TypedTensor, operator_multiplication_nan_inputs_throws)
 {
@@ -4208,7 +4212,7 @@ TYPED_TEST(TypedTensor, operator_multiplication_nan_inputs_throws)
     if constexpr (!std::is_floating_point_v<value_t>) {
         // Do nothing for not floating point types.
     } else {
-        EXPECT_THROW({ Tensor<value_t> R = A * B; }, std::invalid_argument);
+        EXPECT_THROW({ Tensor<value_t> R = A * B; }, temper::nan_error);
     }
 }
 
@@ -4708,7 +4712,8 @@ TYPED_TEST(TypedTensor, operator_division_by_zero_throws)
 
 /**
  * @test TypedTensor.operator_division_nan_inputs_throws
- * @brief Division detects NaN inputs and triggers an std::invalid_argument.
+ * @brief Division detects NaN inputs and triggers a temper::nan_error,
+ * as specified in the error handling policy.
  */
 TYPED_TEST(TypedTensor, operator_division_nan_inputs_throws)
 {
@@ -4729,7 +4734,7 @@ TYPED_TEST(TypedTensor, operator_division_nan_inputs_throws)
     {
         // Do nothing.
     } else {
-        EXPECT_THROW({ Tensor<value_t> R = A / B; }, std::invalid_argument);
+        EXPECT_THROW({ Tensor<value_t> R = A / B; }, temper::nan_error);
     }
 }
 
@@ -5027,8 +5032,8 @@ TYPED_TEST(TypedTensor, operator_unary_negation_result_mem_location_host)
 
 /**
  * @test TypedTensor.operator_unary_negation_nan_input_throws
- * @brief NaN in input should cause the operation to throw
- * an std::invalid_argument.
+ * @brief Unary negation operator detects NaN inputs and triggers a
+ * temper::nan_error, as specified in the error handling policy.
  */
 TYPED_TEST(TypedTensor, operator_unary_negation_nan_input_throws)
 {
@@ -5043,7 +5048,7 @@ TYPED_TEST(TypedTensor, operator_unary_negation_nan_input_throws)
     if constexpr (!std::is_floating_point_v<value_t>) {
         // Do nothing for not floating types.
     } else {
-        EXPECT_THROW({ Tensor<value_t> N = -A; }, std::invalid_argument);
+        EXPECT_THROW({ Tensor<value_t> N = -A; }, temper::nan_error);
     }
 }
 
@@ -7711,8 +7716,8 @@ TYPED_TEST(TypedTensor, sum_alias_view_tensor_overlapping_stride_zero)
 
 /**
  * @test TypedTensor.sum_nan_throws
- * @brief Tests that sum throws std::runtime_error
- * when the tensor contains NaN values.
+ * @brief Tests that sum throws temper::nan_error when the tensor
+ * contains NaN values, as specified in the error handling policy.
  */
 TYPED_TEST(TypedTensor, sum_nan_throws)
 {
@@ -7725,7 +7730,7 @@ TYPED_TEST(TypedTensor, sum_nan_throws)
             static_cast<value_t>(3.0f)
         };
         t = vals;
-        EXPECT_THROW(t.sum(), std::runtime_error);
+        EXPECT_THROW(t.sum(), temper::nan_error);
     } else {
         // Non-floating types cannot contain NaN; skip.
     }
@@ -8153,8 +8158,8 @@ TYPED_TEST(TypedTensor, cumsum_axis_out_of_bounds)
 
 /**
  * @test TypedTensor.cumsum_nan_throws
- * @brief Tests that cumsum throws std::runtime_error
- * when the tensor contains NaN values.
+ * @brief Tests that cumsum throws temper::nan_error when the tensor
+ * contains NaN values, as specified in the error handling policy.
  */
 TYPED_TEST(TypedTensor, cumsum_nan_throws)
 {
@@ -8167,7 +8172,7 @@ TYPED_TEST(TypedTensor, cumsum_nan_throws)
             static_cast<value_t>(3.0f)
         };
         t = vals;
-        EXPECT_THROW(t.cumsum(), std::runtime_error);
+        EXPECT_THROW(t.cumsum(), temper::nan_error);
     } else {
         // Skip for non-floating.
     }

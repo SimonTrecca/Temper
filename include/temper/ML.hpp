@@ -76,7 +76,7 @@ extern template Tensor<uint64_t> one_hot_expand_at<uint64_t>
  * @throws std::invalid_argument If the tensor is empty or @p axis_opt is
  * outside the valid range.
  * @throws std::bad_alloc If memory allocation fails.
- * @throws std::runtime_error If NaN or non-finite values are encountered
+ * @throws std::runtime_error If non-finite values are encountered
  * during computation.
  */
 template<typename value_t>

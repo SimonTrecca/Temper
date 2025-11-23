@@ -8,6 +8,8 @@
 
 #include <gtest/gtest.h>
 
+#include "temper/Errors.hpp"
+
 #define private public
 #define protected public
 #include "temper/Stats.hpp"
@@ -284,7 +286,8 @@ TEST(NORM, pdf_throws_on_nonpositive_scale)
 
 /**
  * @test NORM.pdf_throws_on_nan_input
- * @brief pdf should throw std::invalid_argument when x contains NaN.
+ * @brief NaN in x should trigger a temper::nan_error,
+ * as specified in the error handling policy.
  */
 TEST(NORM, pdf_throws_on_nan_input)
 {
@@ -296,7 +299,7 @@ TEST(NORM, pdf_throws_on_nan_input)
     Tensor<float> scale({1}, MemoryLocation::DEVICE);
     scale = std::vector<float>{1.0f};
     EXPECT_THROW(stats::norm::pdf<float>(x, loc, scale),
-        std::invalid_argument);
+        temper::nan_error);
 }
 
 /**
@@ -498,7 +501,8 @@ TEST(NORM, logpdf_throws_on_nonpositive_scale)
 
 /**
  * @test NORM.logpdf_throws_on_nan_input
- * @brief logpdf should throw std::invalid_argument when x contains NaN.
+ * @brief NaN in x should trigger a temper::nan_error,
+ * as specified in the error handling policy.
  */
 TEST(NORM, logpdf_throws_on_nan_input)
 {
@@ -510,7 +514,7 @@ TEST(NORM, logpdf_throws_on_nan_input)
     Tensor<float> scale({1}, MemoryLocation::DEVICE);
     scale = std::vector<float>{1.0f};
     EXPECT_THROW(stats::norm::logpdf<float>(x, loc, scale),
-        std::invalid_argument);
+        temper::nan_error);
 }
 
 /**
@@ -748,7 +752,8 @@ TEST(NORM, cdf_throws_on_nonpositive_scale)
 
 /**
  * @test NORM.cdf_throws_on_nan_input
- * @brief cdf should throw std::invalid_argument when x contains NaN.
+ * @brief NaN in x should trigger a temper::nan_error,
+ * as specified in the error handling policy.
  */
 TEST(NORM, cdf_throws_on_nan_input)
 {
@@ -760,7 +765,7 @@ TEST(NORM, cdf_throws_on_nan_input)
     Tensor<float> scale({1}, MemoryLocation::DEVICE);
     scale = std::vector<float>{1.0f};
     EXPECT_THROW(stats::norm::cdf<float>(x, loc, scale),
-        std::invalid_argument);
+        temper::nan_error);
 }
 
 /**
@@ -872,9 +877,10 @@ TEST(NORM, ppf_throws_on_nonpositive_scale)
 }
 
 /**
-* @test NORM.ppf_throws_on_nan_input
-* @brief ppf should throw runtime_error when inputs contain NaN.
-*/
+ * @test NORM.ppf_throws_on_nan_input
+ * @brief NaN in inputs should trigger a temper::nan_error,
+ * as specified in the error handling policy.
+ */
 TEST(NORM, ppf_throws_on_nan_input)
 {
     Tensor<float> q({1}, MemoryLocation::DEVICE);
@@ -886,7 +892,7 @@ TEST(NORM, ppf_throws_on_nan_input)
     Tensor<float> scale({1}, MemoryLocation::DEVICE);
     scale = std::vector<float>{1.0f};
 
-    EXPECT_THROW(stats::norm::ppf<float>(q, loc, scale), std::invalid_argument);
+    EXPECT_THROW(stats::norm::ppf<float>(q, loc, scale), temper::nan_error);
 }
 
 /**
@@ -1047,7 +1053,8 @@ TEST(NORM, isf_throws_on_nonpositive_scale)
 
 /**
  * @test NORM.isf_throws_on_nan_input
- * @brief isf should throw std::invalid_argument when q contains NaN.
+ * @brief NaN in inputs should trigger a temper::nan_error,
+ * as specified in the error handling policy.
  */
 TEST(NORM, isf_throws_on_nan_input)
 {
@@ -1059,7 +1066,7 @@ TEST(NORM, isf_throws_on_nan_input)
     Tensor<float> scale({1}, MemoryLocation::DEVICE);
     scale = std::vector<float>{1.0f};
     EXPECT_THROW(stats::norm::isf<float>(q, loc, scale),
-        std::invalid_argument);
+        temper::nan_error);
 }
 
 /**
@@ -1342,7 +1349,8 @@ TEST(CHISQUARE, pdf_throws_on_negative_or_zero_k)
 
 /**
  * @test CHISQUARE.pdf_throws_on_nan_input
- * @brief pdf should throw std::invalid_argument when x contains NaN.
+ * @brief NaN in inputs should trigger a temper::nan_error,
+ * as specified in the error handling policy.
  */
 TEST(CHISQUARE, pdf_throws_on_nan_input)
 {
@@ -1352,7 +1360,7 @@ TEST(CHISQUARE, pdf_throws_on_nan_input)
     Tensor<float> k({1}, MemoryLocation::DEVICE);
     k = std::vector<float>{2.0f};
 
-    EXPECT_THROW(stats::chisquare::pdf<float>(x, k), std::invalid_argument);
+    EXPECT_THROW(stats::chisquare::pdf<float>(x, k), temper::nan_error);
 }
 
 #include "stats/chisquare_logpdf.cpp"
@@ -1418,7 +1426,8 @@ TEST(CHISQUARE, logpdf_throws_on_negative_or_zero_k)
 
 /**
  * @test CHISQUARE.logpdf_throws_on_nan_input
- * @brief logpdf should throw std::invalid_argument when x contains NaN.
+ * @brief NaN in inputs should trigger a temper::nan_error,
+ * as specified in the error handling policy.
  */
 TEST(CHISQUARE, logpdf_throws_on_nan_input)
 {
@@ -1428,7 +1437,7 @@ TEST(CHISQUARE, logpdf_throws_on_nan_input)
     Tensor<float> k({1}, MemoryLocation::DEVICE);
     k = std::vector<float>{2.0f};
 
-    EXPECT_THROW(stats::chisquare::logpdf<float>(x, k), std::invalid_argument);
+    EXPECT_THROW(stats::chisquare::logpdf<float>(x, k), temper::nan_error);
 }
 
 #include "stats/chisquare_cdf.cpp"
@@ -1493,7 +1502,8 @@ TEST(CHISQUARE, cdf_throws_on_negative_or_zero_k)
 
 /**
  * @test CHISQUARE.cdf_throws_on_nan_input
- * @brief cdf should throw std::invalid_argument when x contains NaN.
+ * @brief NaN in inputs should trigger a temper::nan_error,
+ * as specified in the error handling policy.
  */
 TEST(CHISQUARE, cdf_throws_on_nan_input)
 {
@@ -1503,7 +1513,7 @@ TEST(CHISQUARE, cdf_throws_on_nan_input)
     Tensor<float> k({1}, MemoryLocation::DEVICE);
     k = std::vector<float>{2.0f};
 
-    EXPECT_THROW(stats::chisquare::cdf<float>(x, k), std::invalid_argument);
+    EXPECT_THROW(stats::chisquare::cdf<float>(x, k), temper::nan_error);
 }
 
 #include "stats/chisquare_ppf.cpp"
@@ -1569,9 +1579,10 @@ TEST(CHISQUARE, ppf_throws_on_negative_or_zero_k)
 }
 
 /**
-* @test CHISQUARE.ppf_throws_on_nan_input
-* @brief ppf should throw std::invalid_argument when inputs contain NaN.
-*/
+ * @test CHISQUARE.ppf_throws_on_nan_input
+ * @brief NaN in inputs should trigger a temper::nan_error,
+ * as specified in the error handling policy.
+ */
 TEST(CHISQUARE, ppf_throws_on_nan_input)
 {
     Tensor<float> q({1}, MemoryLocation::DEVICE);
@@ -1581,7 +1592,7 @@ TEST(CHISQUARE, ppf_throws_on_nan_input)
     Tensor<float> k({1}, MemoryLocation::DEVICE);
     k = std::vector<float>{0.0f};
 
-    EXPECT_THROW(stats::chisquare::ppf<float>(q, k), std::invalid_argument);
+    EXPECT_THROW(stats::chisquare::ppf<float>(q, k), temper::nan_error);
 }
 
 #include "stats/chisquare_isf.cpp"
@@ -1647,9 +1658,10 @@ TEST(CHISQUARE, isf_throws_on_negative_or_zero_k)
 }
 
 /**
-* @test CHISQUARE.isf_throws_on_nan_input
-* @brief isf should throw std::invalid_argument when inputs contain NaN.
-*/
+ * @test CHISQUARE.isf_throws_on_nan_input
+ * @brief NaN in inputs should trigger a temper::nan_error,
+ * as specified in the error handling policy.
+ */
 TEST(CHISQUARE, isf_throws_on_nan_input)
 {
     Tensor<float> q({1}, MemoryLocation::DEVICE);
@@ -1659,7 +1671,7 @@ TEST(CHISQUARE, isf_throws_on_nan_input)
     Tensor<float> k({1}, MemoryLocation::DEVICE);
     k = std::vector<float>{0.0f};
 
-    EXPECT_THROW(stats::chisquare::isf<float>(q, k), std::invalid_argument);
+    EXPECT_THROW(stats::chisquare::isf<float>(q, k), temper::nan_error);
 }
 
 #include "stats/chisquare_rvs.cpp"
@@ -1705,16 +1717,17 @@ TEST(CHISQUARE, rvs_throws_on_negative_or_zero_k)
 }
 
 /**
-* @test CHISQUARE.rvs_throws_on_nan_input
-* @brief rvs should throw std::invalid_argument when inputs contain NaN.
-*/
+ * @test CHISQUARE.rvs_throws_on_nan_input
+ * @brief NaN in inputs should trigger a temper::nan_error,
+ * as specified in the error handling policy.
+ */
 TEST(CHISQUARE, rvs_throws_on_nan_input)
 {
     Tensor<float> k({1}, MemoryLocation::DEVICE);
     float nanf = std::numeric_limits<float>::quiet_NaN();
     k = nanf;
 
-    EXPECT_THROW(stats::chisquare::rvs<float>(k, {2}), std::invalid_argument);
+    EXPECT_THROW(stats::chisquare::rvs<float>(k, {2}), temper::nan_error);
 }
 
 #include "stats/chisquare_mean.cpp"
@@ -1748,16 +1761,17 @@ TEST(CHISQUARE, mean_throws_on_negative_or_zero_k)
 }
 
 /**
-* @test CHISQUARE.mean_throws_on_nan_input
-* @brief mean should throw std::invalid_argument when inputs contain NaN.
-*/
+ * @test CHISQUARE.mean_throws_on_nan_input
+ * @brief NaN in inputs should trigger a temper::nan_error,
+ * as specified in the error handling policy.
+ */
 TEST(CHISQUARE, mean_throws_on_nan_input)
 {
     Tensor<float> k({1}, MemoryLocation::DEVICE);
     float nanf = std::numeric_limits<float>::quiet_NaN();
     k = nanf;
 
-    EXPECT_THROW(stats::chisquare::mean<float>(k), std::invalid_argument);
+    EXPECT_THROW(stats::chisquare::mean<float>(k), temper::nan_error);
 }
 
 #include "stats/chisquare_var.cpp"
@@ -1791,16 +1805,17 @@ TEST(CHISQUARE, var_throws_on_negative_or_zero_k)
 }
 
 /**
-* @test CHISQUARE.var_throws_on_nan_input
-* @brief var should throw std::invalid_argument when inputs contain NaN.
-*/
+ * @test CHISQUARE.var_throws_on_nan_input
+ * @brief NaN in inputs should trigger a temper::nan_error,
+ * as specified in the error handling policy.
+ */
 TEST(CHISQUARE, var_throws_on_nan_input)
 {
     Tensor<float> k({1}, MemoryLocation::DEVICE);
     float nanf = std::numeric_limits<float>::quiet_NaN();
     k = nanf;
 
-    EXPECT_THROW(stats::chisquare::var<float>(k), std::invalid_argument);
+    EXPECT_THROW(stats::chisquare::var<float>(k), temper::nan_error);
 }
 
 /**
@@ -1847,16 +1862,17 @@ TEST(CHISQUARE, stddev_throws_on_negative_or_zero_k)
 }
 
 /**
-* @test CHISQUARE.stddev_throws_on_nan_input
-* @brief stddev should throw std::invalid_argument when inputs contain NaN.
-*/
+ * @test CHISQUARE.stddev_throws_on_nan_input
+ * @brief NaN in inputs should trigger a temper::nan_error,
+ * as specified in the error handling policy.
+ */
 TEST(CHISQUARE, stddev_throws_on_nan_input)
 {
     Tensor<float> k({1}, MemoryLocation::DEVICE);
     float nanf = std::numeric_limits<float>::quiet_NaN();
     k = nanf;
 
-    EXPECT_THROW(stats::chisquare::stddev<float>(k), std::invalid_argument);
+    EXPECT_THROW(stats::chisquare::stddev<float>(k), temper::nan_error);
 }
 
 /**

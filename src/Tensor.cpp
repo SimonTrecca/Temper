@@ -6,6 +6,7 @@
 #include "temper/Tensor.hpp"
 #include "temper/SYCLUtils.hpp"
 #include "temper/Utils.hpp"
+#include "temper/Errors.hpp"
 
 #include <iostream>
 
@@ -929,11 +930,10 @@ Tensor<value_t> Tensor<value_t>::operator+(const Tensor & other) const
             value_t a_val = p_a_data[offset_a];
             value_t b_val = p_b_data[offset_b];
 
-            value_t res = a_val + b_val;
-
             sycl_utils::device_check_nan_and_set(a_val, p_error_flag);
             sycl_utils::device_check_nan_and_set(b_val, p_error_flag);
-            sycl_utils::device_check_nan_and_set(res, p_error_flag);
+
+            value_t res = a_val + b_val;
 
             sycl_utils::device_check_finite_and_set(res, p_error_flag);
 
@@ -948,13 +948,12 @@ Tensor<value_t> Tensor<value_t>::operator+(const Tensor & other) const
     sycl::free(p_a_strides, g_sycl_queue);
     sycl::free(p_b_strides, g_sycl_queue);
 
+    TEMPER_CHECK(err == 1,
+        nan_error,
+        R"(Tensor(operator+): NaN detected in inputs.)");
+
     if (err != 0)
     {
-        if (err == 1)
-        {
-            throw std::invalid_argument(R"(Tensor(operator+):
-                NaN detected in inputs.)");
-        }
         if (err == 2)
         {
             throw std::runtime_error(R"(Tensor(operator+):
@@ -1055,11 +1054,10 @@ Tensor<value_t> Tensor<value_t>::operator-(const Tensor & other) const
             value_t a_val = p_a_data[offset_a];
             value_t b_val = p_b_data[offset_b];
 
-            value_t res = a_val - b_val;
-
             sycl_utils::device_check_nan_and_set(a_val, p_error_flag);
             sycl_utils::device_check_nan_and_set(b_val, p_error_flag);
-            sycl_utils::device_check_nan_and_set(res, p_error_flag);
+
+            value_t res = a_val - b_val;
 
             sycl_utils::device_check_finite_and_set(res, p_error_flag);
 
@@ -1074,13 +1072,12 @@ Tensor<value_t> Tensor<value_t>::operator-(const Tensor & other) const
     sycl::free(p_a_strides, g_sycl_queue);
     sycl::free(p_b_strides, g_sycl_queue);
 
+    TEMPER_CHECK(err == 1,
+        nan_error,
+        R"(Tensor(operator-): NaN detected in inputs.)");
+
     if (err != 0)
     {
-        if (err == 1)
-        {
-            throw std::invalid_argument(R"(Tensor(operator-):
-                NaN detected in inputs.)");
-        }
         if (err == 2)
         {
             throw std::runtime_error(R"(Tensor(operator-):
@@ -1181,11 +1178,10 @@ Tensor<value_t> Tensor<value_t>::operator*(const Tensor & other) const
             value_t a_val = p_a_data[offset_a];
             value_t b_val = p_b_data[offset_b];
 
-            value_t res = a_val * b_val;
-
             sycl_utils::device_check_nan_and_set(a_val, p_error_flag);
             sycl_utils::device_check_nan_and_set(b_val, p_error_flag);
-            sycl_utils::device_check_nan_and_set(res, p_error_flag);
+
+            value_t res = a_val * b_val;
 
             sycl_utils::device_check_finite_and_set(res, p_error_flag);
 
@@ -1200,13 +1196,12 @@ Tensor<value_t> Tensor<value_t>::operator*(const Tensor & other) const
     sycl::free(p_a_strides, g_sycl_queue);
     sycl::free(p_b_strides, g_sycl_queue);
 
+    TEMPER_CHECK(err == 1,
+        nan_error,
+        R"(Tensor(operator*): NaN detected in inputs.)");
+
     if (err != 0)
     {
-        if (err == 1)
-        {
-            throw std::invalid_argument(R"(Tensor(operator*):
-                NaN detected in inputs.)");
-        }
         if (err == 2)
         {
             throw std::runtime_error(R"(Tensor(operator*):
@@ -1312,6 +1307,7 @@ Tensor<value_t> Tensor<value_t>::operator/(const Tensor & other) const
             sycl_utils::device_check_divzero_and_set(b_val, p_error_flag);
 
             value_t res = a_val / b_val;
+
             sycl_utils::device_check_finite_and_set(res, p_error_flag);
 
             p_r_data[flat_idx] = res;
@@ -1325,13 +1321,12 @@ Tensor<value_t> Tensor<value_t>::operator/(const Tensor & other) const
     sycl::free(p_a_strides, g_sycl_queue);
     sycl::free(p_b_strides, g_sycl_queue);
 
+    TEMPER_CHECK(err == 1,
+        nan_error,
+        R"(Tensor(operator/): NaN detected in inputs.)");
+
     if (err != 0)
     {
-        if (err == 1)
-        {
-            throw std::invalid_argument(R"(Tensor(operator/):
-                NaN detected in inputs.)");
-        }
         if (err == 2)
         {
             throw std::runtime_error(R"(Tensor(operator/):
@@ -1413,11 +1408,9 @@ Tensor<value_t> Tensor<value_t>::operator-() const
     sycl::free(p_divs, g_sycl_queue);
     sycl::free(p_strides, g_sycl_queue);
 
-    if (err != 0)
-    {
-        throw std::invalid_argument(R"(Tensor(operator-):
-            NaN detected in input.)");
-    }
+    TEMPER_CHECK(err == 1,
+        nan_error,
+        R"(Tensor(operator-): NaN detected in inputs.)");
 
     return result;
 }
@@ -2081,7 +2074,8 @@ void Tensor<value_t>::sort(std::optional<int64_t> axis_opt)
                     value_t va = merge_input[a_idx];
                     value_t vb = merge_input[b_idx];
                     uint64_t out_idx = idx_of_local(left + out_k);
-                    if ((!sycl_utils::is_nan(va) && sycl_utils::is_nan(vb)) || va < vb)
+                    if ((!sycl_utils::is_nan(va) && sycl_utils::is_nan(vb))
+                        || va < vb)
                     {
                         merge_output[out_idx] = va;
                         ++i;
@@ -2426,13 +2420,12 @@ Tensor<value_t> Tensor<value_t>::sum(std::optional<int64_t> axis_opt) const
     int32_t err = *p_error_flag;
     sycl::free(p_error_flag, g_sycl_queue);
 
+    TEMPER_CHECK(err == 1,
+        nan_error,
+        R"(Tensor(sum): NaN detected in inputs.)");
+
     if (err != 0)
     {
-        if (err == 1)
-        {
-            throw std::runtime_error(R"(Tensor(sum):
-                NaN detected in inputs.)");
-        }
         if (err == 2)
         {
             throw std::runtime_error(R"(Tensor(sum):
@@ -2805,13 +2798,12 @@ Tensor<value_t> Tensor<value_t>::cumsum(std::optional<int64_t> axis_opt) const
     sycl::free(p_divs_dev, g_sycl_queue);
     sycl::free(p_error_flag, g_sycl_queue);
 
+    TEMPER_CHECK(err == 1,
+        nan_error,
+        R"(Tensor(cumsum): NaN detected in inputs.)");
+
     if (err != 0)
     {
-        if (err == 1)
-        {
-            throw std::runtime_error(R"(Tensor(cumsum):
-                NaN detected in inputs.)");
-        }
         if (err == 2)
         {
             throw std::runtime_error(R"(Tensor(cumsum):
