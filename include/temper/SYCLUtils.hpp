@@ -236,6 +236,7 @@ inline value_t round(value_t v)
 template<typename value_t>
 inline void device_check_nan_and_set(value_t v, int32_t* p_err)
 {
+#if !defined(TEMPER_DISABLE_ERROR_CHECKS)
     if (sycl_utils::is_nan(v))
     {
         auto atomic_err = sycl::atomic_ref<int32_t,
@@ -245,6 +246,10 @@ inline void device_check_nan_and_set(value_t v, int32_t* p_err)
         int32_t expected = 0;
         atomic_err.compare_exchange_strong(expected, 1);
     }
+#else
+    (void)v;
+    (void)p_err;
+#endif
 }
 
 /**
@@ -259,6 +264,7 @@ inline void device_check_nan_and_set(value_t v, int32_t* p_err)
 template<typename value_t>
 inline void device_check_finite_and_set(value_t v, int32_t* p_err)
 {
+#if !defined(TEMPER_DISABLE_ERROR_CHECKS)
     if (!sycl_utils::is_finite(v))
     {
         auto atomic_err = sycl::atomic_ref<int32_t,
@@ -268,6 +274,11 @@ inline void device_check_finite_and_set(value_t v, int32_t* p_err)
         int32_t expected = 0;
         atomic_err.compare_exchange_strong(expected, 2);
     }
+#else
+    // checks disabled: avoid unused-parameter warnings and ensure no side-effects
+    (void)v;
+    (void)p_err;
+#endif
 }
 
 inline double erfinv(double x)

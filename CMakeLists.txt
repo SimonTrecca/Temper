@@ -20,6 +20,15 @@ set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g")
 set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG")
 set (CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -Wall -Wextra -Werror")
 
+option(TEMPER_DISABLE_ERROR_CHECKS "Disable runtime error checks for performance" OFF)
+
+if (TEMPER_DISABLE_ERROR_CHECKS)
+    add_compile_definitions(TEMPER_DISABLE_ERROR_CHECKS)
+    message(STATUS "Temper error checks: DISABLED")
+else()
+    message(STATUS "Temper error checks: ENABLED")
+endif()
+
 if (CMAKE_CXX_COMPILER_ID STREQUAL "IntelLLVM")
   set (CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -fsycl")
 

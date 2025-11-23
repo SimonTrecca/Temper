@@ -6,7 +6,51 @@ constraints for the Temper library. It serves as the reference for
 standardized library behaviours ensuring consistency, predictability, and
 robust error handling across all public and internal APIs.
 
-1. Nan Behaviour: Error Prevention
+1. Error Handling: Centralized Management
+-----------------------------------------
+
+Description
+^^^^^^^^^^^
+There needs to be a singular, uniform, and centralized mechanism to handle
+error management throughout the library.
+
+Rationale
+^^^^^^^^^
+Centralization allows for single-point modification of error handling logic.
+Furthermore, high-performance applications require the ability to disable
+every runtime check to maximize execution speed. A centralized macro ensures
+that switching between "safe" and "fast" modes is a simple compile-time
+toggle.
+
+Specification (Must)
+^^^^^^^^^^^^^^^^^^^^
+
+.. admonition:: Unified Error Enforcement
+   :class: primary
+
+   * **Compile-Time Switch:** There shall be a global flag
+     ``TEMPER_DISABLE_ERROR_CHECKS``. When defined (e.g., via
+     ``-DTEMPER_DISABLE_ERROR_CHECKS=ON``), all runtime checks **must** be
+     stripped from the compiled binary to ensure zero overhead.
+
+   * **Kernel Consistency:** All kernel-level runtime checks **must** also
+     be capable of being disabled through the usage of this flag.
+
+   * **Macro Definition:** All errors in the Temper library **must** be
+     addressed through a dedicated macro (e.g., ``TEMPER_CHECK``). This
+     macro must accept a condition, an exception type, and an error message.
+
+   * **Macro Behavior:**
+
+     1. **Default:** If the disable flag is **not** set, the macro must
+        evaluate the condition. If the condition is true, it must throw
+        the specified exception with the provided message.
+
+     2. **Disabled:** If ``TEMPER_DISABLE_ERROR_CHECKS`` **is** set, the
+        macro must resolve to a no-op (such as ``((void)0)``), ensuring
+        the check and the branch are removed during compilation.
+
+2. Nan Behaviour: Error Prevention
 ----------------------------------
 
 Description

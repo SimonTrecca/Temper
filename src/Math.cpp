@@ -6,6 +6,7 @@
 #include "temper/Math.hpp"
 #include "temper/SYCLUtils.hpp"
 #include "temper/Utils.hpp"
+#include "temper/Errors.hpp"
 
 namespace temper::math
 {
@@ -14,11 +15,10 @@ template <typename value_t>
 Tensor<value_t> matmul(const Tensor<value_t> & first,
     const Tensor<value_t> & second)
 {
-    if (first.get_dimensions().empty() || second.get_dimensions().empty())
-    {
-        throw std::invalid_argument(
-            R"(matmul: either tensor has no elements.)");
-    }
+    TEMPER_CHECK(first.get_dimensions().empty() ||
+        second.get_dimensions().empty(),
+        std::invalid_argument,
+        "matmul: either tensor has no elements.");
 
     const int64_t a_rank_orig = first.get_rank();
     const int64_t b_rank_orig = second.get_rank();

@@ -363,6 +363,33 @@ TYPED_TEST(TypedMatmul, batched_broadcast_batches)
 }
 
 /**
+ * @test TypedMatmul.empty_throws
+ * @brief matmul should throw std::invalid_argument if inputs are empty.
+ */
+TYPED_TEST(TypedMatmul, empty_throws)
+{
+    using value_t = TypeParam;
+
+    Tensor<value_t> A;
+
+    Tensor<value_t> B({2, 2}, MemoryLocation::DEVICE);
+    std::vector<value_t> b_vals = {
+        static_cast<value_t>(1), static_cast<value_t>(2),
+        static_cast<value_t>(3), static_cast<value_t>(4)
+    };
+    B = b_vals;
+
+    Tensor<value_t> B2;
+
+    Tensor<value_t> A2({2, 2}, MemoryLocation::DEVICE);
+    A2 = b_vals;
+
+    EXPECT_THROW(math::matmul<value_t>(A, B), std::invalid_argument);
+    EXPECT_THROW(math::matmul<value_t>(A2, B2), std::invalid_argument);
+
+}
+
+/**
  * @test TypedMatmul.nan_throws
  * @brief matmul should throw std::runtime_error if inputs contain NaN.
  */
