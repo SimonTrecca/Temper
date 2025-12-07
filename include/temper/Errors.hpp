@@ -15,12 +15,22 @@ namespace temper
 {
 
 /**
-@brief nan error class for temper library.*/
+ * @brief nan error class for temper library.
+ */
 class nan_error : public std::invalid_argument
 {
 public:
     explicit nan_error(const std::string& message)
         : std::invalid_argument(message) {}
+};
+
+/**
+ * @brief non finite error class for temper library.
+ */
+class nonfinite_error : public std::overflow_error {
+public:
+    explicit nonfinite_error(const std::string& msg)
+        : std::overflow_error(msg) {}
 };
 
 } // namespace temper

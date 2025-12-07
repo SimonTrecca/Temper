@@ -80,3 +80,39 @@ Specification (Must)
    * **Pre-Calculation Check:** This check **must always** be performed
      **before** any calculations using the tensor values are executed in
      any function (including public APIs and internal helper functions).
+
+3. Non-Finite Behaviour: Invalid Result Prevention
+--------------------------------------------------
+
+Description
+^^^^^^^^^^^
+Non-finite values (``+∞``, ``-∞``, or overflow results) must never be allowed
+to propagate as valid outputs of any computation within the Temper library.
+While NaN represents an invalid *input* condition, non-finite values represent
+an invalid or unstable *result* that must be caught immediately after it is
+produced.
+
+Rationale
+^^^^^^^^^
+Infinity or overflow results cannot be meaningfully used in subsequent
+computations and typically indicate numerical instability or exceeding the
+representable range of the underlying data type. These values must be detected
+and reported in a unified and consistent manner across all APIs.
+
+Specification (Must)
+^^^^^^^^^^^^^^^^^^^^
+
+.. admonition:: Mandatory Non-Finite Result Validation
+   :class: primary
+
+   * **Result Validation:**
+     Any operation that produces new tensor values **must** validate that
+     the resulting values are finite. If a non-finite value is detected,
+     the operation **must** immediately raise a ``"nonfinite_error"``
+     exception.
+
+   * **Post-Calculation Check:**
+     This validation **must always** occur *after* performing a computation
+     that generates new numeric values, but **before** returning them to any
+     caller (internal or external).
+
