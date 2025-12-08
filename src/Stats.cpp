@@ -183,13 +183,12 @@ Tensor<value_t> pdf(const Tensor<value_t>& x,
         nan_error,
         R"(norm::pdf: NaN detected in inputs.)");
 
+    TEMPER_CHECK(err == 2,
+        nonfinite_error,
+        R"(norm::pdf: non-finite result (overflow or Inf) produced.)");
+
     if (err != 0)
     {
-        if (err == 2)
-        {
-            throw std::runtime_error(R"(norm::pdf:
-                non-finite result (overflow or Inf) produced.)");
-        }
         if (err == 4)
         {
             throw std::invalid_argument(R"(norm::pdf: scale must be positive.)");
@@ -353,13 +352,12 @@ Tensor<value_t> logpdf(const Tensor<value_t>& x,
         nan_error,
         R"(norm::logpdf: NaN detected in inputs.)");
 
+    TEMPER_CHECK(err == 2,
+        nonfinite_error,
+        R"(norm::logpdf: non-finite result (overflow or Inf) produced.)");
+
     if (err != 0)
     {
-        if (err == 2)
-        {
-            throw std::runtime_error(R"(norm::logpdf:
-                non-finite result (overflow or Inf) produced.)");
-        }
         if (err == 4)
         {
             throw std::invalid_argument(R"(norm::logpdf:
@@ -524,13 +522,12 @@ Tensor<value_t> cdf(const Tensor<value_t>& x,
         nan_error,
         R"(norm::cdf: NaN detected in inputs.)");
 
+    TEMPER_CHECK(err == 2,
+        nonfinite_error,
+        R"(norm::cdf: non-finite result (overflow or Inf) produced.)");
+
     if (err != 0)
     {
-        if (err == 2)
-        {
-            throw std::runtime_error(R"(norm::cdf:
-                non-finite result (overflow or Inf) produced.)");
-        }
         if (err == 4)
         {
             throw std::invalid_argument(R"(norm::cdf:
@@ -775,13 +772,12 @@ Tensor<value_t> ppf(const Tensor<value_t>& q,
         nan_error,
         R"(norm::ppf: NaN detected in inputs.)");
 
+    TEMPER_CHECK(err == 2,
+        nonfinite_error,
+        R"(norm::ppf: non-finite result (overflow or Inf) produced.)");
+
     if (err != 0)
     {
-        if (err == 2)
-        {
-            throw std::runtime_error(R"(norm::ppf:
-                non-finite result (overflow or Inf) produced.)");
-        }
         if (err == 3)
         {
             throw std::invalid_argument(R"(norm::ppf:
@@ -1075,7 +1071,7 @@ Tensor<value_t> pdf(const Tensor<value_t>& x,
 
             double denom = sycl::pow(2.0, kp * 0.5) * sycl::tgamma(kp * 0.5);
             double outv = (1.0 / denom) * sycl::pow(xp, (kp * 0.5 - 1.0)) *
-                sycl::exp(-xp * 0.5); 
+                sycl::exp(-xp * 0.5);
 
             temper::sycl_utils::device_check_finite_and_set<double>
                 (outv, p_error_flag);
@@ -1094,13 +1090,12 @@ Tensor<value_t> pdf(const Tensor<value_t>& x,
         nan_error,
         R"(chisquare::pdf: NaN detected in inputs.)");
 
+    TEMPER_CHECK(err == 2,
+        nonfinite_error,
+        R"(chisquare::pdf: non-finite result (overflow or Inf) produced.)");
+
     if (err != 0)
     {
-        if (err == 2)
-        {
-            throw std::runtime_error(R"(chisquare::pdf:
-                non-finite result (overflow or Inf) produced.)");
-        }
         if (err == 3)
         {
             throw std::invalid_argument(R"(chisquare::pdf:
@@ -1244,13 +1239,12 @@ Tensor<value_t> logpdf(const Tensor<value_t>& x,
         nan_error,
         R"(chisquare::logpdf: NaN detected in inputs.)");
 
+    TEMPER_CHECK(err == 2,
+        nonfinite_error,
+        R"(chisquare::logpdf: non-finite result (overflow or Inf) produced.)");
+
     if (err != 0)
     {
-        if (err == 2)
-        {
-            throw std::runtime_error(R"(chisquare::logpdf:
-                non-finite result (overflow or Inf) produced.)");
-        }
         if (err == 3)
         {
             throw std::invalid_argument(R"(chisquare::logpdf:
@@ -1399,13 +1393,12 @@ Tensor<value_t> cdf(const Tensor<value_t>& x,
         nan_error,
         R"(chisquare::cdf: NaN detected in inputs.)");
 
+    TEMPER_CHECK(err == 2,
+        nonfinite_error,
+        R"(chisquare::cdf: non-finite result (overflow or Inf) produced.)");
+
     if (err != 0)
     {
-        if (err == 2)
-        {
-            throw std::runtime_error(R"(chisquare::cdf:
-                non-finite result (overflow or Inf) produced.)");
-        }
         if (err == 3)
         {
             throw std::invalid_argument(R"(chisquare::cdf:
@@ -1567,13 +1560,12 @@ Tensor<value_t> ppf(const Tensor<value_t>& q,
         nan_error,
         R"(chisquare::ppf: NaN detected in inputs.)");
 
+    TEMPER_CHECK(err == 2,
+        nonfinite_error,
+        R"(chisquare::ppf: non-finite result (overflow or Inf) produced.)");
+
     if (err != 0)
     {
-        if (err == 2)
-        {
-            throw std::runtime_error(R"(chisquare::ppf:
-                non-finite result (overflow or Inf) produced.)");
-        }
         if (err == 3)
         {
             throw std::invalid_argument(R"(chisquare::ppf:
@@ -1759,10 +1751,17 @@ Tensor<value_t> mean(const Tensor<value_t>& k)
             value_t val = p_in[idx];
             temper::sycl_utils::device_check_nan_and_set<value_t>
                 (val, p_error_flag);
+            temper::sycl_utils::device_check_finite_and_set<double>
+                (val, p_error_flag);
 
             if (val <= 0.0)
             {
-                p_error_flag[0] = 2;
+                auto atomic_err = sycl::atomic_ref<int32_t,
+                    sycl::memory_order::relaxed,
+                    sycl::memory_scope::device,
+                    sycl::access::address_space::global_space>(*p_error_flag);
+                int32_t expected = 0;
+                atomic_err.compare_exchange_strong(expected, 3);
                 p_out[flat] = std::numeric_limits<value_t>::quiet_NaN();
                 return;
             }
@@ -1780,16 +1779,13 @@ Tensor<value_t> mean(const Tensor<value_t>& k)
         nan_error,
         R"(chisquare::mean: NaN detected in inputs.)");
 
-    if (err != 0)
-    {
-        if (err == 2)
-        {
-            throw std::invalid_argument(R"(chisquare::mean:
-                k must be positive.)");
-        }
-        throw std::runtime_error(R"(chisquare::mean:
-            numeric error during computation.)");
-    }
+    TEMPER_CHECK(err == 2,
+        nonfinite_error,
+        R"(chisquare::mean: non-finite result (overflow or Inf) produced.)");
+
+    TEMPER_CHECK(err == 3,
+        std::invalid_argument,
+        R"(chisquare::mean: k must be positive.)");
 
     return result;
 }
@@ -1875,13 +1871,12 @@ Tensor<value_t> var(const Tensor<value_t>& k)
         nan_error,
         R"(chisquare::var: NaN detected in inputs.)");
 
+    TEMPER_CHECK(err == 2,
+        nonfinite_error,
+        R"(chisquare::var: non-finite result (overflow or Inf) produced.)");
+
     if (err != 0)
     {
-        if (err == 2)
-        {
-            throw std::runtime_error(R"(chisquare::var:
-                non-finite result (overflow or Inf) produced.)");
-        }
         if (err == 3)
         {
             throw std::invalid_argument(R"(chisquare::var:

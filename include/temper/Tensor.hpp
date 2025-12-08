@@ -865,10 +865,6 @@ public:
      *
      * @throws std::invalid_argument if either tensor is empty
      * or shapes are incompatible for broadcasting.
-     * @throws std::runtime_error "Non-finite result (overflow or Inf)."
-     * if a non-finite result was produced.
-     * @throws std::runtime_error "Numeric error during element-wise addition."
-     * for other numeric errors.
      * @throws std::bad_alloc if memory allocation fails.
      */
     Tensor operator+(const Tensor & other) const;
@@ -886,10 +882,6 @@ public:
      *
      * @throws std::invalid_argument if either tensor is empty
      * or shapes are incompatible for broadcasting.
-     * @throws std::runtime_error "Non-finite result (overflow or Inf)."
-     * if a non-finite result was produced.
-     * @throws std::runtime_error "Numeric error during element-wise addition."
-     * for other numeric errors.
      * @throws std::bad_alloc if memory allocation fails.
      */
     Tensor operator-(const Tensor & other) const;
@@ -907,10 +899,6 @@ public:
      *
      * @throws std::invalid_argument if either tensor is empty
      * or shapes are incompatible for broadcasting.
-     * @throws std::runtime_error "Non-finite result (overflow or Inf)."
-     * if a non-finite result was produced.
-     * @throws std::runtime_error "Numeric error during element-wise addition."
-     * for other numeric errors.
      * @throws std::bad_alloc if memory allocation fails.
      */
     Tensor operator*(const Tensor & other) const;
@@ -932,10 +920,6 @@ public:
      * or shapes are incompatible for broadcasting.
      * @throws std::runtime_error "Division by zero detected."
      * if any divisor element equals zero.
-     * @throws std::runtime_error "Non-finite result detected."
-     * if a non-finite quotient was produced.
-     * @throws std::runtime_error "Numeric error during element-wise division."
-     * for other numeric errors.
      * @throws std::bad_alloc if memory allocation fails.
      */
     Tensor operator/(const Tensor & other) const;
@@ -1063,8 +1047,6 @@ public:
      * with shape {1} is returned.
      * @throws std::invalid_argument If axis is out of range.
      * @throws std::bad_alloc if required device memory cannot be allocated.
-     * @throws std::runtime_error If non-finite values are encountered
-     * in the results.
      */
     Tensor<value_t> sum(std::optional<int64_t> axis_opt = std::nullopt) const;
 
@@ -1084,8 +1066,6 @@ public:
      *
      * @throws std::invalid_argument If axis is out of range.
      * @throws std::bad_alloc If required device memory cannot be allocated.
-     * @throws std::runtime_error If non-finite values are encountered
-     * in the results.
      */
     Tensor<value_t> cumsum(std::optional<int64_t> axis_opt = std::nullopt) const;
 

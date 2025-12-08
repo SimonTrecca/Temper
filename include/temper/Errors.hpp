@@ -27,10 +27,10 @@ public:
 /**
  * @brief non finite error class for temper library.
  */
-class nonfinite_error : public std::overflow_error {
+class nonfinite_error : public std::runtime_error {
 public:
     explicit nonfinite_error(const std::string& msg)
-        : std::overflow_error(msg) {}
+        : std::runtime_error(msg) {}
 };
 
 } // namespace temper

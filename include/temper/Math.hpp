@@ -40,8 +40,6 @@ namespace temper::math
  * - Batch dimensions are not broadcastable.
  * @throws std::overflow_error if:
  * - The resulting tensor would exceed the maximum size representable by uint64_t.
- * @throws std::runtime_error if:
- * - A numeric error occurs during computation (e.g., non-finite values produced).
  * @throws std::bad_alloc if required device memory cannot be allocated.
  */
 template <typename value_t>
@@ -120,8 +118,6 @@ extern template Tensor<uint64_t> sort<uint64_t>
  *
  * @throws std::invalid_argument If axis is out of range.
  * @throws std::bad_alloc If required device memory cannot be allocated.
- * @throws std::runtime_error If non-finite values are encountered
- * in the results.
  */
 template <typename value_t>
 Tensor<value_t> sum(const Tensor<value_t> & tensor,
@@ -146,8 +142,6 @@ extern template Tensor<uint64_t> sum<uint64_t>
  *
  * @throws std::invalid_argument If axis is not -1 and is out of range.
  * @throws std::bad_alloc If required device memory cannot be allocated.
- * @throws std::runtime_error If non-finite values are encountered
- * in the results.
  */
 template <typename value_t>
 Tensor<value_t> cumsum(const Tensor<value_t> & tensor,
@@ -298,7 +292,6 @@ extern template Tensor<uint64_t> argmax<uint64_t>
  *
  * @throws std::invalid_argument If the input is empty or axis is out of range.
  * @throws std::bad_alloc If required device/host memory allocation fails.
- * @throws std::runtime_error If numeric or device execution errors occur.
  */
 template<typename value_t>
 Tensor<uint64_t> argsort(const Tensor<value_t> & tensor,
@@ -331,7 +324,6 @@ extern template Tensor<uint64_t> argsort<uint64_t>
  * incompatible broadcast.
  * @throws std::out_of_range On index values outside allowed range.
  * @throws std::bad_alloc On allocation failure.
- * @throws std::runtime_error On device/kernel numeric errors.
  */
 template<typename value_t>
 Tensor<value_t> gather(const Tensor<value_t> & tensor,
@@ -367,7 +359,6 @@ extern template Tensor<uint64_t> gather<uint64_t>
  *
  * @throws std::invalid_argument For empty inputs or out-of-range axis.
  * @throws std::bad_alloc On device allocation failure.
- * @throws std::runtime_error If non-finite results occur.
  */
 template<typename value_t>
 Tensor<value_t> linspace(const Tensor<value_t>& start,
@@ -395,7 +386,6 @@ const Tensor<float>&, uint64_t, MemoryLocation, int64_t, bool, Tensor<float>*);
  *
  * @throws std::invalid_argument For empty inputs or out-of-range axis.
  * @throws std::bad_alloc On device allocation failure.
- * @throws std::runtime_error If non-finite results occur.
  */
 template<typename value_t>
 Tensor<value_t> linspace(value_t start,
@@ -523,7 +513,6 @@ extern template float integral<float>
  * @throws std::invalid_argument If tensor is empty or contains
  * negative/non-integer values.
  * @throws std::bad_alloc On device allocation failure.
- * @throws std::runtime_error On non-finite result during accumulation.
  */
 template<typename value_t>
 Tensor<value_t> factorial(const Tensor<value_t> & tensor);
@@ -543,8 +532,6 @@ extern template Tensor<uint64_t> factorial<uint64_t>(const Tensor<uint64_t>&);
  *
  * @throws std::invalid_argument If @p tensor is empty.
  * @throws std::bad_alloc On device allocation failure.
- * @throws std::runtime_error If any computed output is non-finite
- * during computation.
  */
 template<typename value_t>
 Tensor<value_t> log(const Tensor<value_t> & tensor);
@@ -568,8 +555,6 @@ extern template Tensor<float> log<float>(const Tensor<float>&);
  * if @p axis is out of range, or if the selected axis
  * has zero length.
  * @throws std::bad_alloc If required device/host memory cannot be allocated.
- * @throws std::runtime_error If non-finite values are produced by the
- * reduction/division.
  */
 template <typename value_t>
 Tensor<value_t> mean(const Tensor<value_t> & tensor,
@@ -595,7 +580,6 @@ extern template Tensor<float> mean<float>
  * if @p axis is out of range, if the selected axis has zero length,
  * or if (N - ddof) <= 0.
  * @throws std::bad_alloc If required memory cannot be allocated.
- * @throws std::runtime_error If non-finite values are encountered.
  */
 template <typename value_t>
 Tensor<value_t> var(const Tensor<value_t> & tensor,
@@ -640,9 +624,6 @@ extern template Tensor<float> var<float>
  * - internal view/alias construction would exceed the owner's bounds.
  * @throws std::bad_alloc if:
  * - required host/device memory allocation failed.
- * @throws std::runtime_error if:
- * - non-finite values encountered, or device/kernel errors during
- *   reduction or matrix multiplication.
  */
 template <typename value_t>
 Tensor<value_t> cov(const Tensor<value_t> & tensor,
@@ -674,8 +655,6 @@ extern template Tensor<float> cov<float> (const Tensor<float>&,
  * - ddof is invalid for the sample count (ddof >= N).
  * @throws std::bad_alloc if:
  * - required memory allocation failed.
- * @throws std::runtime_error if:
- * - non-finite values encountered, or device/kernel errors.
  */
 template <typename value_t>
 Tensor<value_t> cov(const Tensor<value_t> & tensor, int64_t ddof = 0);
@@ -705,7 +684,6 @@ extern template Tensor<float> cov<float> (const Tensor<float>&, int64_t);
  * if @p axis is out of range, if the selected axis has
  * zero length, or if (N - ddof) <= 0.
  * @throws std::bad_alloc If required memory cannot be allocated.
- * @throws std::runtime_error If non-finite values are produced.
  */
 template<typename value_t>
 Tensor<value_t> stddev(const Tensor<value_t>& input,
@@ -744,8 +722,7 @@ extern template Tensor<float> stddev<float>
  * @throws std::invalid_argument
  *     If `rank < 2` or the last two dimensions are not square.
  * @throws std::runtime_error
- *     If non-finite values are detected in the input during computation,
- *     or a division by zero is encountered
+ *     If a sdivision by zero is encountered
  *     when forming Givens coefficients.
  */
 template <typename value_t>
@@ -768,7 +745,6 @@ extern template std::pair<Tensor<float>, Tensor<float>> eig<float>
  *
  * @throws std::invalid_argument If the tensor has no elements.
  * @throws std::bad_alloc If device memory allocation fails.
- * @throws std::runtime_error If non-finite results are produced.
  */
 template <typename value_t>
 Tensor<value_t> sqrt(const Tensor<value_t>& tensor);
@@ -788,7 +764,6 @@ extern template Tensor<float> sqrt<float>(const Tensor<float>& tensor);
  * @throws std::invalid_argument If either input tensor is empty or the shapes
  *         are not broadcastable.
  * @throws std::bad_alloc If required host or device memory cannot be allocated.
- * @throws std::runtime_error If non-finite results are produced.
  */
 template<typename value_t>
 Tensor<value_t> pow(const Tensor<value_t> & a, const Tensor<value_t> & b);
@@ -810,9 +785,6 @@ extern template Tensor<uint64_t> pow<uint64_t>
  *
  * @throws std::invalid_argument If @p tensor is empty.
  * @throws std::bad_alloc If required device helper memory cannot be allocated.
- * @throws std::runtime_error If:
- * - A computed output is non-finite (Inf / -Inf / NaN), or
- * - A numeric error occurs during device/kernel execution.
  */
 template<typename value_t>
 Tensor<value_t> exp(const Tensor<value_t> & tensor);

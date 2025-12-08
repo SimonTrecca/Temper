@@ -165,10 +165,6 @@ Tensor<value_t> one_hot_expand_at(const Tensor<value_t>& tensor,
             }
             else
             {
-                temper::sycl_utils::device_check_finite_and_set<value_t>
-                	(in_val, p_error_flag);
-                if (*p_error_flag != 0) { return; }
-
                 // Integer check.
                 value_t rounded = sycl_utils::round(in_val);
                 value_t diff = sycl_utils::fabs(in_val - rounded);
@@ -222,11 +218,6 @@ Tensor<value_t> one_hot_expand_at(const Tensor<value_t>& tensor,
 
     if (err != 0)
     {
-        if (err == 2)
-        {
-            throw std::runtime_error(R"(one_hot_expand_at:
-            	non-finite result produced.)");
-        }
         if (err == 3)
         {
             throw std::runtime_error(R"(one_hot_expand_at:

@@ -638,14 +638,15 @@ TEST(SOFTMAX, nan_input_throws)
 
 /**
  * @test SOFTMAX.inf_input_throws
- * @brief Inf in input should produce a runtime_error (non-finite result from exp).
+ * @brief softmax should trigger a temper::nonfinite_error,
+ * as specified in the error handling policy, if result is non-finite.
  */
 TEST(SOFTMAX, inf_input_throws)
 {
     Tensor<float> t({2}, MemoryLocation::DEVICE);
     std::vector<float> vals = {1.0f, std::numeric_limits<float>::infinity()};
     t = vals;
-    EXPECT_THROW(ml::softmax<float>(t, /*axis=*/0), std::runtime_error);
+    EXPECT_THROW(ml::softmax<float>(t, /*axis=*/0), temper::nonfinite_error);
 }
 
 /**
@@ -927,6 +928,57 @@ TEST(CROSS_ENTROPY, nan_throws)
         axis, /*from_logits=*/true, /*reduction_mean=*/true),
         temper::nan_error);
 }
+
+/**
+ * @test CROSS_ENTROPY.nonfinite_throws
+ * @brief +Inf / -Inf in input should trigger a temper::nonfinite_error,
+ * as specified in the error handling policy.
+ */
+TEST(CROSS_ENTROPY, nonfinite_throws)
+{
+    Tensor<float> logits({2,2}, MemoryLocation::DEVICE);
+    logits = std::vector<float>{
+        0.0f, 0.0f,
+        0.0f, 0.0f
+    };
+
+    // +Inf case
+    {
+        Tensor<float> labels({1,2,2}, MemoryLocation::DEVICE);
+        labels = std::vector<float>{
+            1.0f, std::numeric_limits<float>::infinity(),
+            0.0f, 1.0f
+        };
+
+        std::optional<int64_t> axis = 2;
+
+        EXPECT_THROW(
+            ml::cross_entropy<float>(logits, labels,
+                                     axis,
+                                     /*from_logits=*/true,
+                                     /*reduction_mean=*/true),
+            temper::nonfinite_error);
+    }
+
+    // -Inf case
+    {
+        Tensor<float> labels({1,2,2}, MemoryLocation::DEVICE);
+        labels = std::vector<float>{
+            1.0f, -std::numeric_limits<float>::infinity(),
+            0.0f, 1.0f
+        };
+
+        std::optional<int64_t> axis = 2;
+
+        EXPECT_THROW(
+            ml::cross_entropy<float>(logits, labels,
+                                     axis,
+                                     /*from_logits=*/true,
+                                     /*reduction_mean=*/true),
+            temper::nonfinite_error);
+    }
+}
+
 
 /**
  * @test CROSS_ENTROPY.broadcast_labels_mean
@@ -1229,6 +1281,50 @@ TEST(MSE, nan_throws)
     EXPECT_THROW(ml::mean_squared_error<float>
         (preds, targets, std::nullopt, true),
         temper::nan_error);
+}
+
+/**
+ * @test MSE.nonfinite_throws
+ * @brief +Inf / -Inf in inputs should trigger a temper::nonfinite_error,
+ * as specified in the error handling policy.
+ */
+TEST(MSE, nonfinite_throws)
+{
+    Tensor<float> preds({2,2}, MemoryLocation::DEVICE);
+    preds = std::vector<float>{
+        0.0f, 0.0f,
+        0.0f, 0.0f
+    };
+
+    {
+        Tensor<float> targets({1,2,2}, MemoryLocation::DEVICE);
+        targets = std::vector<float>{
+            1.0f, std::numeric_limits<float>::infinity(),
+            0.0f, 1.0f
+        };
+
+        EXPECT_THROW(
+            ml::mean_squared_error<float>(
+                preds, targets,
+                /*axis=*/std::nullopt,
+                /*reduction_mean=*/true),
+            temper::nonfinite_error);
+    }
+
+    {
+        Tensor<float> targets({1,2,2}, MemoryLocation::DEVICE);
+        targets = std::vector<float>{
+            1.0f, -std::numeric_limits<float>::infinity(),
+            0.0f, 1.0f
+        };
+
+        EXPECT_THROW(
+            ml::mean_squared_error<float>(
+                preds, targets,
+                /*axis=*/std::nullopt,
+                /*reduction_mean=*/true),
+            temper::nonfinite_error);
+    }
 }
 
 /**
@@ -2135,6 +2231,40 @@ TEST(PCA, pca_nan_throws)
     EXPECT_THROW({
         ml::pca(t, 2, true);
     }, temper::nan_error);
+}
+
+/**
+ * @test PCA.pca_nonfinite_throws
+ * @brief +Inf / -Inf in the input should trigger a temper::nonfinite_error,
+ * as specified in the error handling policy.
+ */
+TEST(PCA, pca_nonfinite_throws)
+{
+    {
+        Tensor<float> t({2, 2});
+        t =
+        {
+            0.0f,  std::numeric_limits<float>::infinity(),
+            2.0f,  3.0f
+        };
+
+        EXPECT_THROW({
+            ml::pca(t, /*components=*/2, /*center=*/true);
+        }, temper::nonfinite_error);
+    }
+
+    {
+        Tensor<float> t({2, 2});
+        t =
+        {
+            0.0f, -std::numeric_limits<float>::infinity(),
+            2.0f,  3.0f
+        };
+
+        EXPECT_THROW({
+            ml::pca(t, /*components=*/2, /*center=*/true);
+        }, temper::nonfinite_error);
+    }
 }
 
 } // namespace Test

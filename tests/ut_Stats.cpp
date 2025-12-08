@@ -303,6 +303,44 @@ TEST(NORM, pdf_throws_on_nan_input)
 }
 
 /**
+ * @test NORM.pdf_throws_on_nonfinite_input
+ * @brief +Inf or -Inf in any input tensor should trigger
+ * a temper::nonfinite_error, as specified in the
+ * error handling policy.
+ */
+TEST(NORM, pdf_throws_on_nonfinite_input)
+{
+    Tensor<float> x({1}, MemoryLocation::DEVICE);
+    Tensor<float> loc({1}, MemoryLocation::DEVICE);
+    Tensor<float> scale({1}, MemoryLocation::DEVICE);
+
+    x = std::numeric_limits<float>::infinity();
+    loc = std::vector<float>{0.0f};
+    scale = std::vector<float>{1.0f};
+
+    EXPECT_THROW(
+        stats::norm::pdf<float>(x, loc, scale),
+        temper::nonfinite_error
+    );
+
+    x = std::vector<float>{0.0f};
+    loc = std::numeric_limits<float>::infinity();
+
+    EXPECT_THROW(
+        stats::norm::pdf<float>(x, loc, scale),
+        temper::nonfinite_error
+    );
+
+    loc = std::vector<float>{0.0f};
+    scale = std::numeric_limits<float>::infinity();
+
+    EXPECT_THROW(
+        stats::norm::pdf<float>(x, loc, scale),
+        temper::nonfinite_error
+    );
+}
+
+/**
  * @test NORM.logpdf_basic_values
  * @brief Check that logpdf returns the log of known pdf values for inputs.
  */
@@ -515,6 +553,29 @@ TEST(NORM, logpdf_throws_on_nan_input)
     scale = std::vector<float>{1.0f};
     EXPECT_THROW(stats::norm::logpdf<float>(x, loc, scale),
         temper::nan_error);
+}
+
+/**
+ * @test NORM.logpdf_throws_on_nonfinite_input
+ * @brief +/-inf in x should trigger a temper::nonfinite_error,
+ * as specified in the error handling policy.
+ */
+TEST(NORM, logpdf_throws_on_nonfinite_input)
+{
+    Tensor<float> x({1}, MemoryLocation::DEVICE);
+    float inf = std::numeric_limits<float>::infinity();
+    x = inf;
+
+    Tensor<float> loc({1}, MemoryLocation::DEVICE);
+    loc = std::vector<float>{0.0f};
+
+    Tensor<float> scale({1}, MemoryLocation::DEVICE);
+    scale = std::vector<float>{1.0f};
+
+    EXPECT_THROW(
+        stats::norm::logpdf<float>(x, loc, scale),
+        temper::nonfinite_error
+    );
 }
 
 /**
@@ -769,6 +830,29 @@ TEST(NORM, cdf_throws_on_nan_input)
 }
 
 /**
+ * @test NORM.cdf_throws_on_nonfinite_input
+ * @brief +/-Inf in x should trigger a temper::nonfinite_error,
+ * as specified in the error handling policy.
+ */
+TEST(NORM, cdf_throws_on_nonfinite_input)
+{
+    Tensor<float> x({1}, MemoryLocation::DEVICE);
+    float inf = std::numeric_limits<float>::infinity();
+    x = inf;
+    Tensor<float> loc({1}, MemoryLocation::DEVICE);
+    loc = std::vector<float>{0.0f};
+    Tensor<float> scale({1}, MemoryLocation::DEVICE);
+    scale = std::vector<float>{1.0f};
+    EXPECT_THROW(stats::norm::cdf<float>(x, loc, scale),
+        temper::nonfinite_error);
+
+    // negative infinity
+    x = -inf;
+    EXPECT_THROW(stats::norm::cdf<float>(x, loc, scale),
+        temper::nonfinite_error);
+}
+
+/**
  * @test NORM.ppf_basic_quantiles
  * @brief ppf returns known quantiles for the standard normal (loc=0, scale=1)
  */
@@ -893,6 +977,46 @@ TEST(NORM, ppf_throws_on_nan_input)
     scale = std::vector<float>{1.0f};
 
     EXPECT_THROW(stats::norm::ppf<float>(q, loc, scale), temper::nan_error);
+}
+
+/**
+ * @test NORM.ppf_throws_on_nonfinite_output
+ * @brief q == 0.0 should trigger a temper::nonfinite_error.
+ */
+TEST(NORM, ppf_throws_on_nonfinite_output_zero)
+{
+    Tensor<float> q({1}, MemoryLocation::DEVICE);
+    Tensor<float> loc({1}, MemoryLocation::DEVICE);
+    Tensor<float> scale({1}, MemoryLocation::DEVICE);
+
+    q = std::vector<float>{0.0f};
+    loc = std::vector<float>{0.0f};
+    scale = std::vector<float>{1.0f};
+
+    EXPECT_THROW(
+        stats::norm::ppf<float>(q, loc, scale),
+        temper::nonfinite_error
+    );
+}
+
+/**
+ * @test NORM.ppf_throws_on_nonfinite_output_one
+ * @brief q == 1.0 should trigger a temper::nonfinite_error.
+ */
+TEST(NORM, ppf_throws_on_nonfinite_output_one)
+{
+    Tensor<float> q({1}, MemoryLocation::DEVICE);
+    Tensor<float> loc({1}, MemoryLocation::DEVICE);
+    Tensor<float> scale({1}, MemoryLocation::DEVICE);
+
+    q = std::vector<float>{1.0f};
+    loc = std::vector<float>{0.0f};
+    scale = std::vector<float>{1.0f};
+
+    EXPECT_THROW(
+        stats::norm::ppf<float>(q, loc, scale),
+        temper::nonfinite_error
+    );
 }
 
 /**
@@ -1067,6 +1191,29 @@ TEST(NORM, isf_throws_on_nan_input)
     scale = std::vector<float>{1.0f};
     EXPECT_THROW(stats::norm::isf<float>(q, loc, scale),
         temper::nan_error);
+}
+
+/**
+ * @test NORM.isf_throws_on_nonfinite_input
+ * @brief +/-Inf in q should trigger a temper::nonfinite_error,
+ * as specified in the error handling policy.
+ */
+TEST(NORM, isf_throws_on_nonfinite_input)
+{
+    Tensor<float> q({1}, MemoryLocation::DEVICE);
+    float inf = std::numeric_limits<float>::infinity();
+    q = inf;
+    Tensor<float> loc({1}, MemoryLocation::DEVICE);
+    loc = std::vector<float>{0.0f};
+    Tensor<float> scale({1}, MemoryLocation::DEVICE);
+    scale = std::vector<float>{1.0f};
+    EXPECT_THROW(stats::norm::isf<float>(q, loc, scale),
+        temper::nonfinite_error);
+
+    // negative infinity
+    q = -inf;
+    EXPECT_THROW(stats::norm::isf<float>(q, loc, scale),
+        temper::nonfinite_error);
 }
 
 /**
@@ -1363,6 +1510,25 @@ TEST(CHISQUARE, pdf_throws_on_nan_input)
     EXPECT_THROW(stats::chisquare::pdf<float>(x, k), temper::nan_error);
 }
 
+/**
+ * @test CHISQUARE.pdf_throws_on_nonfinite_input
+ * @brief +/-Inf in the output should trigger a temper::nonfinite_error,
+ * as specified in the error handling policy.
+ */
+TEST(CHISQUARE, pdf_throws_on_nonfinite_input)
+{
+    Tensor<float> x({1}, MemoryLocation::DEVICE);
+    x = std::vector<float>{ 0.0f };
+
+    Tensor<float> k({1}, MemoryLocation::DEVICE);
+    k = std::vector<float>{ 1.0f };
+
+    EXPECT_THROW(
+        stats::chisquare::pdf<float>(x, k),
+        temper::nonfinite_error
+    );
+}
+
 #include "stats/chisquare_logpdf.cpp"
 
 /**
@@ -1440,6 +1606,25 @@ TEST(CHISQUARE, logpdf_throws_on_nan_input)
     EXPECT_THROW(stats::chisquare::logpdf<float>(x, k), temper::nan_error);
 }
 
+/**
+ * @test CHISQUARE.logpdf_throws_on_nonfinite_input
+ * @brief +/-Inf in output should trigger a temper::nonfinite_error,
+ * as specified in the error handling policy.
+ */
+TEST(CHISQUARE, logpdf_throws_on_nonfinite_input)
+{
+    Tensor<float> x({1}, MemoryLocation::DEVICE);
+    x = std::vector<float>{ 0.0f };
+
+    Tensor<float> k({1}, MemoryLocation::DEVICE);
+    k = std::vector<float>{ 1.0f };
+
+    EXPECT_THROW(
+        stats::chisquare::logpdf<float>(x, k),
+        temper::nonfinite_error
+    );
+}
+
 #include "stats/chisquare_cdf.cpp"
 
 /**
@@ -1514,6 +1699,23 @@ TEST(CHISQUARE, cdf_throws_on_nan_input)
     k = std::vector<float>{2.0f};
 
     EXPECT_THROW(stats::chisquare::cdf<float>(x, k), temper::nan_error);
+}
+
+/**
+ * @test CHISQUARE.cdf_throws_on_nonfinite_input
+ * @brief +/-Inf or extremely large input that produces a non-finite
+ * result should trigger a temper::nonfinite_error, as specified in the
+ * error handling policy.
+ */
+TEST(CHISQUARE, cdf_throws_on_nonfinite_input)
+{
+    Tensor<float> x({1}, MemoryLocation::DEVICE);
+    float inf = std::numeric_limits<float>::infinity();
+    x = inf;
+    Tensor<float> k({1}, MemoryLocation::DEVICE);
+    k = std::vector<float>{2.0f};
+
+    EXPECT_THROW(stats::chisquare::cdf<float>(x, k), temper::nonfinite_error);
 }
 
 #include "stats/chisquare_ppf.cpp"
@@ -1595,6 +1797,22 @@ TEST(CHISQUARE, ppf_throws_on_nan_input)
     EXPECT_THROW(stats::chisquare::ppf<float>(q, k), temper::nan_error);
 }
 
+/**
+ * @test CHISQUARE.ppf_throws_on_nonfinite_input
+ * @brief +/-Inf in output should trigger a temper::nonfinite_error,
+ * as specified in the error handling policy.
+ */
+TEST(CHISQUARE, ppf_throws_on_nonfinite_output)
+{
+    Tensor<float> q({1}, MemoryLocation::DEVICE);
+    Tensor<float> k({1}, MemoryLocation::DEVICE);
+
+    q = std::vector<float>{1.0f - 1e-30f};
+    k = std::vector<float>{1e10f};
+
+    EXPECT_THROW(stats::chisquare::ppf<float>(q, k), temper::nonfinite_error);
+}
+
 #include "stats/chisquare_isf.cpp"
 
 /**
@@ -1672,6 +1890,27 @@ TEST(CHISQUARE, isf_throws_on_nan_input)
     k = std::vector<float>{0.0f};
 
     EXPECT_THROW(stats::chisquare::isf<float>(q, k), temper::nan_error);
+}
+
+/**
+ * @test CHISQUARE.isf_throws_on_nonfinite_input
+ * @brief +/-Inf in q should trigger a temper::nonfinite_error,
+ * as specified in the error handling policy.
+ */
+TEST(CHISQUARE, isf_throws_on_nonfinite_input)
+{
+    Tensor<float> q({1}, MemoryLocation::DEVICE);
+    float inf = std::numeric_limits<float>::infinity();
+    q = inf;
+
+    Tensor<float> k({1}, MemoryLocation::DEVICE);
+    k = std::vector<float>{2.0f};
+
+    EXPECT_THROW(stats::chisquare::isf<float>(q, k), temper::nonfinite_error);
+
+    // negative infinity
+    q = -inf;
+    EXPECT_THROW(stats::chisquare::isf<float>(q, k), temper::nonfinite_error);
 }
 
 #include "stats/chisquare_rvs.cpp"
@@ -1774,6 +2013,24 @@ TEST(CHISQUARE, mean_throws_on_nan_input)
     EXPECT_THROW(stats::chisquare::mean<float>(k), temper::nan_error);
 }
 
+/**
+ * @test CHISQUARE.mean_throws_on_nonfinite_input
+ * @brief +/-Inf in k should trigger a temper::nonfinite_error,
+ * as specified in the error handling policy.
+ */
+TEST(CHISQUARE, mean_throws_on_nonfinite_input)
+{
+    Tensor<float> k({1}, MemoryLocation::DEVICE);
+    float inf = std::numeric_limits<float>::infinity();
+    k = inf;
+
+    EXPECT_THROW(stats::chisquare::mean<float>(k), temper::nonfinite_error);
+
+    // negative infinity
+    k = -inf;
+    EXPECT_THROW(stats::chisquare::mean<float>(k), temper::nonfinite_error);
+}
+
 #include "stats/chisquare_var.cpp"
 
 /**
@@ -1820,7 +2077,8 @@ TEST(CHISQUARE, var_throws_on_nan_input)
 
 /**
 * @test CHISQUARE.var_throws_on_inf
-* @brief var should throw runtime_error when result is inf.
+ * @brief +/-inf in output should trigger a temper::nonfinite_error,
+ * as specified in the error handling policy.
 */
 TEST(CHISQUARE, var_throws_on_inf)
 {
@@ -1828,7 +2086,7 @@ TEST(CHISQUARE, var_throws_on_inf)
     float inf = std::numeric_limits<float>::infinity();
     k =  inf;
 
-    EXPECT_THROW(stats::chisquare::var<float>(k), std::runtime_error);
+    EXPECT_THROW(stats::chisquare::var<float>(k), temper::nonfinite_error);
 }
 
 #include "stats/chisquare_stddev.cpp"
@@ -1876,16 +2134,17 @@ TEST(CHISQUARE, stddev_throws_on_nan_input)
 }
 
 /**
-* @test CHISQUARE.stddev_throws_on_inf
-* @brief stddev should throw runtime_error when result is inf.
-*/
+ * @test CHISQUARE.stddev_throws_on_inf
+ * @brief +/-inf in output should trigger a temper::nonfinite_error,
+ * as specified in the error handling policy.
+ */
 TEST(CHISQUARE, stddev_throws_on_inf)
 {
     Tensor<float> k({1}, MemoryLocation::DEVICE);
     float inf = std::numeric_limits<float>::infinity();
     k =  inf;
 
-    EXPECT_THROW(stats::chisquare::stddev<float>(k), std::runtime_error);
+    EXPECT_THROW(stats::chisquare::stddev<float>(k), temper::nonfinite_error);
 }
 
 } // namespace Test

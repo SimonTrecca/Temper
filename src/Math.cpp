@@ -349,16 +349,9 @@ Tensor<value_t> matmul(const Tensor<value_t> & first,
         nan_error,
         R"(matmul: NaN detected in inputs.)");
 
-    if (err != 0)
-    {
-        if (err == 2)
-        {
-            throw std::runtime_error(
-                R"(matmul: non-finite result (overflow or Inf).)");
-        }
-        throw std::runtime_error(
-            R"(matmul: numeric error during matmul.)");
-    }
+    TEMPER_CHECK(err == 2,
+        nonfinite_error,
+        R"(matmul: non-finite result (overflow or Inf).)");
 
     return result;
 }
@@ -1735,18 +1728,11 @@ Tensor<value_t> linspace(const Tensor<value_t>& start,
 
     TEMPER_CHECK(err == 1,
         nan_error,
-        R"(linspace: NaN detected in inputs or computed values.)");
+        R"(linspace: NaN detected in inputs.)");
 
-    if (err != 0)
-    {
-        if (err == 2)
-        {
-            throw std::runtime_error(R"(linspace:
-                non-finite result (overflow or Inf) produced.)");
-        }
-        throw std::runtime_error(R"(linspace:
-            numeric error during linspace generation.)");
-    }
+    TEMPER_CHECK(err == 2,
+        nonfinite_error,
+        R"(linspace: non-finite result (overflow or Inf) produced.)");
 
     if (step_out != nullptr)
     {
@@ -1822,14 +1808,6 @@ Tensor<value_t> arange(value_t start,
     std::vector<uint64_t> out_shape = { num };
     Tensor<value_t> result(out_shape, res_loc);
 
-    int32_t* p_error_flag = static_cast<int32_t*>(
-        sycl::malloc_shared(sizeof(int32_t), g_sycl_queue));
-    if (!p_error_flag)
-    {
-        throw std::bad_alloc();
-    }
-    *p_error_flag = 0;
-
     value_t* p_out = result.get_data();
     const uint64_t total_output_elems = result.get_num_elements();
 
@@ -1841,26 +1819,9 @@ Tensor<value_t> arange(value_t start,
             value_t val = static_cast<value_t>
                 (start + static_cast<double>(idx) * static_cast<double>(step));
 
-            temper::sycl_utils::device_check_finite_and_set<value_t>
-                (val, p_error_flag);
-
             p_out[idx] = val;
         });
     }).wait();
-
-    int32_t err = *p_error_flag;
-    sycl::free(p_error_flag, g_sycl_queue);
-
-    if (err != 0)
-    {
-        if (err == 2)
-        {
-            throw std::runtime_error(R"(arange:
-                non-finite result (overflow or Inf) produced.)");
-        }
-        throw std::runtime_error(R"(arange:
-            numeric error during generation.)");
-    }
 
     return result;
 }
@@ -2027,13 +1988,12 @@ Tensor<value_t> factorial(const Tensor<value_t> & tensor)
         nan_error,
         R"(factorial: NaN detected in inputs.)");
 
+    TEMPER_CHECK(err == 2,
+        nonfinite_error,
+        R"(factorial: non-finite result (overflow or Inf) produced.)");
+
     if (err != 0)
     {
-        if (err == 2)
-        {
-            throw std::runtime_error(R"(factorial:
-                non-finite result (overflow or Inf) produced.)");
-        }
         if (err == 3)
         {
             throw std::invalid_argument(R"(factorial:
@@ -2047,7 +2007,6 @@ Tensor<value_t> factorial(const Tensor<value_t> & tensor)
 }
 template Tensor<float> factorial<float>(const Tensor<float>&);
 template Tensor<uint64_t> factorial<uint64_t>(const Tensor<uint64_t>&);
-
 
 template<typename value_t>
 Tensor<value_t> log(const Tensor<value_t> & tensor)
@@ -2126,16 +2085,9 @@ Tensor<value_t> log(const Tensor<value_t> & tensor)
         nan_error,
         R"(log: NaN detected in inputs.)");
 
-    if (err != 0)
-    {
-        if (err == 2)
-        {
-            throw std::runtime_error(R"(log:
-                non-finite result (Inf/overflow/NaN) produced.)");
-        }
-        throw std::runtime_error(R"(log:
-            numeric error during log computation.)");
-    }
+    TEMPER_CHECK(err == 2,
+        nonfinite_error,
+        R"(log: non-finite result (Inf/overflow/NaN) produced.)");
 
     return result;
 }
@@ -2566,7 +2518,6 @@ std::pair<Tensor<value_t>, Tensor<value_t>> eig(const Tensor<value_t> & tensor,
             value_t v = p_src[src_offset];
 
             sycl_utils::device_check_nan_and_set(v, p_error_flag);
-            sycl_utils::device_check_finite_and_set(v, p_error_flag);
 
             p_A[flat] = v;
         });
@@ -2764,13 +2715,12 @@ std::pair<Tensor<value_t>, Tensor<value_t>> eig(const Tensor<value_t> & tensor,
         nan_error,
         R"(eig: NaN detected in inputs.)");
 
+    TEMPER_CHECK(err == 2,
+        nonfinite_error,
+        R"(eig: non-finite result (overflow or Inf) during computation.)");
+
     if (err != 0)
     {
-        if (err == 2)
-        {
-            throw std::runtime_error(R"(eig:
-                non-finite result (overflow or Inf) during computation.)");
-        }
         if (err == 3)
         {
             throw std::runtime_error(R"(eig:
@@ -2855,14 +2805,9 @@ Tensor<value_t> sqrt(const Tensor<value_t>& tensor)
         nan_error,
         "sqrt: NaN detected in inputs.");
 
-    if (err != 0)
-    {
-        if (err == 2)
-        {
-            throw std::runtime_error("sqrt: non-finite result produced.");
-        }
-        throw std::runtime_error("sqrt: numeric error during computation.");
-    }
+    TEMPER_CHECK(err == 2,
+        nonfinite_error,
+        "sqrt: non-finite result produced.");
 
     return result;
 }
@@ -2980,15 +2925,9 @@ Tensor<value_t> pow(const Tensor<value_t> & a, const Tensor<value_t> & b)
         nan_error,
         R"(pow: NaN detected in inputs.)");
 
-    if (err != 0)
-    {
-        if (err == 2)
-        {
-            throw std::runtime_error(R"(pow:
-                non-finite or overflow result detected.)");
-        }
-        throw std::runtime_error(R"(pow: numeric/device error during pow.)");
-    }
+    TEMPER_CHECK(err == 2,
+        nonfinite_error,
+        R"(pow: non-finite or overflow result detected.)");
 
     return result;
 }
@@ -3075,16 +3014,9 @@ Tensor<value_t> exp(const Tensor<value_t> & tensor)
         nan_error,
         R"(exp: NaN detected in inputs.)");
 
-    if (err != 0)
-    {
-        if (err == 2)
-        {
-            throw std::runtime_error(R"(exp:
-                non-finite result (Inf/overflow/NaN) produced.)");
-        }
-        throw std::runtime_error(R"(exp:
-            numeric error during exp computation.)");
-    }
+    TEMPER_CHECK(err == 2,
+        nonfinite_error,
+        R"(exp: non-finite result (Inf/overflow/NaN) produced.)");
 
     return result;
 }

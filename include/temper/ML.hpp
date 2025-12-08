@@ -42,7 +42,7 @@ namespace temper::ml
  *         or axis invalid.
  * @throws std::out_of_range If axis_index is outside the axis
  *         extent or a label is out of range.
- * @throws std::runtime_error For non-integer or non-finite label
+ * @throws std::runtime_error For non-integer label
  *         values.
  * @throws std::bad_alloc On allocation failure.
  */
@@ -76,8 +76,6 @@ extern template Tensor<uint64_t> one_hot_expand_at<uint64_t>
  * @throws std::invalid_argument If the tensor is empty or @p axis_opt is
  * outside the valid range.
  * @throws std::bad_alloc If memory allocation fails.
- * @throws std::runtime_error If non-finite values are encountered
- * during computation.
  */
 template<typename value_t>
 Tensor<value_t> softmax(const Tensor<value_t> & tensor,

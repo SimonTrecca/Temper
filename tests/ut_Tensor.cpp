@@ -3239,7 +3239,8 @@ TYPED_TEST(TypedTensor, operator_addition_nan_inputs_throws)
 
 /**
  * @test TypedTensor.operator_addition_non_finite_result_throws
- * @brief Addition that overflows to Inf should trigger runtime_error.
+ * @brief Addition that overflows to Inf should trigger a
+ * temper::nonfinite_error, as specified in the error handling policy.
  */
 TYPED_TEST(TypedTensor, operator_addition_non_finite_result_throws)
 {
@@ -3254,7 +3255,7 @@ TYPED_TEST(TypedTensor, operator_addition_non_finite_result_throws)
     if constexpr (!std::is_floating_point_v<value_t>) {
         // Do nothing.
     } else {
-        EXPECT_THROW({ Tensor<value_t> R = A + B; }, std::runtime_error);
+        EXPECT_THROW({ Tensor<value_t> R = A + B; }, temper::nonfinite_error);
     }
 }
 
@@ -3727,7 +3728,8 @@ TYPED_TEST(TypedTensor, operator_subtraction_nan_inputs_throws)
 
 /**
  * @test TypedTensor.operator_subtraction_non_finite_result_throws
- * @brief Subtraction overflow to Inf should trigger runtime_error.
+ * @brief Subtraction overflow to Inf should trigger a
+ * temper::nonfinite_error, as specified in the error handling policy.
  */
 TYPED_TEST(TypedTensor, operator_subtraction_non_finite_result_throws)
 {
@@ -3742,7 +3744,7 @@ TYPED_TEST(TypedTensor, operator_subtraction_non_finite_result_throws)
     if constexpr (!std::is_floating_point_v<value_t>) {
         // Do nothing.
     } else {
-        EXPECT_THROW({ Tensor<value_t> R = A - B; }, std::runtime_error);
+        EXPECT_THROW({ Tensor<value_t> R = A - B; }, temper::nonfinite_error);
     }
 }
 
@@ -4218,7 +4220,8 @@ TYPED_TEST(TypedTensor, operator_multiplication_nan_inputs_throws)
 
 /**
  * @test TypedTensor.operator_multiplication_non_finite_result_throws
- * @brief Non-finite multiplication result triggers runtime_error.
+ * @brief Non-finite multiplication result should trigger a
+ * temper::nonfinite_error, as specified in the error handling policy.
  */
 TYPED_TEST(TypedTensor, operator_multiplication_non_finite_result_throws)
 {
@@ -4233,10 +4236,9 @@ TYPED_TEST(TypedTensor, operator_multiplication_non_finite_result_throws)
     if constexpr (!std::is_floating_point_v<value_t>) {
         // Do nothing for not floating point types.
     } else {
-        EXPECT_THROW({ Tensor<value_t> R = A * B; }, std::runtime_error);
+        EXPECT_THROW({ Tensor<value_t> R = A * B; }, temper::nonfinite_error);
     }
 }
-
 
 /**
  * @test TypedTensor.operator_multiplication_broadcasting_complex_alignment
@@ -4733,15 +4735,17 @@ TYPED_TEST(TypedTensor, operator_division_nan_inputs_throws)
     if constexpr (!std::is_floating_point_v<value_t>)
     {
         // Do nothing.
-    } else {
+    }
+    else
+    {
         EXPECT_THROW({ Tensor<value_t> R = A / B; }, temper::nan_error);
     }
 }
 
-
 /**
  * @test TypedTensor.operator_division_non_finite_result_throws
- * @brief Division that overflows to Inf should trigger runtime_error.
+ * @brief Division that overflows to Inf should trigger a
+ * temper::nonfinite_error, as specified in the error handling policy.
  */
 TYPED_TEST(TypedTensor, operator_division_non_finite_result_throws)
 {
@@ -4754,7 +4758,14 @@ TYPED_TEST(TypedTensor, operator_division_non_finite_result_throws)
     A = std::vector<value_t>{ static_cast<value_t>(large) };
     B = std::vector<value_t>{ static_cast<value_t>(tiny) };
 
-    EXPECT_THROW({ Tensor<value_t> R = A / B; }, std::runtime_error);
+    if constexpr (!std::is_floating_point_v<value_t>)
+    {
+        // Do nothing.
+    }
+    else
+    {
+        EXPECT_THROW({ Tensor<value_t> R = A / B; }, temper::nonfinite_error);
+    }
 }
 
 /**
@@ -7738,8 +7749,8 @@ TYPED_TEST(TypedTensor, sum_nan_throws)
 
 /**
  * @test TypedTensor.sum_non_finite_throws
- * @brief Tests that sum throws std::runtime_error when
- * the tensor contains non-finite values (infinity).
+ * @brief Non-finite sum result should trigger a
+ * temper::nonfinite_error, as specified in the error handling policy.
  */
 TYPED_TEST(TypedTensor, sum_non_finite_throws)
 {
@@ -7751,8 +7762,10 @@ TYPED_TEST(TypedTensor, sum_non_finite_throws)
             static_cast<value_t>(1.0f)
         };
         t = vals;
-        EXPECT_THROW(t.sum(), std::runtime_error);
-    } else {
+        EXPECT_THROW(t.sum(), temper::nonfinite_error);
+    }
+    else
+    {
         // Non-floating: skip.
     }
 }
@@ -8180,8 +8193,8 @@ TYPED_TEST(TypedTensor, cumsum_nan_throws)
 
 /**
  * @test TypedTensor.cumsum_non_finite_throws
- * @brief Tests that cumsum throws std::runtime_error when
- * the tensor contains non-finite values (infinity).
+ * @brief Non-finite cumsumsum result should trigger a
+ * temper::nonfinite_error, as specified in the error handling policy.
  */
 TYPED_TEST(TypedTensor, cumsum_non_finite_throws)
 {
@@ -8193,8 +8206,10 @@ TYPED_TEST(TypedTensor, cumsum_non_finite_throws)
             static_cast<value_t>(1.0f)
         };
         t = vals;
-        EXPECT_THROW(t.cumsum(), std::runtime_error);
-    } else {
+        EXPECT_THROW(t.cumsum(), temper::nonfinite_error);
+    }
+    else
+    {
         // Skip for non-floating.
     }
 }

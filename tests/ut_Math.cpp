@@ -425,7 +425,8 @@ TYPED_TEST(TypedMatmul, nan_throws)
 
 /**
  * @test TypedMatmul.inf_throws
- * @brief matmul should throw std::runtime_error if result is non-finite.
+ * @brief matmul should trigger a temper::nonfinite_error,
+ * as specified in the error handling policy, if result is non-finite.
  */
 TYPED_TEST(TypedMatmul, inf_throws)
 {
@@ -449,7 +450,7 @@ TYPED_TEST(TypedMatmul, inf_throws)
     };
     B = b_vals;
 
-    EXPECT_THROW(math::matmul<value_t>(A, B), std::runtime_error);
+    EXPECT_THROW(math::matmul<value_t>(A, B), temper::nonfinite_error);
 }
 
 template<typename T>
@@ -1298,8 +1299,8 @@ TYPED_TEST(TypedSum, sum_nan_throws)
 
 /**
  * @test TypedSum.sum_non_finite_throws
- * @brief Tests that sum throws std::runtime_error when the tensor
- * contains non-finite values (infinity).
+ * @brief sum should trigger a temper::nonfinite_error,
+ * as specified in the error handling policy, if result is non-finite.
  */
 TYPED_TEST(TypedSum, sum_non_finite_throws)
 {
@@ -1315,7 +1316,7 @@ TYPED_TEST(TypedSum, sum_non_finite_throws)
     };
     t = vals;
 
-    EXPECT_THROW(math::sum<value_t>(t), std::runtime_error);
+    EXPECT_THROW(math::sum<value_t>(t), temper::nonfinite_error);
 }
 
 /**
@@ -1846,8 +1847,8 @@ TYPED_TEST(TypedCumsum, cumsum_nan_throws)
 
 /**
  * @test TypedCumsum.cumsum_non_finite_throws
- * @brief Tests that cumsum throws std::runtime_error when the tensor
- * contains non-finite values (infinity).
+ * @brief cumsum should trigger a temper::nonfinite_error,
+ * as specified in the error handling policy, if result is non-finite.
  */
 TYPED_TEST(TypedCumsum, cumsum_non_finite_throws)
 {
@@ -1863,7 +1864,7 @@ TYPED_TEST(TypedCumsum, cumsum_non_finite_throws)
     };
     t = vals;
 
-    EXPECT_THROW(math::cumsum<value_t>(t, -1), std::runtime_error);
+    EXPECT_THROW(math::cumsum<value_t>(t, -1), temper::nonfinite_error);
 }
 
 /**
@@ -4352,7 +4353,8 @@ TEST(LINSPACE, axis_out_of_range_throws)
 
 /**
  * @test LINSPACE.inf_inputs_throw
- * @brief If start or stop contains +Inf/-Inf the function should report an error.
+ * @brief linspace should trigger a temper::nonfinite_error,
+ * as specified in the error handling policy, if result is non-finite.
  */
 TEST(LINSPACE, inf_inputs_throw)
 {
@@ -4366,7 +4368,7 @@ TEST(LINSPACE, inf_inputs_throw)
             auto r =
                 math::linspace(start, stop, 3, MemoryLocation::DEVICE, 0, true);
         },
-        std::runtime_error
+        temper::nonfinite_error
     );
 }
 
@@ -5191,7 +5193,8 @@ TYPED_TEST(TypedFactorial, nan_throws)
 
 /**
  * @test TypedFactorial.inf_throws
- * @brief factorial should throw std::runtime_error if input contains Inf.
+ * @brief factorial should trigger a temper::nonfinite_error,
+ * as specified in the error handling policy, if result is non-finite.
  */
 TYPED_TEST(TypedFactorial, inf_throws)
 {
@@ -5209,7 +5212,7 @@ TYPED_TEST(TypedFactorial, inf_throws)
     };
     t = vals;
 
-    EXPECT_THROW(math::factorial<value_t>(t), std::runtime_error);
+    EXPECT_THROW(math::factorial<value_t>(t), temper::nonfinite_error);
 }
 
 /**
@@ -5244,8 +5247,8 @@ TYPED_TEST(TypedFactorial, negative_and_noninteger_throws)
 
 /**
  * @test TypedFactorial.overflow_throws
- * @brief factorial of sufficiently large n should overflow float and
- * provoke runtime_error.
+ * @brief factorial of sufficiently large n should overflow float and trigger
+ * a temper::nonfinite_error, as specified in the error handling policy.
  *
  * 35! > float max (≈3.4e38), so test only for floating types.
  */
@@ -5261,7 +5264,7 @@ TYPED_TEST(TypedFactorial, overflow_throws)
     Tensor<value_t> t({1}, MemoryLocation::DEVICE);
     t = std::vector<value_t>{ static_cast<value_t>(35.0) };
 
-    EXPECT_THROW(math::factorial<value_t>(t), std::runtime_error);
+    EXPECT_THROW(math::factorial<value_t>(t), temper::nonfinite_error);
 }
 
 /**
@@ -5364,40 +5367,41 @@ TEST(LOG, nan_throws)
 
 /**
  * @test LOG_inf_throws
- * @brief log should throw std::runtime_error if input contains +Inf/-Inf.
+ * @brief log should trigger a temper::nonfinite_error,
+ * as specified in the error handling policy, if result is non-finite.
  */
 TEST(LOG, inf_throws)
 {
     Tensor<float> t({2}, MemoryLocation::DEVICE);
     t = std::vector<float>{std::numeric_limits<float>::infinity(), 1.0f};
 
-    EXPECT_THROW(math::log(t), std::runtime_error);
+    EXPECT_THROW(math::log(t), temper::nonfinite_error);
 }
 
 /**
  * @test LOG_zero_throws
  * @brief log(0) produces -inf which the implementation treats as non-finite
- * and should therefore throw std::runtime_error.
+ * and should therefore throw temper::nonfinite_error.
  */
 TEST(LOG, zero_throws)
 {
     Tensor<float> t({2}, MemoryLocation::DEVICE);
     t = std::vector<float>{0.0f, 1.0f};
 
-    EXPECT_THROW(math::log(t), std::runtime_error);
+    EXPECT_THROW(math::log(t), temper::nonfinite_error);
 }
 
 /**
  * @test LOG_negative_throws
  * @brief log of negative real values produces NaN/invalid result and should
- * throw std::runtime_error in this implementation.
+ * throw temper::nonfinite_error in this implementation.
  */
 TEST(LOG, negative_throws)
 {
     Tensor<float> t({2}, MemoryLocation::DEVICE);
     t = std::vector<float>{-1.0f, 2.0f};
 
-    EXPECT_THROW(math::log(t), std::runtime_error);
+    EXPECT_THROW(math::log(t), temper::nonfinite_error);
 }
 
 /**
@@ -5730,7 +5734,8 @@ TEST(MEAN, mean_nan_throws)
 
 /**
  * @test MEAN.mean_non_finite_throws
- * @brief mean() throws when tensor contains non-finite values (Inf).
+ * @brief mean should trigger a temper::nonfinite_error,
+ * as specified in the error handling policy, if result is non-finite.
  */
 TEST(MEAN, mean_non_finite_throws)
 {
@@ -5738,7 +5743,7 @@ TEST(MEAN, mean_non_finite_throws)
     std::vector<float> vals = {std::numeric_limits<float>::infinity(), 1.0f};
     t = vals;
 
-    EXPECT_THROW(math::mean(t), std::runtime_error);
+    EXPECT_THROW(math::mean(t), temper::nonfinite_error);
 }
 
 /**
@@ -5863,13 +5868,14 @@ TEST(VAR, var_nan_throws)
 
 /**
  * @test VAR.var_non_finite_throws
- * @brief var() throws when inputs contain Inf.
+ * @brief var should trigger a temper::nonfinite_error,
+ * as specified in the error handling policy, if result is non-finite.
  */
 TEST(VAR, var_non_finite_throws)
 {
     Tensor<float> t({2}, MemoryLocation::DEVICE);
     t = std::vector<float>{std::numeric_limits<float>::infinity(), 1.0f};
-    EXPECT_THROW(math::var(t, std::nullopt, 0), std::runtime_error);
+    EXPECT_THROW(math::var(t, std::nullopt, 0), temper::nonfinite_error);
 }
 
 /**
@@ -6703,14 +6709,15 @@ TEST(STDDEV, stddev_nan_throws)
 
 /**
  * @test STDDEV.stddev_non_finite_throws
- * @brief math::std throws when inputs contain infinity.
+ * @brief stddev should trigger a temper::nonfinite_error,
+ * as specified in the error handling policy, if result is non-finite.
  */
 TEST(STDDEV, stddev_non_finite_throws)
 {
     Tensor<float> t({2}, MemoryLocation::DEVICE);
     t = std::vector<float>{std::numeric_limits<float>::infinity(), 1.0f};
 
-    EXPECT_THROW(math::stddev(t, std::nullopt, 0), std::runtime_error);
+    EXPECT_THROW(math::stddev(t, std::nullopt, 0), temper::nonfinite_error);
 }
 
 /**
@@ -6951,8 +6958,8 @@ TYPED_TEST(TypedPow, nan_throws)
 
 /**
  * @test TypedPow.inf_throws
- * @brief pow should throw std::runtime_error if result is non-finite
- * (floats only)
+ * @brief pow should trigger a temper::nonfinite_error,
+ * as specified in the error handling policy, if result is non-finite.
  */
 TYPED_TEST(TypedPow, inf_throws)
 {
@@ -6977,7 +6984,7 @@ TYPED_TEST(TypedPow, inf_throws)
     };
     B = b_vals;
 
-    EXPECT_THROW(math::pow<value_t>(A, B), std::runtime_error);
+    EXPECT_THROW(math::pow<value_t>(A, B), temper::nonfinite_error);
 }
 
 /**
@@ -7137,6 +7144,21 @@ TEST(EIG, eig_nan_throws)
         3, 4,
     };
     EXPECT_THROW(math::eig(t, 100, 1e-6f), temper::nan_error);
+}
+
+/**
+ * @test EIG.eig_inf_throws
+ * @brief Tests that eig throws temper::nonfinite_error when the result
+ * produces Inf during computation, as specified in the error handling policy.
+ */
+TEST(EIG, eig_inf_throws)
+{
+    Tensor<float> t({2,2});
+    t = {
+        std::numeric_limits<float>::infinity(), 1.0f,
+        3.0f, 4.0f
+    };
+    EXPECT_THROW(math::eig(t, 100, 1e-6f), temper::nonfinite_error);
 }
 
 /**
@@ -7747,14 +7769,15 @@ TEST(SQRT, sqrt_large_values)
 
 /**
  * @test SQRT.sqrt_negative_throws
- * @brief Negative inputs produce NaN and should cause std::runtime_error.
+ * @brief sqrt negative inputs should trigger a temper::nonfinite_error,
+ * as specified in the error handling policy, since result is non-finite.
  */
 TEST(SQRT, sqrt_negative_throws)
 {
     Tensor<float> t({3}, MemoryLocation::DEVICE);
     t = std::vector<float>{4.0f, -1.0f, 9.0f};
 
-    EXPECT_THROW(math::sqrt(t), std::runtime_error);
+    EXPECT_THROW(math::sqrt(t), temper::nonfinite_error);
 }
 
 /**
@@ -7772,14 +7795,15 @@ TEST(SQRT, sqrt_nan_throws)
 
 /**
  * @test SQRT.sqrt_inf_throws
- * @brief +Inf in input causes non-finite output and should throw.
+ * @brief sqrt should trigger a temper::nonfinite_error,
+ * as specified in the error handling policy, if result is non-finite.
  */
 TEST(SQRT, sqrt_inf_throws)
 {
     Tensor<float> t({2}, MemoryLocation::DEVICE);
     t = std::vector<float>{std::numeric_limits<float>::infinity(), 4.0f};
 
-    EXPECT_THROW(math::sqrt(t), std::runtime_error);
+    EXPECT_THROW(math::sqrt(t), temper::nonfinite_error);
 }
 
 /**
@@ -7889,14 +7913,15 @@ TEST(EXP, exp_view_and_alias)
 
 /**
  * @test EXP.exp_large_overflow_throws
- * @brief Very large inputs that overflow to +Inf should cause runtime error.
+ * @brief Tests that exp throws temper::nonfinite_error when the result
+ * produces Inf during computation, as specified in the error handling policy.
  */
 TEST(EXP, exp_large_overflow_throws)
 {
     Tensor<float> t({1}, MemoryLocation::DEVICE);
     t = std::vector<float>{1000.0f};
 
-    EXPECT_THROW(math::exp(t), std::runtime_error);
+    EXPECT_THROW(math::exp(t), temper::nonfinite_error);
 }
 
 /**
@@ -7910,18 +7935,6 @@ TEST(EXP, exp_nan_throws)
     t = std::vector<float>{1.0f, std::numeric_limits<float>::quiet_NaN()};
 
     EXPECT_THROW(math::exp(t), temper::nan_error);
-}
-
-/**
- * @test EXP.exp_inf_input_throws
- * @brief +Inf in input leads to non-finite output and should throw.
- */
-TEST(EXP, exp_inf_input_throws)
-{
-    Tensor<float> t({1}, MemoryLocation::DEVICE);
-    t = std::vector<float>{std::numeric_limits<float>::infinity()};
-
-    EXPECT_THROW(math::exp(t), std::runtime_error);
 }
 
 /**

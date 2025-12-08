@@ -952,16 +952,9 @@ Tensor<value_t> Tensor<value_t>::operator+(const Tensor & other) const
         nan_error,
         R"(Tensor(operator+): NaN detected in inputs.)");
 
-    if (err != 0)
-    {
-        if (err == 2)
-        {
-            throw std::runtime_error(R"(Tensor(operator+):
-                non-finite result (overflow or Inf).)");
-        }
-        throw std::runtime_error(R"(Tensor(operator+):
-            numeric error during element-wise addition.)");
-    }
+    TEMPER_CHECK(err == 2,
+        nonfinite_error,
+        R"(Tensor(operator+): non-finite result (overflow or Inf).)");
 
     return result;
 }
@@ -1076,16 +1069,9 @@ Tensor<value_t> Tensor<value_t>::operator-(const Tensor & other) const
         nan_error,
         R"(Tensor(operator-): NaN detected in inputs.)");
 
-    if (err != 0)
-    {
-        if (err == 2)
-        {
-            throw std::runtime_error(R"(Tensor(operator-):
-                non-finite result (overflow or Inf).)");
-        }
-        throw std::runtime_error(R"(Tensor(operator-):
-            numeric error during element-wise addition.)");
-    }
+    TEMPER_CHECK(err == 2,
+        nonfinite_error,
+        R"(Tensor(operator-): non-finite result (overflow or Inf).)");
 
     return result;
 }
@@ -1200,16 +1186,9 @@ Tensor<value_t> Tensor<value_t>::operator*(const Tensor & other) const
         nan_error,
         R"(Tensor(operator*): NaN detected in inputs.)");
 
-    if (err != 0)
-    {
-        if (err == 2)
-        {
-            throw std::runtime_error(R"(Tensor(operator*):
-                non-finite result (overflow or Inf).)");
-        }
-        throw std::runtime_error(R"(Tensor(operator*):
-            numeric error during element-wise addition.)");
-    }
+    TEMPER_CHECK(err == 2,
+        nonfinite_error,
+        R"(Tensor(operator*): non-finite result (overflow or Inf).)");
 
     return result;
 }
@@ -1325,13 +1304,12 @@ Tensor<value_t> Tensor<value_t>::operator/(const Tensor & other) const
         nan_error,
         R"(Tensor(operator/): NaN detected in inputs.)");
 
+    TEMPER_CHECK(err == 2,
+        nonfinite_error,
+        R"(Tensor(operator/): non-finite result (overflow or Inf).)");
+
     if (err != 0)
     {
-        if (err == 2)
-        {
-            throw std::runtime_error(R"(Tensor(operator/):
-                non-finite result detected.)");
-        }
         if (err == 3)
         {
             throw std::runtime_error(R"(Tensor(operator/):
@@ -2424,16 +2402,9 @@ Tensor<value_t> Tensor<value_t>::sum(std::optional<int64_t> axis_opt) const
         nan_error,
         R"(Tensor(sum): NaN detected in inputs.)");
 
-    if (err != 0)
-    {
-        if (err == 2)
-        {
-            throw std::runtime_error(R"(Tensor(sum):
-                non-finite result detected.)");
-        }
-        throw std::runtime_error(R"(Tensor(sum):
-            numeric error during sum.)");
-    }
+    TEMPER_CHECK(err == 2,
+        nonfinite_error,
+        R"(Tensor(sum): non-finite result detected.)");
 
     return result;
 }
@@ -2710,8 +2681,9 @@ Tensor<value_t> Tensor<value_t>::cumsum(std::optional<int64_t> axis_opt) const
 
             if (active)
             {
-                sycl_utils::device_check_finite_and_set(prefix, p_error_flag);
                 p_out[dst_off] = prefix;
+                sycl_utils::device_check_finite_and_set<value_t>
+                    (prefix, p_error_flag);
             }
 
             size_t last_valid_lane = 0;
@@ -2784,6 +2756,8 @@ Tensor<value_t> Tensor<value_t>::cumsum(std::optional<int64_t> axis_opt) const
             value_t add = p_block_partials
                 [slice * num_groups_per_slice + (group_in_slice - 1)];
             p_out[dst_off] += add;
+            temper::sycl_utils::device_check_finite_and_set<value_t>
+                (p_out[dst_off], p_error_flag);
         });
     }).wait();
 
@@ -2802,16 +2776,9 @@ Tensor<value_t> Tensor<value_t>::cumsum(std::optional<int64_t> axis_opt) const
         nan_error,
         R"(Tensor(cumsum): NaN detected in inputs.)");
 
-    if (err != 0)
-    {
-        if (err == 2)
-        {
-            throw std::runtime_error(R"(Tensor(cumsum):
-                non-finite result detected.)");
-        }
-        throw std::runtime_error(R"(Tensor(cumsum):
-            numeric error during cumsum.)");
-    }
+    TEMPER_CHECK(err == 2,
+        nonfinite_error,
+        R"(Tensor(cumsum): non-finite result detected.)");
 
     return result;
 }
