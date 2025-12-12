@@ -131,9 +131,7 @@ Tensor<value_t> one_hot_expand_at(const Tensor<value_t>& tensor,
             	temper::sycl_utils::idx_of(flat, p_in_divs, p_in_strides, rank);
             value_t in_val = p_in_data[in_idx];
 
-            temper::sycl_utils::device_check_nan_and_set<value_t>
-            	(in_val, p_error_flag);
-            if (*p_error_flag != 0) { return; }
+            TEMPER_DEVICE_CHECK(sycl_utils::is_nan(in_val), p_error_flag, 1);
 
             uint64_t coord_a = (flat / p_in_divs[axis]) % p_in_shape[axis];
 
@@ -168,18 +166,14 @@ Tensor<value_t> one_hot_expand_at(const Tensor<value_t>& tensor,
                 // Integer check.
                 value_t rounded = sycl_utils::round(in_val);
                 value_t diff = sycl_utils::fabs(in_val - rounded);
-                if (diff > integer_eps)
-                {
-                    p_error_flag[0] = 3;
-                    return;
-                }
+
+                TEMPER_DEVICE_CHECK(diff > integer_eps, p_error_flag, 3);
 
                 int64_t lbl_ll = static_cast<int64_t>(rounded);
-                if (lbl_ll < 0 || static_cast<uint64_t>(lbl_ll) >= depth)
-                {
-                    p_error_flag[0] = 3;
-                    return;
-                }
+
+                TEMPER_DEVICE_CHECK(lbl_ll < 0 ||
+                    static_cast<uint64_t>(lbl_ll) >= depth, p_error_flag, 3);
+
                 const uint64_t lbl = static_cast<uint64_t>(lbl_ll);
 
                 uint64_t dest_flat = 0;

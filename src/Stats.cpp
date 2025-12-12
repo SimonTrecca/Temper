@@ -147,26 +147,17 @@ Tensor<value_t> pdf(const Tensor<value_t>& x,
             double locp = static_cast<double>(p_loc[loc_idx]);
             double scalep = static_cast<double>(p_scale[scale_idx]);
 
-            temper::sycl_utils::device_check_nan_and_set<double>
-                (xp, p_error_flag);
-            temper::sycl_utils::device_check_nan_and_set<double>
-                (locp, p_error_flag);
-            temper::sycl_utils::device_check_nan_and_set<double>
-                (scalep, p_error_flag);
+            TEMPER_DEVICE_CHECK(sycl_utils::is_nan(xp), p_error_flag, 1);
+            TEMPER_DEVICE_CHECK(sycl_utils::is_nan(locp), p_error_flag, 1);
+            TEMPER_DEVICE_CHECK(sycl_utils::is_nan(scalep), p_error_flag, 1);
 
-            if (scalep <= 0.0)
-            {
-                p_error_flag[0] = 4;
-                p_out[flat] = std::numeric_limits<value_t>::quiet_NaN();
-                return;
-            }
+            TEMPER_DEVICE_CHECK(scalep <= 0.0, p_error_flag, 3);
 
             double z = (xp - locp) / scalep;
             double ex = sycl::exp(-0.5 * z * z);
             double outv = (inv_sqrt_2pi / scalep) * ex;
 
-            temper::sycl_utils::device_check_finite_and_set<double>
-                (outv, p_error_flag);
+            TEMPER_DEVICE_CHECK(!sycl_utils::is_finite(outv), p_error_flag, 2);
             p_out[flat] = static_cast<value_t>(outv);
         });
     }).wait();
@@ -189,7 +180,7 @@ Tensor<value_t> pdf(const Tensor<value_t>& x,
 
     if (err != 0)
     {
-        if (err == 4)
+        if (err == 3)
         {
             throw std::invalid_argument(R"(norm::pdf: scale must be positive.)");
         }
@@ -316,26 +307,17 @@ Tensor<value_t> logpdf(const Tensor<value_t>& x,
             double locp = static_cast<double>(p_loc[loc_idx]);
             double scalep = static_cast<double>(p_scale[scale_idx]);
 
-            temper::sycl_utils::device_check_nan_and_set<double>
-                (xp, p_error_flag);
-            temper::sycl_utils::device_check_nan_and_set<double>
-                (locp, p_error_flag);
-            temper::sycl_utils::device_check_nan_and_set<double>
-                (scalep, p_error_flag);
+            TEMPER_DEVICE_CHECK(sycl_utils::is_nan(xp), p_error_flag, 1);
+            TEMPER_DEVICE_CHECK(sycl_utils::is_nan(locp), p_error_flag, 1);
+            TEMPER_DEVICE_CHECK(sycl_utils::is_nan(scalep), p_error_flag, 1);
 
-            if (scalep <= 0.0)
-            {
-                p_error_flag[0] = 4;
-                p_out[flat] = std::numeric_limits<value_t>::quiet_NaN();
-                return;
-            }
+            TEMPER_DEVICE_CHECK(scalep <= 0.0, p_error_flag, 3);
 
             double z = (xp - locp) / scalep;
 
             double outv = -0.5 * z * z - sycl::log(scalep) - log_sqrt_2pi;
 
-            temper::sycl_utils::device_check_finite_and_set<double>
-                (outv, p_error_flag);
+            TEMPER_DEVICE_CHECK(!sycl_utils::is_finite(outv), p_error_flag, 2);
             p_out[flat] = static_cast<value_t>(outv);
         });
     }).wait();
@@ -358,7 +340,7 @@ Tensor<value_t> logpdf(const Tensor<value_t>& x,
 
     if (err != 0)
     {
-        if (err == 4)
+        if (err == 3)
         {
             throw std::invalid_argument(R"(norm::logpdf:
                 scale must be positive.)");
@@ -486,26 +468,17 @@ Tensor<value_t> cdf(const Tensor<value_t>& x,
             double locp = static_cast<double>(p_loc[loc_idx]);
             double scalep = static_cast<double>(p_scale[scale_idx]);
 
-            temper::sycl_utils::device_check_nan_and_set<double>
-                (xp, p_error_flag);
-            temper::sycl_utils::device_check_nan_and_set<double>
-                (locp, p_error_flag);
-            temper::sycl_utils::device_check_nan_and_set<double>
-                (scalep, p_error_flag);
+            TEMPER_DEVICE_CHECK(sycl_utils::is_nan(xp), p_error_flag, 1);
+            TEMPER_DEVICE_CHECK(sycl_utils::is_nan(locp), p_error_flag, 1);
+            TEMPER_DEVICE_CHECK(sycl_utils::is_nan(scalep), p_error_flag, 1);
 
-            if (scalep <= 0.0)
-            {
-                p_error_flag[0] = 4;
-                p_out[flat] = std::numeric_limits<value_t>::quiet_NaN();
-                return;
-            }
+            TEMPER_DEVICE_CHECK(scalep <= 0.0, p_error_flag, 3);
 
             double z = (xp - locp) / (scalep * sqrt2);
             double erfv = sycl::erf(z);
             double outv = 0.5 * (1.0 + erfv);
 
-            temper::sycl_utils::device_check_finite_and_set<double>
-                (outv, p_error_flag);
+            TEMPER_DEVICE_CHECK(!sycl_utils::is_finite(outv), p_error_flag, 2);
             p_out[flat] = static_cast<value_t>(outv);
         });
     }).wait();
@@ -528,7 +501,7 @@ Tensor<value_t> cdf(const Tensor<value_t>& x,
 
     if (err != 0)
     {
-        if (err == 4)
+        if (err == 3)
         {
             throw std::invalid_argument(R"(norm::cdf:
                 scale must be positive.)");
@@ -684,39 +657,12 @@ Tensor<value_t> ppf(const Tensor<value_t>& q,
             double locp = static_cast<double>(p_loc[loc_idx]);
             double scalep = static_cast<double>(p_scale[scale_idx]);
 
-            temper::sycl_utils::device_check_nan_and_set<double>
-                (qp, p_error_flag);
-            temper::sycl_utils::device_check_nan_and_set<double>
-                (locp, p_error_flag);
-            temper::sycl_utils::device_check_nan_and_set<double>
-                (scalep, p_error_flag);
+            TEMPER_DEVICE_CHECK(sycl_utils::is_nan(qp), p_error_flag, 1);
+            TEMPER_DEVICE_CHECK(sycl_utils::is_nan(locp), p_error_flag, 1);
+            TEMPER_DEVICE_CHECK(sycl_utils::is_nan(scalep), p_error_flag, 1);
 
-            if (scalep <= 0.0)
-            {
-                auto atomic_err = sycl::atomic_ref<int32_t,
-                    sycl::memory_order::relaxed,
-                    sycl::memory_scope::device,
-                    sycl::access::address_space::global_space>(*p_error_flag);
-                int32_t expected = 0;
-                atomic_err.compare_exchange_strong(expected, 4);
-
-                p_out[flat] = std::numeric_limits<value_t>::quiet_NaN();
-                return;
-            }
-
-            if (!(qp >= 0.0 && qp <= 1.0))
-            {
-                auto atomic_err = sycl::atomic_ref<int32_t,
-                    sycl::memory_order::relaxed,
-                    sycl::memory_scope::device,
-                    sycl::access::address_space::global_space>(*p_error_flag);
-
-                int32_t expected = 0;
-                atomic_err.compare_exchange_strong(expected, 3);
-
-                p_out[flat] = std::numeric_limits<value_t>::quiet_NaN();
-                return;
-            }
+            TEMPER_DEVICE_CHECK(scalep <= 0.0, p_error_flag, 4);
+            TEMPER_DEVICE_CHECK(!(qp >= 0.0 && qp <= 1.0), p_error_flag, 4);
 
             double x;
             if (qp == 0.0)
@@ -754,8 +700,7 @@ Tensor<value_t> ppf(const Tensor<value_t>& q,
             }
 
             double outv = locp + scalep * x;
-            temper::sycl_utils::device_check_finite_and_set<double>
-                (outv, p_error_flag);
+            TEMPER_DEVICE_CHECK(!sycl_utils::is_finite(outv), p_error_flag, 2);
             p_out[flat] = static_cast<value_t>(outv);
         });
     }).wait();
@@ -896,12 +841,7 @@ Tensor<value_t> rvs(const Tensor<value_t>& loc,
             if (u < 1e-16) u = 1e-16;
             if (u > 1.0 - 1e-16) u = 1.0 - 1e-16;
 
-            if (!(u >= 0.0 && u < 1.0))
-            {
-                p_error_flag[0] = 1;
-                p_q[flat] = std::numeric_limits<value_t>::quiet_NaN();
-                return;
-            }
+            TEMPER_DEVICE_CHECK(!(u >= 0.0 && u < 1.0), p_error_flag, 1);
 
             p_q[flat] = static_cast<value_t>(u);
         });
@@ -1050,31 +990,16 @@ Tensor<value_t> pdf(const Tensor<value_t>& x,
             double xp = static_cast<double>(p_x[x_idx]);
             double kp = static_cast<double>(p_k[k_idx]);
 
-            temper::sycl_utils::device_check_nan_and_set<double>
-                (xp, p_error_flag);
-            temper::sycl_utils::device_check_nan_and_set<double>
-                (kp, p_error_flag);
-
-            if (kp <= 0.0)
-            {
-                p_error_flag[0] = 3;
-                p_out[flat] = std::numeric_limits<value_t>::quiet_NaN();
-                return;
-            }
-
-            if (xp < 0.0)
-            {
-                p_error_flag[0] = 4;
-                p_out[flat] = std::numeric_limits<value_t>::quiet_NaN();
-                return;
-            }
+            TEMPER_DEVICE_CHECK(sycl_utils::is_nan(xp), p_error_flag, 1);
+            TEMPER_DEVICE_CHECK(sycl_utils::is_nan(kp), p_error_flag, 1);
+            TEMPER_DEVICE_CHECK(kp <= 0.0, p_error_flag, 3);
+            TEMPER_DEVICE_CHECK(xp < 0.0, p_error_flag, 4);
 
             double denom = sycl::pow(2.0, kp * 0.5) * sycl::tgamma(kp * 0.5);
             double outv = (1.0 / denom) * sycl::pow(xp, (kp * 0.5 - 1.0)) *
                 sycl::exp(-xp * 0.5);
 
-            temper::sycl_utils::device_check_finite_and_set<double>
-                (outv, p_error_flag);
+            TEMPER_DEVICE_CHECK(!sycl_utils::is_finite(outv), p_error_flag, 2);
             p_out[flat] = static_cast<value_t>(outv);
         });
     }).wait();
@@ -1198,23 +1123,10 @@ Tensor<value_t> logpdf(const Tensor<value_t>& x,
             double xp = static_cast<double>(p_x[x_idx]);
             double kp = static_cast<double>(p_k[k_idx]);
 
-            temper::sycl_utils::device_check_nan_and_set<double>
-                (xp, p_error_flag);
-            temper::sycl_utils::device_check_nan_and_set<double>
-                (kp, p_error_flag);
-
-            if (kp <= 0.0)
-            {
-                p_error_flag[0] = 3;
-                p_out[flat] = std::numeric_limits<value_t>::quiet_NaN();
-                return;
-            }
-            if (xp < 0.0)
-            {
-                p_error_flag[0] = 4;
-                p_out[flat] = std::numeric_limits<value_t>::quiet_NaN();
-                return;
-            }
+            TEMPER_DEVICE_CHECK(sycl_utils::is_nan(xp), p_error_flag, 1);
+            TEMPER_DEVICE_CHECK(sycl_utils::is_nan(kp), p_error_flag, 1);
+            TEMPER_DEVICE_CHECK(kp <= 0.0, p_error_flag, 3);
+            TEMPER_DEVICE_CHECK(xp < 0.0, p_error_flag, 4);
 
             double log_part =
                   (kp * 0.5 - 1.0) * std::log(xp)
@@ -1222,8 +1134,8 @@ Tensor<value_t> logpdf(const Tensor<value_t>& x,
                 - (kp * 0.5) * std::log(2.0)
                 - std::lgamma(kp * 0.5);
 
-            temper::sycl_utils::device_check_finite_and_set<double>
-                (log_part, p_error_flag);
+            TEMPER_DEVICE_CHECK(!sycl_utils::is_finite(log_part),
+                p_error_flag, 2);
             p_out[flat] = static_cast<value_t>(log_part);
         });
     }).wait();
@@ -1355,29 +1267,14 @@ Tensor<value_t> cdf(const Tensor<value_t>& x,
             double xp = static_cast<double>(p_x[x_idx]);
             double kp = static_cast<double>(p_k[k_idx]);
 
-            temper::sycl_utils::device_check_nan_and_set<double>
-                (xp, p_error_flag);
-            temper::sycl_utils::device_check_nan_and_set<double>
-                (kp, p_error_flag);
-
-            if (kp <= 0.0)
-            {
-                p_error_flag[0] = 3;
-                p_out[flat] = std::numeric_limits<value_t>::quiet_NaN();
-                return;
-            }
-
-            if (xp < 0.0)
-            {
-                p_error_flag[0] = 4;
-                p_out[flat] = std::numeric_limits<value_t>::quiet_NaN();
-                return;
-            }
+            TEMPER_DEVICE_CHECK(sycl_utils::is_nan(xp), p_error_flag, 1);
+            TEMPER_DEVICE_CHECK(sycl_utils::is_nan(kp), p_error_flag, 1);
+            TEMPER_DEVICE_CHECK(kp <= 0.0, p_error_flag, 3);
+            TEMPER_DEVICE_CHECK(xp < 0.0, p_error_flag, 4);
 
             double outv = sycl_utils::regularized_gamma(kp / 2, xp / 2);
 
-            temper::sycl_utils::device_check_finite_and_set<double>
-                (outv, p_error_flag);
+            TEMPER_DEVICE_CHECK(!sycl_utils::is_finite(outv), p_error_flag, 2);
             p_out[flat] = static_cast<value_t>(outv);
         });
     }).wait();
@@ -1509,42 +1406,15 @@ Tensor<value_t> ppf(const Tensor<value_t>& q,
             double qp = static_cast<double>(p_q[q_idx]);
             double kp = static_cast<double>(p_k[k_idx]);
 
-            temper::sycl_utils::device_check_nan_and_set<double>
-                (qp, p_error_flag);
-            temper::sycl_utils::device_check_nan_and_set<double>
-                (kp, p_error_flag);
-
-            if (kp <= 0.0)
-            {
-                auto atomic_err = sycl::atomic_ref<int32_t,
-                    sycl::memory_order::relaxed,
-                    sycl::memory_scope::device,
-                    sycl::access::address_space::global_space>(*p_error_flag);
-                int32_t expected = 0;
-                atomic_err.compare_exchange_strong(expected, 3);
-
-                p_out[flat] = std::numeric_limits<value_t>::quiet_NaN();
-                return;
-            }
-
-            if (qp < 0.0 || qp > 1.0)
-            {
-                auto atomic_err = sycl::atomic_ref<int32_t,
-                    sycl::memory_order::relaxed,
-                    sycl::memory_scope::device,
-                    sycl::access::address_space::global_space>(*p_error_flag);
-                int32_t expected = 0;
-                atomic_err.compare_exchange_strong(expected, 4);
-
-                p_out[flat] = std::numeric_limits<value_t>::quiet_NaN();
-                return;
-            }
+            TEMPER_DEVICE_CHECK(sycl_utils::is_nan(qp), p_error_flag, 1);
+            TEMPER_DEVICE_CHECK(sycl_utils::is_nan(kp), p_error_flag, 1);
+            TEMPER_DEVICE_CHECK(kp <= 0.0, p_error_flag, 3);
+            TEMPER_DEVICE_CHECK(qp < 0.0 || qp > 1.0, p_error_flag, 4);
 
             double outv = 2.0 * sycl_utils::inverse_regularized_gamma
                 (kp / 2.0, qp);
 
-            temper::sycl_utils::device_check_finite_and_set<double>
-                (outv, p_error_flag);
+            TEMPER_DEVICE_CHECK(!sycl_utils::is_finite(outv), p_error_flag, 2);
             p_out[flat] = static_cast<value_t>(outv);
         });
     }).wait();
@@ -1671,13 +1541,7 @@ Tensor<value_t> rvs(const Tensor<value_t>& k,
             if (u < 1e-16) u = 1e-16;
             if (u > 1.0 - 1e-16) u = 1.0 - 1e-16;
 
-            if (!(u >= 0.0 && u < 1.0))
-            {
-                p_error_flag[0] = 1;
-                p_q[flat] = std::numeric_limits<value_t>::quiet_NaN();
-                return;
-            }
-
+            TEMPER_DEVICE_CHECK(!(u >= 0.0 && u < 1.0), p_error_flag, 1);
             p_q[flat] = static_cast<value_t>(u);
         });
     }).wait();
@@ -1749,22 +1613,9 @@ Tensor<value_t> mean(const Tensor<value_t>& k)
                 flat, p_divs, p_strides, rank);
 
             value_t val = p_in[idx];
-            temper::sycl_utils::device_check_nan_and_set<value_t>
-                (val, p_error_flag);
-            temper::sycl_utils::device_check_finite_and_set<double>
-                (val, p_error_flag);
-
-            if (val <= 0.0)
-            {
-                auto atomic_err = sycl::atomic_ref<int32_t,
-                    sycl::memory_order::relaxed,
-                    sycl::memory_scope::device,
-                    sycl::access::address_space::global_space>(*p_error_flag);
-                int32_t expected = 0;
-                atomic_err.compare_exchange_strong(expected, 3);
-                p_out[flat] = std::numeric_limits<value_t>::quiet_NaN();
-                return;
-            }
+            TEMPER_DEVICE_CHECK(sycl_utils::is_nan(val), p_error_flag, 1);
+            TEMPER_DEVICE_CHECK(!sycl_utils::is_finite(val), p_error_flag, 2);
+            TEMPER_DEVICE_CHECK(val <= 0.0, p_error_flag, 3);
 
             p_out[flat] = val;
         });
@@ -1843,21 +1694,12 @@ Tensor<value_t> var(const Tensor<value_t>& k)
                 flat, p_divs, p_strides, rank);
 
             double val = static_cast<double>(p_in[idx]);
-            temper::sycl_utils::device_check_nan_and_set<double>
-                (val, p_error_flag);
-
-            if (val <= 0.0)
-            {
-                p_error_flag[0] = 3;
-                p_out[flat] = std::numeric_limits<double>::quiet_NaN();
-                return;
-            }
+            TEMPER_DEVICE_CHECK(sycl_utils::is_nan(val), p_error_flag, 1);
+            TEMPER_DEVICE_CHECK(val <= 0.0, p_error_flag, 3);
 
             double outv = 2.0f * val;
 
-            temper::sycl_utils::device_check_finite_and_set<double>
-                (outv, p_error_flag);
-
+            TEMPER_DEVICE_CHECK(!sycl_utils::is_finite(outv), p_error_flag, 2);
             p_out[flat] = static_cast<value_t>(outv);
         });
     }).wait();

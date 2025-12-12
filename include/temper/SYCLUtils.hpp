@@ -84,7 +84,6 @@ inline bool is_finite(value_t v)
     }
 }
 
-
 /**
  * @brief Safe sqrt wrapper.
  *

@@ -27,10 +27,11 @@ public:
 /**
  * @brief non finite error class for temper library.
  */
-class nonfinite_error : public std::runtime_error {
+class nonfinite_error : public std::runtime_error
+{
 public:
-    explicit nonfinite_error(const std::string& msg)
-        : std::runtime_error(msg) {}
+    explicit nonfinite_error(const std::string& message)
+        : std::runtime_error(message) {}
 };
 
 } // namespace temper
@@ -61,6 +62,42 @@ public:
    } while(0)
 #else
   #define TEMPER_CHECK(condition, exception_type, message) ((void)0)
+#endif
+
+/**
+ * @brief Device-side error checking macro.
+ *
+ * Evaluates a condition inside a SYCL kernel and, if true:
+ *   - atomically sets an error flag to the specified error code
+ *   - immediately returns from the current work-item
+ *
+ * When TEMPER_DISABLE_ERROR_CHECKS is defined, the macro does nothing.
+ *
+ * @param condition The condition to evaluate
+ * @param p_err Pointer to an int32_t error flag in global/shared memory
+ * @param code Error code to atomically set when condition is true
+ *
+ * Usage inside a SYCL kernel:
+ *   TEMPER_DEVICE_CHECK(is_nan(av), p_error, 1);
+ *   TEMPER_DEVICE_CHECK(!is_finite(out), p_error, 2);
+ */
+#ifndef TEMPER_DISABLE_ERROR_CHECKS
+  #define TEMPER_DEVICE_CHECK(condition, p_err, code) \
+    do \
+    { \
+        if (condition) \
+        { \
+            auto atomic_err = sycl::atomic_ref<int32_t, \
+                sycl::memory_order::relaxed, \
+                sycl::memory_scope::device, \
+                sycl::access::address_space::global_space>(*p_err); \
+            int32_t expected = 0; \
+            atomic_err.compare_exchange_strong(expected, code); \
+            return; /* exit current kernel work-item */ \
+        } \
+    } while (0)
+#else
+  #define TEMPER_DEVICE_CHECK(condition, p_err, code) ((void)0)
 #endif
 
 #endif // TEMPER_ERRORS_HPP
