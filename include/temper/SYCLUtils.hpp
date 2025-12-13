@@ -223,63 +223,6 @@ inline value_t round(value_t v)
     }
 }
 
-/**
- * @brief Atomically set an error flag if a NaN is observed.
- *
- * @param v value to test
- * @param p_err pointer to int32_t error flag in shared/global memory
- *
- * Error codes:
- *   1 -> NaN detected
- */
-template<typename value_t>
-inline void device_check_nan_and_set(value_t v, int32_t* p_err)
-{
-#if !defined(TEMPER_DISABLE_ERROR_CHECKS)
-    if (sycl_utils::is_nan(v))
-    {
-        auto atomic_err = sycl::atomic_ref<int32_t,
-            sycl::memory_order::relaxed,
-            sycl::memory_scope::device,
-            sycl::access::address_space::global_space>(*p_err);
-        int32_t expected = 0;
-        atomic_err.compare_exchange_strong(expected, 1);
-    }
-#else
-    (void)v;
-    (void)p_err;
-#endif
-}
-
-/**
- * @brief Atomically set an error flag if a value is non-finite (Inf/Nan).
- *
- * @param v value to test
- * @param p_err pointer to int32_t error flag in shared/global memory
- *
- * Error codes:
- *   2 -> non-finite detected (Inf/overflow/result)
- */
-template<typename value_t>
-inline void device_check_finite_and_set(value_t v, int32_t* p_err)
-{
-#if !defined(TEMPER_DISABLE_ERROR_CHECKS)
-    if (!sycl_utils::is_finite(v))
-    {
-        auto atomic_err = sycl::atomic_ref<int32_t,
-            sycl::memory_order::relaxed,
-            sycl::memory_scope::device,
-            sycl::access::address_space::global_space>(*p_err);
-        int32_t expected = 0;
-        atomic_err.compare_exchange_strong(expected, 2);
-    }
-#else
-    // checks disabled: avoid unused-parameter warnings and ensure no side-effects
-    (void)v;
-    (void)p_err;
-#endif
-}
-
 inline double erfinv(double x)
 {
     const double a[] = {
@@ -551,31 +494,6 @@ inline double inverse_regularized_gamma(double a, double p)
     }
 
     return x_curr;
-}
-
-/**
- * @brief Atomically set an error flag if divisor is zero.
- *
- * @tparam value_t Floating-point type
- * @param b_val Divisor value
- * @param p_err Pointer to int32_t error flag in shared/global memory
- *
- * Error codes:
- *   3 -> division by zero detected
- */
-template<typename value_t>
-inline void device_check_divzero_and_set(value_t b_val, int32_t* p_err)
-{
-    if (b_val == static_cast<value_t>(0))
-    {
-        auto atomic_err = sycl::atomic_ref<int32_t,
-            sycl::memory_order::relaxed,
-            sycl::memory_scope::device,
-            sycl::access::address_space::global_space>(*p_err);
-
-        int32_t expected = 0;
-        atomic_err.compare_exchange_strong(expected, 3);
-    }
 }
 
 /**

@@ -21,7 +21,7 @@ class nan_error : public std::invalid_argument
 {
 public:
     explicit nan_error(const std::string& message)
-        : std::invalid_argument(message) {}
+        : std::invalid_argument("NaN Error: " + message) {}
 };
 
 /**
@@ -31,7 +31,51 @@ class nonfinite_error : public std::runtime_error
 {
 public:
     explicit nonfinite_error(const std::string& message)
-        : std::runtime_error(message) {}
+        : std::runtime_error("Non-finite Error: " + message) {}
+};
+
+/**
+ * @brief Validation error class for temper library.
+ * Used to signal invalid inputs or arguments.
+ */
+class validation_error : public std::invalid_argument
+{
+public:
+    explicit validation_error(const std::string& message)
+        : std::invalid_argument("Validation Error: " + message) {}
+};
+
+/**
+ * @brief Computation error class for temper library.
+ * Used to signal errors during numerical or mathematical computations.
+ */
+class computation_error : public std::runtime_error
+{
+public:
+    explicit computation_error(const std::string& message)
+        : std::runtime_error("Computation Error: " + message) {}
+};
+
+/**
+ * @brief Bounds error class for temper library.
+ * Used to signal index out-of-range or invalid bounds during tensor operations.
+ */
+class bounds_error : public std::out_of_range
+{
+public:
+    explicit bounds_error(const std::string& message)
+        : std::out_of_range("Bounds Error: " + message) {}
+};
+
+/**
+ * @brief Device-side error class for SYCL kernels in the temper library.
+ * Used to signal issues specific to SYCL device execution.
+ */
+class device_error : public std::runtime_error
+{
+public:
+    explicit device_error(const std::string& message)
+        : std::runtime_error("Device Error: " + message) {}
 };
 
 } // namespace temper
