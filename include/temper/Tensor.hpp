@@ -19,15 +19,6 @@ namespace temper
 {
 
 /**
- * @brief Supported device types for Tensor storage.
- */
-enum class MemoryLocation
-{
-    HOST,   ///< Host memory
-    DEVICE  ///< Device memory (via SYCL)
-};
-
-/**
  * @brief Class template for the Tensor data structure.
  * @tparam value_t Numeric types.
  *
@@ -59,10 +50,6 @@ private:
      *
      * Resizes `m_strides` and fills each element so that
      * `m_strides[i]` equals the product of all dimensions to the right of `i`.
-     *
-     * @throws std::invalid_argument if any entry in `m_dimensions` is zero.
-     * @throws std::overflow_error if stride multiplication
-     * would overflow `uint64_t`.
      */
     void compute_strides();
 
@@ -152,8 +139,6 @@ public:
          * current flat index. Forwarding to Tensor::at().
          *
          * @return reference View Tensor to the element.
-         *
-         * @throws whatever Tensor::at() may throw if index invalid.
          */
         reference operator*() const
         {
@@ -424,8 +409,6 @@ public:
          * Returns a const view to the tensor element at the current index.
          *
          * @return reference Const view to the element.
-         *
-         * @throws whatever Tensor::at() may throw if index invalid.
          */
         reference operator*() const
         {
@@ -623,19 +606,6 @@ public:
      *
      * @param dimensions Shape of the tensor (each entry must be > 0).
      * @param loc Memory location for data (HOST or DEVICE).
-     *
-     * @throws std::invalid_argument if:
-     * - @p dimensions is empty
-     * - any entry in @p dimensions is zero
-     * @throws std::overflow_error if:
-     * - the number of dimensions (m_dimensions.size())
-     * is greater than INT64_MAX
-     * - the product of @p dimensions would overflow uint64_t
-     * - the total allocation size in bytes would not fit into size_t
-     * @throws std::runtime_error if:
-     * - the requested allocation exceeds device @c max_mem_alloc_size
-     * - the requested allocation exceeds device @c global_mem_size
-     * @throws std::bad_alloc if memory allocation fails.
      */
     explicit Tensor(const std::vector<uint64_t>& dimensions,
         MemoryLocation loc = MemoryLocation::DEVICE);
@@ -648,14 +618,7 @@ public:
      * Allocates zero-initialized memory on the specified location.
      *
      * @param dimensions Shape of the tensor (each entry must be > 0).
-     * @param loc Memory location for data (HOST or DEVICE). Defaults to DEVICE.
-     *
-     * @throws std::invalid_argument if @p dimensions is empty or contains zeros.
-     * @throws std::overflow_error if the total element count or byte size
-     *         would overflow uint64_t or size_t.
-     * @throws std::runtime_error if the requested allocation exceeds device
-     *         limits.
-     * @throws std::bad_alloc if memory allocation fails.
+     * @param loc Memory location for data (HOST or DEVICE).
      */
     explicit Tensor(const std::initializer_list<uint64_t> & dimensions,
        MemoryLocation loc = MemoryLocation::DEVICE);
@@ -688,8 +651,6 @@ public:
      * @param val Scalar value to initialize the tensor with.
      * @param loc Memory location where the tensor should be allocated
      *            (default: MemoryLocation::DEVICE).
-     *
-     * @throws std::bad_alloc if memory allocation fails.
      */
     explicit Tensor(value_t val, MemoryLocation loc = MemoryLocation::DEVICE);
 
@@ -705,18 +666,6 @@ public:
      * @param owner Tensor to view into.
      * @param start_indices Starting coordinate of the view (one per owner axis).
      * @param view_shape Shape of the view.
-     *
-     * @throws std::invalid_argument if:
-     * - @p start_indices.size() does not equal the owner's rank
-     * - @p view_shape is empty or its rank is greater than the owner's rank
-     * @throws std::overflow_error if:
-     * - the number of dimensions (view_shape.size()) is greater than INT64_MAX
-     * @throws std::out_of_range if:
-     * - any entry in @p start_indices is >= the corresponding owner dimension
-     * - any entry in @p view_shape is zero
-     * - any start + length in @p view_shape extends beyond the owner dimension
-     * @throws std::runtime_error if:
-     * - @p other has no data (default-constructed or moved-from)
      */
     Tensor(const Tensor & owner,
             const std::vector<uint64_t> & start_indices,
@@ -738,21 +687,6 @@ public:
      * Must have all entries > 0.
      * @param strides Strides of the view(step size in the underlying data
      * for each axis). Must have the same size as @p dims.
-     *
-     * @throws std::runtime_error if the owner tensor has no allocated data.
-     * @throws std::invalid_argument if:
-     * - @p start_indices.size() does not match the owner’s rank.
-     * - @p dims.size() != @p strides.size().
-     * - the view rank (number of dimensions) is zero.
-     * - any entry in @p dims is zero.
-     * @throws std::out_of_range if:
-     * - any entry in @p start_indices is >= the corresponding
-     * dimension of the owner.
-     * - the computed maximum index in the owner buffer that the view
-     * will access exceeds the owner’s total size.
-     * @throws std::overflow_error if:
-     * - stride * (dim-1) overflows for any axis.
-     * - computing the maximum index for the view overflows uint64_t.
      */
     Tensor(const Tensor & owner,
             const std::vector<uint64_t> & start_indices,
@@ -766,8 +700,6 @@ public:
      *
      * @param other The tensor to assign from.
      * @return Reference to this tensor.
-     *
-     * @throws std::bad_alloc if allocation fails.
      */
     Tensor& operator=(const Tensor & other);
 
@@ -789,10 +721,6 @@ public:
      *
      * @param values Flat input vector.
      * @return Reference to this tensor.
-     *
-     * @throws std::invalid_argument if:
-     * - the tensor has no dimensions
-     * - the length of @p values differs from the tensor's total element count
      */
     Tensor& operator=(const std::vector<value_t> & values);
 
@@ -808,7 +736,6 @@ public:
      *
      * @param val Scalar value to assign.
      * @return Reference to this tensor.
-     * @throws std::invalid_argument If tensor size is not exactly 1.
      */
     Tensor& operator=(value_t val);
 
@@ -821,8 +748,6 @@ public:
      *
      * @param idx Index along the first dimension.
      * @return Tensor view (non-owning) into the selected region.
-     * @throws std::out_of_range If index is out of bounds or tensor
-     * has no dimensions.
      */
     Tensor operator[](uint64_t idx);
 
@@ -836,8 +761,6 @@ public:
      *
      * @param idx Index along the first dimension.
      * @return Tensor view (non-owning) into the selected region.
-     * @throws std::out_of_range If index is out of bounds or tensor
-     * has no dimensions.
      */
     const Tensor operator[](uint64_t idx) const;
 
@@ -848,7 +771,6 @@ public:
      * The tensor must contain exactly one element.
      *
      * @return Scalar value stored in this tensor.
-     * @throws std::invalid_argument If tensor size is not exactly 1.
      */
     operator value_t() const;
 
@@ -862,10 +784,6 @@ public:
      *
      * @param other Tensor to add.
      * @return New tensor containing the broadcasted element-wise sum.
-     *
-     * @throws std::invalid_argument if either tensor is empty
-     * or shapes are incompatible for broadcasting.
-     * @throws std::bad_alloc if memory allocation fails.
      */
     Tensor operator+(const Tensor & other) const;
 
@@ -879,10 +797,6 @@ public:
      *
      * @param other Tensor to subtract.
      * @return New tensor containing the broadcasted element-wise difference.
-     *
-     * @throws std::invalid_argument if either tensor is empty
-     * or shapes are incompatible for broadcasting.
-     * @throws std::bad_alloc if memory allocation fails.
      */
     Tensor operator-(const Tensor & other) const;
 
@@ -896,10 +810,6 @@ public:
      *
      * @param other Tensor to multiply.
      * @return New tensor containing the broadcasted element-wise product.
-     *
-     * @throws std::invalid_argument if either tensor is empty
-     * or shapes are incompatible for broadcasting.
-     * @throws std::bad_alloc if memory allocation fails.
      */
     Tensor operator*(const Tensor & other) const;
 
@@ -915,12 +825,6 @@ public:
      *
      * @param other Divisor tensor.
      * @return New tensor containing the broadcasted element-wise quotient.
-     *
-     * @throws std::invalid_argument if either tensor is empty
-     * or shapes are incompatible for broadcasting.
-     * @throws std::runtime_error "Division by zero detected."
-     * if any divisor element equals zero.
-     * @throws std::bad_alloc if memory allocation fails.
      */
     Tensor operator/(const Tensor & other) const;
 
@@ -933,9 +837,6 @@ public:
      * Executed synchronously on the library SYCL queue.
      *
      * @return New tensor containing element-wise negated values.
-     *
-     * @throws std::invalid_argument if this tensor is empty.
-     * @throws std::bad_alloc if memory allocation fails.
      */
     Tensor operator-() const;
 
@@ -948,7 +849,6 @@ public:
      * @param other Tensor to compare.
      * @return true when shapes match and all elements are equal,
      * false otherwise.
-     * @throws std::bad_alloc on temporary allocation failure.
      */
     bool operator==(const Tensor & other) const;
 
@@ -959,8 +859,6 @@ public:
      * independent copy of all elements. Operation is synchronous.
      *
      * @return Owning Tensor<value_t> with contiguous storage.
-     * @throws std::invalid_argument if this tensor is empty.
-     * @throws std::bad_alloc on allocation failure.
      */
     Tensor<value_t> clone() const;
 
@@ -975,13 +873,6 @@ public:
      * kernels that respect strides.
      *
      * @param src Source tensor to copy from.
-     *
-     * @throws std::runtime_error if this tensor or @p src has no storage.
-     * @throws std::invalid_argument if the destination has zero elements, if
-     *         src.rank() > dst.rank(), or if src cannot be broadcast to the
-     *         destination shape.
-     * @throws std::bad_alloc if temporary device memory for divisors/strides
-     *         cannot be allocated.
      */
     void copy_from(const Tensor & src);
 
@@ -992,9 +883,6 @@ public:
      * Only tensors that own their data can be moved.
      *
      * @param target_loc Target memory location (HOST or DEVICE).
-     * @throws std::runtime_error if called on a non-owning tensor (view).
-     * @throws std::invalid_argument if tensor has no elements.
-     * @throws std::bad_alloc if memory allocation fails.
      */
     void to(MemoryLocation target_loc);
 
@@ -1005,15 +893,6 @@ public:
      * The underlying linear buffer is preserved, but the logical shape changes.
      *
      * @param new_dimensions New shape for the tensor.
-     *
-     * @throws std::invalid_argument if:
-     * - @p new_dimensions is empty
-     * - tensor is non-owning
-     * - any entry in @p new_dimensions is zero
-     * - the product of @p new_dimensions differs from the current total
-     * element count
-     * @throws std::overflow_error if the product of dimensions in
-     * @p new_dimensions would overflow uint64_t.
      */
     void reshape(const std::vector<uint64_t>& new_dimensions);
 
@@ -1027,8 +906,6 @@ public:
      *
      * @param axis_opt Axis to sort along, nullopt = flatten,
      * otherwise -rank..rank-1.
-     * @throws std::invalid_argument if @p axis_opt is out of range.
-     * @throws std::bad_alloc if required device memory cannot be allocated.
      */
     void sort(std::optional<int64_t> axis_opt = std::nullopt);
 
@@ -1045,8 +922,6 @@ public:
      * the returned tensor uses the same memory location as the input.
      * If the input tensor has no dimensions, a tensor
      * with shape {1} is returned.
-     * @throws std::invalid_argument If axis is out of range.
-     * @throws std::bad_alloc if required device memory cannot be allocated.
      */
     Tensor<value_t> sum(std::optional<int64_t> axis_opt = std::nullopt) const;
 
@@ -1063,9 +938,6 @@ public:
      * the returned tensor uses the same memory location as the input.
      * If the input tensor has no dimensions, a tensor
      * with shape {1} is returned.
-     *
-     * @throws std::invalid_argument If axis is out of range.
-     * @throws std::bad_alloc If required device memory cannot be allocated.
      */
     Tensor<value_t> cumsum(std::optional<int64_t> axis_opt = std::nullopt) const;
 
@@ -1077,7 +949,6 @@ public:
      * The returned tensor shares the same underlying data as
      * the original tensor, so no data is copied.
      *
-     * @throws std::runtime_error if the tensor is empty (rank 0).
      * @return Tensor<value_t> A new tensor view with reversed axes.
      */
     Tensor<value_t> transpose() const;
@@ -1095,8 +966,6 @@ public:
      * Must be a permutation of [-rank..rank-1], where `rank` is
      * the number of dimensions of the tensor.
      *
-     * @throws std::invalid_argument if `axes.size()` != rank or
-     * if `axes` is not a valid permutation.
      * @return Tensor<value_t> A new tensor view with permuted axes.
      */
     Tensor<value_t> transpose(const std::vector<int64_t> & axes) const;
@@ -1277,8 +1146,6 @@ public:
      *
      * @param coords Per-axis coordinates.
      * @return Flattened index corresponding to coords.
-     * @throws std::invalid_argument if coords size mismatches rank.
-     * @throws std::out_of_range if any coordinate is outside its extent.
      */
     uint64_t coords_to_index
         (const std::vector<uint64_t>& coords) const;
@@ -1292,7 +1159,6 @@ public:
      *
      * @param flat Flattened row-major index.
      * @return Reference to element at flat index.
-     * @throws std::out_of_range if flat >= total elements.
      */
     Tensor<value_t> at(uint64_t flat);
 
@@ -1305,7 +1171,6 @@ public:
      *
      * @param flat Flattened row-major index.
      * @return Reference to element at flat index.
-     * @throws std::out_of_range if flat >= total elements.
      */
     const Tensor<value_t> at(uint64_t flat) const;
 

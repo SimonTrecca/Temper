@@ -19,32 +19,27 @@ Tensor<value_t> one_hot_expand_at(const Tensor<value_t>& tensor,
 	value_t on_value,
 	value_t off_value)
 {
-    if (depth == 0)
-    {
-        throw std::invalid_argument("one_hot_expand_at: depth must be > 0.");
-    }
+    TEMPER_CHECK(depth == 0,
+        validation_error,
+        "one_hot_expand_at: depth must be > 0.");
 
     const int64_t rank = tensor.get_rank();
-    if (rank == 0)
-    {
-        throw std::invalid_argument(R"(one_hot_expand_at:
-			input tensor has no elements.)");
-    }
+    TEMPER_CHECK(rank == 0,
+        validation_error,
+        R"(one_hot_expand_at: input tensor has no elements.)");
 
     if (axis < 0)
     {
         axis += rank;
     }
-    if (axis < 0 || axis >= rank)
-    {
-        throw std::invalid_argument("one_hot_expand_at: axis out of range.");
-    }
+     TEMPER_CHECK(axis < 0 || axis >= rank,
+        bounds_error,
+        "one_hot_expand_at:  axis out of range.");
 
-    const std::vector<uint64_t> in_shape = tensor.get_dimensions();
-    if (axis_index >= in_shape[axis])
-    {
-        throw std::out_of_range("one_hot_expand_at: axis_index out of range.");
-    }
+    const std::vector<uint64_t> & in_shape = tensor.get_dimensions();
+    TEMPER_CHECK(axis_index >= in_shape[axis],
+        bounds_error,
+        "one_hot_expand_at: axis_index out of range.");
 
     // Build output shape: we remove one element from axis (the label)
     // and expand to 'depth' slots: out_axis_len = (in_axis_len - 1) + depth.
@@ -60,43 +55,22 @@ Tensor<value_t> one_hot_expand_at(const Tensor<value_t>& tensor,
     const std::vector<uint64_t> out_divs =
     	temper::utils::compute_divisors(out_shape);
 
-    uint64_t* p_in_divs = static_cast<uint64_t*>(
-        sycl::malloc_device(sizeof(uint64_t) * rank, g_sycl_queue));
-    uint64_t* p_in_strides = static_cast<uint64_t*>(
-        sycl::malloc_device(sizeof(uint64_t) * rank, g_sycl_queue));
-    uint64_t* p_in_shape = static_cast<uint64_t*>(
-        sycl::malloc_device(sizeof(uint64_t) * rank, g_sycl_queue));
-    uint64_t* p_out_divs = static_cast<uint64_t*>(
-        sycl::malloc_device(sizeof(uint64_t) * rank, g_sycl_queue));
-    uint64_t* p_out_shape = static_cast<uint64_t*>(
-        sycl::malloc_device(sizeof(uint64_t) * rank, g_sycl_queue));
+    sycl_utils::SyclArray<uint64_t> in_divs_arr(g_sycl_queue,
+        in_divs, MemoryLocation:: DEVICE);
+    sycl_utils::SyclArray<uint64_t> in_strides_arr(g_sycl_queue,
+        in_strides, MemoryLocation::DEVICE);
+    sycl_utils::SyclArray<uint64_t> in_shape_arr(g_sycl_queue,
+        in_shape, MemoryLocation:: DEVICE);
+    sycl_utils::SyclArray<uint64_t> out_divs_arr(g_sycl_queue,
+        out_divs, MemoryLocation:: DEVICE);
+    sycl_utils::SyclArray<int32_t> error_flag_arr(g_sycl_queue,
+        1, MemoryLocation::HOST);
 
-    int32_t* p_error_flag = static_cast<int32_t*>(
-        sycl::malloc_shared(sizeof(int32_t), g_sycl_queue));
-
-    bool alloc_ok = (p_in_divs && p_in_strides && p_in_shape &&
-                     p_out_divs && p_out_shape && p_error_flag);
-    if (!alloc_ok)
-    {
-        sycl::free(p_in_divs, g_sycl_queue);
-        sycl::free(p_in_strides, g_sycl_queue);
-        sycl::free(p_in_shape, g_sycl_queue);
-        sycl::free(p_out_divs, g_sycl_queue);
-        sycl::free(p_out_shape, g_sycl_queue);
-        sycl::free(p_error_flag, g_sycl_queue);
-        throw std::bad_alloc();
-    }
-
-    g_sycl_queue.memcpy(p_in_divs,
-    	in_divs.data(), sizeof(uint64_t) * rank).wait();
-    g_sycl_queue.memcpy(p_in_strides,
-    	in_strides.data(), sizeof(uint64_t) * rank).wait();
-    g_sycl_queue.memcpy(p_in_shape,
-    	in_shape.data(), sizeof(uint64_t) * rank).wait();
-    g_sycl_queue.memcpy(p_out_divs,
-    	out_divs.data(), sizeof(uint64_t) * rank).wait();
-    g_sycl_queue.memcpy(p_out_shape,
-    	out_shape.data(), sizeof(uint64_t) * rank).wait();
+    const uint64_t* p_in_divs = in_divs_arr;
+    const uint64_t* p_in_strides = in_strides_arr;
+    const uint64_t* p_in_shape = in_shape_arr;
+    const uint64_t* p_out_divs = out_divs_arr;
+    int32_t* p_error_flag = error_flag_arr;
 
     *p_error_flag = 0;
 
@@ -197,29 +171,15 @@ Tensor<value_t> one_hot_expand_at(const Tensor<value_t>& tensor,
         });
     }).wait();
 
-    sycl::free(p_in_divs, g_sycl_queue);
-    sycl::free(p_in_strides, g_sycl_queue);
-    sycl::free(p_in_shape, g_sycl_queue);
-    sycl::free(p_out_divs, g_sycl_queue);
-    sycl::free(p_out_shape, g_sycl_queue);
-
     int32_t err = *p_error_flag;
-    sycl::free(p_error_flag, g_sycl_queue);
 
     TEMPER_CHECK(err == 1,
         nan_error,
         R"(one_hot_expand_at: NaN detected in inputs.)");
 
-    if (err != 0)
-    {
-        if (err == 3)
-        {
-            throw std::runtime_error(R"(one_hot_expand_at:
-            	label non-integer or out of range.)");
-        }
-        throw std::runtime_error(R"(one_hot_expand_at:
-        	numeric error during computation.)");
-    }
+    TEMPER_CHECK(err == 3,
+        validation_error,
+        R"(one_hot_expand_at: label non-integer or out of range.)");
 
     return result;
 }
@@ -233,11 +193,9 @@ Tensor<value_t> softmax(const Tensor<value_t> & tensor,
     std::optional<int64_t> axis_opt)
 {
     const int64_t rank = tensor.get_rank();
-    if (rank == 0)
-    {
-        throw std::invalid_argument(R"(softmax:
-            input tensor has no elements.)");
-    }
+    TEMPER_CHECK(rank == 0,
+        validation_error,
+        R"(softmax: input tensor has no elements.)");
 
     const bool flatten = !axis_opt.has_value();
     if (!flatten)
@@ -247,10 +205,9 @@ Tensor<value_t> softmax(const Tensor<value_t> & tensor,
         {
             axis += rank;
         }
-        if (axis < 0 || axis >= rank)
-        {
-            throw std::invalid_argument(R"(softmax: axis out of range.)");
-        }
+        TEMPER_CHECK(axis < 0 || axis >= rank,
+            bounds_error,
+            R"(softmax: axis out of range.)");
     }
 
     Tensor<value_t> ex = math::exp(tensor);
@@ -269,22 +226,15 @@ Tensor<value_t> cross_entropy(const Tensor<value_t> & logits,
     bool from_logits,
     bool reduction_mean)
 {
-    const std::vector<uint64_t> logits_dims = logits.get_dimensions();
-    const std::vector<uint64_t> label_dims  = labels.get_dimensions();
-
     const int64_t rank_logits = logits.get_rank();
-    if (rank_logits == 0)
-    {
-        throw std::invalid_argument(R"(cross_entropy:
-            input logits tensor has no elements.)");
-    }
+    TEMPER_CHECK(rank_logits == 0,
+        validation_error,
+        R"(cross_entropy: input logits tensor has no elements.)");
 
     const int64_t rank_labels = labels.get_rank();
-    if (rank_labels == 0)
-    {
-        throw std::invalid_argument(R"(cross_entropy:
-            labels tensor has no elements.)");
-    }
+    TEMPER_CHECK(rank_labels == 0,
+        validation_error,
+        R"(cross_entropy: labels tensor has no elements.)");
 
     const bool flatten = !axis_opt.has_value();
     const int64_t max_rank = std::max(rank_logits, rank_labels);
@@ -304,21 +254,18 @@ Tensor<value_t> cross_entropy(const Tensor<value_t> & logits,
         {
             axis += max_rank;
         }
-        if (axis < 0 || axis >= max_rank)
-        {
-            throw std::invalid_argument(R"(cross_entropy:
-                axis out of bounds (aligned shape))");
-        }
+        TEMPER_CHECK(axis < 0 || axis >= max_rank,
+            bounds_error,
+            R"(cross_entropy: axis out of bounds (aligned shape))");
         axis_aligned = axis;
 
         int64_t axis_for_logits = axis - (max_rank - rank_logits);
         if (from_logits)
         {
-            if (axis_for_logits < 0 || axis_for_logits >= rank_logits)
-            {
-                throw std::invalid_argument(R"(cross_entropy:
+            TEMPER_CHECK(axis_for_logits < 0 || axis_for_logits >= rank_logits,
+                bounds_error,
+                R"(cross_entropy:
                     axis does not exist on logits (required for softmax))");
-            }
             axis_norm = axis_for_logits;
         }
         else
@@ -363,16 +310,13 @@ Tensor<value_t> mean_squared_error(const Tensor<value_t>& predictions,
 {
     const int64_t rank_pred = predictions.get_rank();
     const int64_t rank_tgt = targets.get_rank();
-    if (rank_pred == 0)
-    {
-        throw std::invalid_argument(R"(mean_squared_error:
-            predictions tensor has no elements.)");
-    }
-    if (rank_tgt == 0)
-    {
-        throw std::invalid_argument(R"(mean_squared_error:
-            targets tensor has no elements.)");
-    }
+    TEMPER_CHECK(rank_pred == 0,
+        validation_error,
+        R"(mean_squared_error: predictions tensor has no elements.)");
+
+    TEMPER_CHECK(rank_tgt == 0,
+        validation_error,
+        R"(mean_squared_error: targets tensor has no elements.)");
 
     const int64_t max_rank = std::max(rank_pred, rank_tgt);
     const bool flatten = !axis_opt.has_value();
@@ -389,11 +333,9 @@ Tensor<value_t> mean_squared_error(const Tensor<value_t>& predictions,
         {
             axis += max_rank;
         }
-        if (axis < 0 || axis >= max_rank)
-        {
-            throw std::invalid_argument(R"(mean_squared_error:
-                axis out of bounds (aligned shape))");
-        }
+        TEMPER_CHECK(axis < 0 || axis >= max_rank,
+            bounds_error,
+            R"(mean_squared_error: axis out of bounds (aligned shape))");
         axis_aligned = axis;
     }
 
@@ -421,22 +363,18 @@ PCAResult<value_t> pca(const Tensor<value_t> & data,
 {
     const int64_t rank = data.get_rank();
 
-    if (rank < 2)
-    {
-        throw std::invalid_argument(R"(pca:
-            rank must be >= 2.)");
-    }
+    TEMPER_CHECK(rank < 2,
+        validation_error,
+        R"(pca: rank must be >= 2.)");
 
     uint64_t k = data.get_dimensions()[rank - 1];
     if (n_components.has_value())
     {
         uint64_t value = n_components.value();
         // Check whether the number of components given is valid.
-        if (value > k || value == 0)
-        {
-            throw std::invalid_argument(R"(pca:
-                invalid number of components.)");
-        }
+        TEMPER_CHECK(value > k || value == 0,
+            validation_error,
+            R"(pca: invalid number of components.)");
         k = value;
     }
 

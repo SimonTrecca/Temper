@@ -38,13 +38,9 @@ namespace temper::ml
  * @param on_value Value for the hot entry (default 1).
  * @param off_value Value for all other entries (default 0).
  *
- * @throws std::invalid_argument If depth == 0 or tensor rank == 0
- *         or axis invalid.
- * @throws std::out_of_range If axis_index is outside the axis
- *         extent or a label is out of range.
- * @throws std::runtime_error For non-integer label
- *         values.
- * @throws std::bad_alloc On allocation failure.
+ * @return A new tensor with the same rank as @p tensor, where the size
+ * of the specified @p axis is expanded by replacing the element at
+ * @p axis_index with a one-hot vector of length @p depth.
  */
 template <typename value_t>
 Tensor<value_t> one_hot_expand_at(const Tensor<value_t>& tensor,
@@ -72,10 +68,6 @@ extern template Tensor<uint64_t> one_hot_expand_at<uint64_t>
  *
  * @return A new tensor with the same shape as @p tensor containing
  * the normalized values.
- *
- * @throws std::invalid_argument If the tensor is empty or @p axis_opt is
- * outside the valid range.
- * @throws std::bad_alloc If memory allocation fails.
  */
 template<typename value_t>
 Tensor<value_t> softmax(const Tensor<value_t> & tensor,
@@ -111,10 +103,6 @@ extern template Tensor<float> softmax<float>
  *
  * @return Tensor<value_t> Scalar if @p reduction_mean is true; otherwise
  * tensor with the class axis removed (or scalar when flattened).
- *
- * @throws std::invalid_argument If either input is empty, or if @p axis_opt
- * is outside [-max_rank, max_rank-1], or if @p from_logits is true and the
- * mapped logits-local axis does not exist on @p logits.
  */
 template<typename value_t>
 Tensor<value_t> cross_entropy(const Tensor<value_t> & logits,
@@ -143,9 +131,6 @@ extern template Tensor<float> cross_entropy<float>
  *
  * @return Tensor<value_t> Scalar if @p reduction_mean is true; otherwise
  * tensor with the class axis removed (or scalar when flattened).
- *
- * @throws std::invalid_argument If either input is empty, or if @p axis_opt
- * is outside [-max_rank, max_rank-1].
  */
 template<typename value_t>
 Tensor<value_t> mean_squared_error(const Tensor<value_t>& predictions,
@@ -187,9 +172,6 @@ struct PCAResult
  *
  * @return PCAResult<value_t> containing projections, explained variance,
  * and loadings for each slice.
- *
- * @throws std::invalid_argument If data rank < 2, if rows < 2, or if
- * @p n_components is zero or exceeds the feature dimension.
  */
 template<typename value_t>
 PCAResult<value_t> pca(const Tensor<value_t> & data,

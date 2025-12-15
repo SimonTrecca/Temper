@@ -14,6 +14,16 @@
 
 namespace temper
 {
+
+/**
+ * @brief Supported memory locations for device storage.
+ */
+enum class MemoryLocation
+{
+    HOST,   ///< Shared memory
+    DEVICE  ///< Device memory
+};
+
 /**
  * @brief Global SYCL queue used for all asynchronous operations.
  */

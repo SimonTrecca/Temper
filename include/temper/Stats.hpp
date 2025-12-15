@@ -51,11 +51,9 @@ namespace norm
  * @param loc Mean(s) of the normal distribution. Must be non-empty.
  * @param scale Standard deviation(s) of the normal distribution. Must be
  * non-empty and strictly positive.
+ *
  * @return Tensor<value_t> Tensor containing PDF values with the broadcasted
  * shape.
- *
- * @throws std::invalid_argument if any input tensor is empty or if any
- * `scale` element is non-positive.
  */
 template<typename value_t>
 Tensor<value_t> pdf(const Tensor<value_t>& x,
@@ -80,11 +78,9 @@ extern template Tensor<float> pdf<float>
  * @param loc Mean(s) of the normal distribution. Must be non-empty.
  * @param scale Std-dev(s) of the normal distribution. Must be non-empty
  * and strictly positive.
+ *
  * @return Tensor<value_t> Tensor containing log-PDF values with the
  * broadcasted shape.
- *
- * @throws std::invalid_argument if any input tensor is empty, if any
- * `scale` element is non-positive.
  */
 template<typename value_t>
 Tensor<value_t> logpdf(const Tensor<value_t>& x,
@@ -107,11 +103,9 @@ extern template Tensor<float> logpdf<float>
  * @param loc Mean(s) of the normal distribution. Must be non-empty.
  * @param scale Standard deviation(s) of the normal distribution. Must be
  * non-empty and strictly positive.
+ *
  * @return Tensor<value_t> Tensor containing CDF values in [0, 1] with the
  * broadcasted shape.
- *
- * @throws std::invalid_argument if any input tensor is empty, if any
- * `scale` element is non-positive.
  */
 template<typename value_t>
 Tensor<value_t> cdf(const Tensor<value_t>& x,
@@ -129,10 +123,8 @@ extern template Tensor<float> cdf<float>
  * @param q Probabilities in [0,1], broadcastable to output shape.
  * @param loc Mean tensor, broadcastable.
  * @param scale Std-dev tensor, broadcastable.
- * @return Tensor<value_t> Quantiles with the broadcasted shape.
  *
- * @throws std::invalid_argument if any input is empty, any q is outside
- *         [0,1], or any scale is <= 0.
+ * @return Tensor<value_t> Quantiles with the broadcasted shape.
  */
 template<typename value_t>
 Tensor<value_t> ppf(const Tensor<value_t>& q,
@@ -164,12 +156,9 @@ extern template Tensor<float> ppf<float>
  * @param loc Mean(s) of the normal distribution. Must be non-empty.
  * @param scale Std-dev(s) of the normal distribution. Must be non-empty
  * and strictly positive.
+ *
  * @return Tensor<value_t> Quantiles (ISF values) with the broadcasted
  * shape.
- *
- * @throws std::invalid_argument if any input tensor is empty, if any
- * `q` value is outside [0,1], if any `scale` element is
- * non-positive.
  */
 template<typename value_t>
 Tensor<value_t> isf(const Tensor<value_t>& q,
@@ -192,10 +181,8 @@ extern template Tensor<float> isf<float>
  * @param res_loc MemoryLocation for the returned tensor.
  * @param seed RNG seed (0 => seeded from std::random_device).
  *        Non-zero seed yields deterministic output.
- * @return Tensor<value_t> Samples with shape out_shape.
  *
- * @throws std::invalid_argument if loc or scale are empty; ppf errors
- *         (e.g. non-positive scale) are propagated as invalid_argument.
+ * @return Tensor<value_t> Samples with shape out_shape.
  */
 template<typename value_t>
 Tensor<value_t> rvs(const Tensor<value_t>& loc,
@@ -236,11 +223,9 @@ extern template Tensor<float> mean<float>
  *
  * @param loc Mean tensor. Not needed; kept for consistency.
  * @param scale Standard deviation tensor. Must be non-empty and positive.
+ *
  * @return Tensor<value_t> Tensor containing variance values, broadcasted
  *         to the shape of `loc` and `scale`.
- *
- * @throws std::invalid_argument If scale is empty.
- * @throws std::bad_alloc If required host or device memory cannot be allocated.
  */
 template<typename value_t>
 Tensor<value_t> var(const Tensor<value_t>& loc,
@@ -347,12 +332,9 @@ namespace chisquare
  *          less than zero are invalid and will be reported as an error.
  * @param k Degrees of freedom. Must be non-empty. Values
  *          less than zero are invalid and will be reported as an error.
+ *
  * @return Tensor<value_t> Tensor containing PDF values with the broadcasted
  *         shape.
- *
- * @throws std::invalid_argument if any input tensor is empty.
- * @throws std::invalid_argument if any evaluated `x` element or 'k' element
- *         is invalid.
  */
 template<typename value_t>
 Tensor<value_t> pdf(const Tensor<value_t>& x,
@@ -376,11 +358,9 @@ extern template Tensor<float> pdf<float>
  *          Values less than zero are invalid and reported as an error.
  * @param k Degrees of freedom. Must be non-empty and strictly positive.
  *          Non-positive values are invalid and reported as an error.
+ *
  * @return Tensor<value_t> Tensor containing element-wise log-PDF values
  *         with the broadcasted shape.
- *
- * @throws std::invalid_argument if any input tensor is empty, if any element
- * of `k` is non-positive, or any element of `x` is negative.
  */
 template<typename value_t>
 Tensor<value_t> logpdf(const Tensor<value_t>& x,
@@ -404,11 +384,9 @@ extern template Tensor<float> logpdf<float>
  *          less than zero are invalid and will be reported as an error.
  * @param k Degrees of freedom. Must be non-empty and positive. Values
  *          less than or equal to zero are invalid.
+ *
  * @return Tensor<value_t> Tensor containing CDF values in [0,1] with the
  *         broadcasted shape.
- *
- * @throws std::invalid_argument if any input tensor is empty,
- * or if any element of x < 0 or k <= 0.
  */
 template<typename value_t>
 Tensor<value_t> cdf(const Tensor<value_t>& x,
@@ -433,11 +411,8 @@ extern template Tensor<float> cdf<float>
  *
  * @param q Probabilities in [0,1]. Must be non-empty.
  * @param k Degrees of freedom, must be non-empty and strictly positive.
- * @return Tensor<value_t> Quantiles with the broadcasted shape.
  *
- * @throws std::invalid_argument if any input tensor is empty.
- * @throws std::invalid_argument if any element of `k` is non-positive.
- * @throws std::invalid_argument if any `q` value is outside [0,1].
+ * @return Tensor<value_t> Quantiles with the broadcasted shape.
  */
 template<typename value_t>
 Tensor<value_t> ppf(const Tensor<value_t>& q,
@@ -468,10 +443,8 @@ extern template Tensor<float> ppf<float>
  * @param q Probabilities in [0,1], broadcastable to the output shape. Must be
  *          non-empty.
  * @param k Degrees of freedom, must be non-empty and strictly positive.
- * @return Tensor<value_t> Quantiles (ISF values) with the broadcasted shape.
  *
- * @throws std::invalid_argument if any input tensor is empty, if any `q`
- *         value is outside [0,1], if any `k` element is non-positive.
+ * @return Tensor<value_t> Quantiles (ISF values) with the broadcasted shape.
  */
 template<typename value_t>
 Tensor<value_t> isf(const Tensor<value_t>& q,
@@ -498,10 +471,9 @@ extern template Tensor<float> isf<float>
  * @param res_loc MemoryLocation where the result will be allocated.
  * @param seed RNG seed. If zero the implementation seeds from
  * std::random_device; non-zero seeds produce deterministic output.
+ *
  * @return Tensor<value_t> Tensor of shape `out_shape` containing chi-square
  *         samples.
- *
- * @throws std::invalid_argument if `k` is empty, if `out_shape` is empty.
  */
 template<typename value_t>
 Tensor<value_t> rvs(const Tensor<value_t>& k,
@@ -523,10 +495,8 @@ const std::vector<uint64_t>&, MemoryLocation, uint64_t);
  *
  * @param k Degrees of freedom tensor. Must be non-empty and contain strictly
  *          positive values (each element of `k` > 0).
- * @return Tensor<value_t> Tensor containing the mean values (element-wise `k`).
  *
- * @throws std::invalid_argument if `k` is empty, or contains
- *         non-positive elements.
+ * @return Tensor<value_t> Tensor containing the mean values (element-wise `k`).
  */
 template<typename value_t>
 Tensor<value_t> mean(const Tensor<value_t>& k);
@@ -544,11 +514,9 @@ extern template Tensor<float> mean<float>(const Tensor<float>&);
  *
  * @param k Degrees of freedom tensor. Must be non-empty and contain strictly
  *          positive values (each element of `k` > 0).
+ *
  * @return Tensor<value_t> Tensor containing the variance values
  * (element-wise `2 * k`).
- *
- * @throws std::invalid_argument if `k` is empty, or contains
- *         non-positive elements.
  */
 template<typename value_t>
 Tensor<value_t> var(const Tensor<value_t>& k);
@@ -568,11 +536,9 @@ extern template Tensor<float> var<float>(const Tensor<float>&);
  *
  * @param k Degrees of freedom tensor. Must be non-empty and contain strictly
  *          positive values (each element of `k` > 0).
+ *
  * @return Tensor<value_t> Tensor containing the standard deviation values
  *         (element-wise `sqrt(2 * k)`).
- *
- * @throws std::invalid_argument if `k` is empty, or contains
- *         non-positive elements.
  */
 template<typename value_t>
 Tensor<value_t> stddev(const Tensor<value_t>& k);

@@ -9,9 +9,115 @@
 
 #include <sycl/sycl.hpp>
 #include <cstdint>
+#include "SYCLQueue.hpp"
+#include "Errors.hpp"
 
 namespace temper::sycl_utils
 {
+
+/**
+ * @brief RAII wrapper for SYCL USM allocations.
+ *
+ * Manages device or shared memory allocation and automatic deallocation.
+ * Supports implicit conversion to raw pointer for kernel capture.
+ */
+template <typename T>
+class SyclArray
+{
+public:
+
+    // Constructor with size
+    SyclArray(sycl::queue& queue, int64_t count, temper::MemoryLocation location)
+        : m_queue(queue), m_count(count), m_location(location)
+    {
+        allocate();
+    }
+
+    // Constructor that takes a vector and copies data.
+    SyclArray(sycl::queue& queue,
+        const std::vector<T>& data,
+        temper:: MemoryLocation location)
+        : m_queue(queue),
+            m_count(static_cast<int64_t>(data.size())),
+            m_location(location)
+    {
+        allocate();
+        m_queue.memcpy(m_p_data, data.data(), sizeof(T) * m_count).wait();
+    }
+
+    ~SyclArray()
+    {
+        if (m_p_data)
+        {
+            sycl::free(m_p_data, m_queue);
+        }
+    }
+
+    operator T*() const noexcept { return m_p_data; }
+
+    T* data() const noexcept { return m_p_data; }
+    std::size_t size() const noexcept { return m_count; }
+    temper::MemoryLocation location() const noexcept { return m_location; }
+
+    SyclArray(const SyclArray&) = delete;
+    SyclArray& operator=(const SyclArray&) = delete;
+
+    SyclArray(SyclArray && other) noexcept
+        : m_queue(other.m_queue),
+          m_count(other. m_count),
+          m_location(other.m_location),
+          m_p_data(other.m_p_data)
+    {
+        other. m_p_data = nullptr;
+        other.m_count = 0;
+    }
+
+    SyclArray & operator=(SyclArray && other) noexcept
+    {
+        if (this != &other)
+        {
+            if (m_p_data)
+            {
+                sycl::free(m_p_data, m_queue);
+            }
+
+            m_queue = other.m_queue;
+            m_count = other.m_count;
+            m_location = other.m_location;
+            m_p_data = other.m_p_data;
+
+            other.m_p_data = nullptr;
+            other.m_count = 0;
+        }
+        return *this;
+    }
+
+private:
+    void allocate()
+    {
+        switch (m_location)
+        {
+            case temper::MemoryLocation::DEVICE:
+                m_p_data = static_cast<T*>
+                    (sycl::malloc_device(sizeof(T) * m_count, m_queue));
+                break;
+
+            case temper::MemoryLocation::HOST:
+                m_p_data = static_cast<T*>
+                    (sycl::malloc_shared(sizeof(T) * m_count, m_queue));
+                break;
+        }
+
+        TEMPER_CHECK(!m_p_data,
+            device_error,
+            "SYCLArray: error allocating buffer on device.");
+    }
+
+    sycl::queue & m_queue;
+    int64_t m_count;
+    temper::MemoryLocation m_location;
+    T* m_p_data = nullptr;
+};
 
 /**
  * @brief Map a logical row-major linear index to a physical offset using

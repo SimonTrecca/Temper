@@ -48,7 +48,7 @@ TYPED_TEST(TypedOnehot, non_integer_label_throws)
 
     EXPECT_THROW(ml::one_hot_expand_at<value_t>(
         t, /*axis=*/0, /*axis_index=*/1, /*depth=*/3),
-        std::runtime_error);
+        temper::validation_error);
 }
 
 /**
@@ -69,12 +69,12 @@ TYPED_TEST(TypedOnehot, label_out_of_range_throws)
 
     EXPECT_THROW(ml::one_hot_expand_at<value_t>(
         t, /*axis=*/1, /*axis_index=*/1, /*depth=*/3),
-        std::runtime_error);
+        temper::validation_error);
 }
 
 /**
  * @test TypedOnehot.invalid_depth_throws
- * @brief depth == 0 should throw std::invalid_argument.
+ * @brief depth == 0 should throw temper::validation_error.
  */
 TYPED_TEST(TypedOnehot, invalid_depth_throws)
 {
@@ -87,7 +87,7 @@ TYPED_TEST(TypedOnehot, invalid_depth_throws)
 
     EXPECT_THROW(ml::one_hot_expand_at<value_t>(
         t, /*axis=*/1, /*axis_index=*/1, /*depth=*/0),
-        std::invalid_argument);
+        temper::validation_error);
 }
 
 /**
@@ -100,12 +100,12 @@ TYPED_TEST(TypedOnehot, empty_tensor_throws)
     Tensor<value_t> t;
     EXPECT_THROW(ml::one_hot_expand_at<value_t>(
         t, /*axis=*/0, /*axis_index=*/0, /*depth=*/2),
-        std::invalid_argument);
+        temper::validation_error);
 }
 
 /**
  * @test TypedOnehot.axis_out_of_range_throws
- * @brief axis >= rank should throw std::invalid_argument.
+ * @brief axis >= rank should throw temper::bounds_error.
  */
 TYPED_TEST(TypedOnehot, axis_out_of_range_throws)
 {
@@ -118,12 +118,12 @@ TYPED_TEST(TypedOnehot, axis_out_of_range_throws)
     };
     EXPECT_THROW(ml::one_hot_expand_at<value_t>(
         t, /*axis=*/2, /*axis_index=*/0, /*depth=*/2),
-        std::invalid_argument);
+        temper::bounds_error);
 }
 
 /**
  * @test TypedOnehot.axis_index_out_of_range_throws
- * @brief axis_index >= axis length should throw std::out_of_range.
+ * @brief axis_index >= axis length should throw temper::bounds_error.
  */
 TYPED_TEST(TypedOnehot, axis_index_out_of_range_throws)
 {
@@ -136,7 +136,7 @@ TYPED_TEST(TypedOnehot, axis_index_out_of_range_throws)
     };
     EXPECT_THROW(ml::one_hot_expand_at<value_t>(
         t, /*axis=*/1, /*axis_index=*/3, /*depth=*/2),
-        std::out_of_range);
+        temper::bounds_error);
 }
 
 /**
@@ -168,7 +168,7 @@ TYPED_TEST(TypedOnehot, nan_label_throws)
 
 /**
  * @test TypedOnehot.negative_label_throws
- * @brief Negative integer labels should cause std::runtime_error.
+ * @brief Negative integer labels should cause temper::validation_error.
  */
 TYPED_TEST(TypedOnehot, negative_label_throws)
 {
@@ -188,7 +188,7 @@ TYPED_TEST(TypedOnehot, negative_label_throws)
 
     EXPECT_THROW(ml::one_hot_expand_at<value_t>(
         t, /*axis=*/1, /*axis_index=*/0, /*depth=*/3),
-        std::runtime_error);
+        temper::validation_error);
 }
 
 /**
@@ -213,7 +213,7 @@ TYPED_TEST(TypedOnehot, non_integer_label_throws_2d)
 
     EXPECT_THROW(ml::one_hot_expand_at<value_t>(
         t, /*axis=*/1, /*axis_index=*/1, /*depth=*/3),
-        std::runtime_error);
+        temper::validation_error);
 }
 
 /**
@@ -603,23 +603,23 @@ TYPED_TEST(TypedOnehot, alias_view_2d_column_axis)
 
 /**
  * @test SOFTMAX.empty_tensor_throws
- * @brief Softmax on an empty/default tensor should throw std::invalid_argument.
+ * @brief Softmax on an empty/default tensor should throw temper::validation_error.
  */
 TEST(SOFTMAX, empty_tensor_throws)
 {
     Tensor<float> t;
-    EXPECT_THROW(ml::softmax<float>(t, /*axis=*/0), std::invalid_argument);
+    EXPECT_THROW(ml::softmax<float>(t, /*axis=*/0), temper::validation_error);
 }
 
 /**
  * @test SOFTMAX.axis_out_of_range_throws
- * @brief Passing axis >= rank should throw std::invalid_argument.
+ * @brief Passing axis >= rank should throw temper::bounds_error.
  */
 TEST(SOFTMAX, axis_out_of_range_throws)
 {
     Tensor<float> t({2,2}, MemoryLocation::DEVICE);
     t = std::vector<float>{1.0f, 2.0f, 3.0f, 4.0f};
-    EXPECT_THROW(ml::softmax<float>(t, /*axis=*/2), std::invalid_argument);
+    EXPECT_THROW(ml::softmax<float>(t, /*axis=*/2), temper::bounds_error);
 }
 
 /**
@@ -863,7 +863,7 @@ TEST(SOFTMAX, softmax_flatten)
 
 /**
  * @test CROSS_ENTROPY.empty_logits_throws
- * @brief empty/default logits tensor should throw std::invalid_argument.
+ * @brief empty/default logits tensor should throw temper::validation_error.
  */
 TEST(CROSS_ENTROPY, empty_logits_throws)
 {
@@ -872,12 +872,12 @@ TEST(CROSS_ENTROPY, empty_logits_throws)
     labels = std::vector<float>{1.0f, 0.0f};
 
     EXPECT_THROW(ml::cross_entropy<float>(logits, labels),
-        std::invalid_argument);
+        temper::validation_error);
 }
 
 /**
  * @test CROSS_ENTROPY.empty_labels_throws
- * @brief empty/default labels tensor should throw std::invalid_argument.
+ * @brief empty/default labels tensor should throw temper::validation_error.
  */
 TEST(CROSS_ENTROPY, empty_labels_throws)
 {
@@ -886,12 +886,12 @@ TEST(CROSS_ENTROPY, empty_labels_throws)
     logits = std::vector<float>{1.0f, 0.0f};
 
     EXPECT_THROW(ml::cross_entropy<float>(logits, labels),
-        std::invalid_argument);
+        temper::validation_error);
 }
 
 /**
  * @test CROSS_ENTROPY.axis_out_of_range_throws
- * @brief axis >= rank_logits should throw std::invalid_argument.
+ * @brief axis >= rank_logits should throw temper::bounds_error.
  */
 TEST(CROSS_ENTROPY, axis_out_of_range_throws)
 {
@@ -902,7 +902,7 @@ TEST(CROSS_ENTROPY, axis_out_of_range_throws)
 
     std::optional<int64_t> axis = 2;
     EXPECT_THROW(ml::cross_entropy<float>(logits, labels, axis),
-        std::invalid_argument);
+        temper::bounds_error);
 }
 
 /**
@@ -1234,7 +1234,7 @@ TEST(CROSS_ENTROPY, alias_both_weird_strides)
 
 /**
  * @test MSE.empty_predictions_throws
- * @brief empty/default predictions tensor should throw std::invalid_argument.
+ * @brief empty/default predictions tensor should throw temper::validation_error.
  */
 TEST(MSE, empty_predictions_throws)
 {
@@ -1244,12 +1244,12 @@ TEST(MSE, empty_predictions_throws)
 
     EXPECT_THROW(ml::mean_squared_error<float>
         (preds, targets, std::nullopt, true),
-        std::invalid_argument);
+        temper::validation_error);
 }
 
 /**
  * @test MSE.empty_targets_throws
- * @brief empty/default targets tensor should throw std::invalid_argument.
+ * @brief empty/default targets tensor should throw temper::validation_error.
  */
 TEST(MSE, empty_targets_throws)
 {
@@ -1259,7 +1259,7 @@ TEST(MSE, empty_targets_throws)
 
     EXPECT_THROW(ml::mean_squared_error<float>
         (preds, targets, std::nullopt, true),
-        std::invalid_argument);
+        temper::validation_error);
 }
 
 /**
@@ -1378,7 +1378,7 @@ TEST(MSE, flatten_no_reduction)
 
 /**
  * @test MSE.axis_out_of_range_throws
- * @brief Passing axis >= max_rank should throw std::invalid_argument.
+ * @brief Passing axis >= max_rank should throw temper::bounds_error.
  */
 TEST(MSE, axis_out_of_range_throws)
 {
@@ -1389,7 +1389,7 @@ TEST(MSE, axis_out_of_range_throws)
 
     std::optional<int64_t> axis = 2;
     EXPECT_THROW(ml::mean_squared_error<float>(preds, targets, axis, true),
-        std::invalid_argument);
+        temper::bounds_error);
 }
 
 /**
@@ -2176,7 +2176,7 @@ TEST(PCA, pca_4d_alias_view_strided)
 
 /**
  * @test PCA.pca_rank_less_than_two_throws
- * @brief PCA on rank-1 tensor should throw std::invalid_argument.
+ * @brief PCA on rank-1 tensor should throw temper::validation_error.
  */
 TEST(PCA, pca_rank_less_than_two_throws)
 {
@@ -2184,7 +2184,7 @@ TEST(PCA, pca_rank_less_than_two_throws)
 
     EXPECT_THROW({
         ml::pca(t, std::nullopt, true);
-    }, std::invalid_argument);
+    }, temper::validation_error);
 }
 
 /**
@@ -2197,12 +2197,12 @@ TEST(PCA, pca_n_components_too_large_throws)
 
     EXPECT_THROW({
         ml::pca(t, 4, true);
-    }, std::invalid_argument);
+    }, temper::validation_error);
 }
 
 /**
  * @test PCA.pca_n_components_zero_throws
- * @brief Requesting zero components should throw std::invalid_argument.
+ * @brief Requesting zero components should throw temper::validation_error.
  */
 TEST(PCA, pca_n_components_zero_throws)
 {
@@ -2210,7 +2210,7 @@ TEST(PCA, pca_n_components_zero_throws)
 
     EXPECT_THROW({
         ml::pca(t, 0, true);
-    }, std::invalid_argument);
+    }, temper::validation_error);
 }
 
 /**

@@ -270,7 +270,7 @@ TEST(NORM, pdf_view_with_weird_strides)
 
 /**
  * @test NORM.pdf_throws_on_nonpositive_scale
- * @brief pdf should throw std::invalid_argument when any scale element <= 0.
+ * @brief pdf should throw temper::validation_error when any scale element <= 0.
  */
 TEST(NORM, pdf_throws_on_nonpositive_scale)
 {
@@ -281,7 +281,7 @@ TEST(NORM, pdf_throws_on_nonpositive_scale)
     Tensor<float> scale({1}, MemoryLocation::DEVICE);
     scale = std::vector<float>{0.0f};
     EXPECT_THROW(stats::norm::pdf<float>(x, loc, scale),
-        std::invalid_argument);
+        temper::validation_error);
 }
 
 /**
@@ -523,7 +523,7 @@ TEST(NORM, logpdf_view_with_weird_strides)
 
 /**
  * @test NORM.logpdf_throws_on_nonpositive_scale
- * @brief logpdf should throw std::invalid_argument when scale <= 0.
+ * @brief logpdf should throw temper::validation_error when scale <= 0.
  */
 TEST(NORM, logpdf_throws_on_nonpositive_scale)
 {
@@ -534,7 +534,7 @@ TEST(NORM, logpdf_throws_on_nonpositive_scale)
     Tensor<float> scale({1}, MemoryLocation::DEVICE);
     scale = std::vector<float>{0.0f};
     EXPECT_THROW(stats::norm::logpdf<float>(x, loc, scale),
-        std::invalid_argument);
+        temper::validation_error);
 }
 
 /**
@@ -797,7 +797,7 @@ TEST(NORM, cdf_view_with_weird_strides)
 
 /**
  * @test NORM.cdf_throws_on_nonpositive_scale
- * @brief cdf should throw std::invalid_argument when any scale element <= 0.
+ * @brief cdf should throw temper::validation_error when any scale element <= 0.
  */
 TEST(NORM, cdf_throws_on_nonpositive_scale)
 {
@@ -808,7 +808,7 @@ TEST(NORM, cdf_throws_on_nonpositive_scale)
     Tensor<float> scale({1}, MemoryLocation::DEVICE);
     scale = std::vector<float>{0.0f};
     EXPECT_THROW(stats::norm::cdf<float>(x, loc, scale),
-        std::invalid_argument);
+        temper::validation_error);
 }
 
 /**
@@ -938,7 +938,7 @@ TEST(NORM, ppf_throws_on_q_out_of_range)
     Tensor<float> scale({1}, MemoryLocation::DEVICE);
     scale = std::vector<float>{1.0f};
 
-    EXPECT_THROW(stats::norm::ppf<float>(q, loc, scale), std::invalid_argument);
+    EXPECT_THROW(stats::norm::ppf<float>(q, loc, scale), temper::validation_error);
 }
 
 /**
@@ -957,7 +957,7 @@ TEST(NORM, ppf_throws_on_nonpositive_scale)
     scale = std::vector<float>{0.0f};
 
 
-    EXPECT_THROW(stats::norm::ppf<float>(q, loc, scale), std::invalid_argument);
+    EXPECT_THROW(stats::norm::ppf<float>(q, loc, scale), temper::validation_error);
 }
 
 /**
@@ -1155,7 +1155,7 @@ TEST(NORM, isf_throws_on_q_out_of_range)
     Tensor<float> scale({1}, MemoryLocation::DEVICE);
     scale = std::vector<float>{1.0f};
     EXPECT_THROW(stats::norm::isf<float>(q, loc, scale),
-        std::invalid_argument);
+        temper::validation_error);
 }
 
 /**
@@ -1172,7 +1172,7 @@ TEST(NORM, isf_throws_on_nonpositive_scale)
     Tensor<float> scale({1}, MemoryLocation::DEVICE);
     scale = std::vector<float>{0.0f};
     EXPECT_THROW(stats::norm::isf<float>(q, loc, scale),
-        std::invalid_argument);
+        temper::validation_error);
 }
 
 /**
@@ -1350,7 +1350,7 @@ TEST(NORM, rvs_throws_when_scale_nonpositive)
 
     EXPECT_THROW(stats::norm::rvs<float>
         (loc, scale, out_shape, MemoryLocation::DEVICE, 42ULL),
-        std::invalid_argument);
+        temper::validation_error);
 }
 
 /**
@@ -1438,7 +1438,7 @@ TEST(NORM, stddev_returns_scale)
 
 /**
  * @test CHISQUARE.pdf_throws_on_empty_x
- * @brief cdf should throw std::invalid_argument when x is empty.
+ * @brief cdf should throw temper::validation_error when x is empty.
  */
 TEST(CHISQUARE, pdf_throws_on_empty_x)
 {
@@ -1446,12 +1446,12 @@ TEST(CHISQUARE, pdf_throws_on_empty_x)
     Tensor<float> k({1}, MemoryLocation::DEVICE);
     k = std::vector<float>{0.0f};
 
-    EXPECT_THROW(stats::chisquare::pdf<float>(x, k), std::invalid_argument);
+    EXPECT_THROW(stats::chisquare::pdf<float>(x, k), temper::validation_error);
 }
 
 /**
  * @test CHISQUARE.pdf_throws_on_empty_k
- * @brief pdf should throw std::invalid_argument when k is empty.
+ * @brief pdf should throw temper::validation_error when k is empty.
  */
 TEST(CHISQUARE, pdf_throws_on_empty_k)
 {
@@ -1459,12 +1459,12 @@ TEST(CHISQUARE, pdf_throws_on_empty_k)
     x = std::vector<float>{1.0f};
     Tensor<float> k;
 
-    EXPECT_THROW(stats::chisquare::pdf<float>(x, k), std::invalid_argument);
+    EXPECT_THROW(stats::chisquare::pdf<float>(x, k), temper::validation_error);
 }
 
 /**
  * @test CHISQUARE.pdf_throws_on_negative_x
- * @brief pdf should throw std::invalid_argument when k contains values <= 0.
+ * @brief pdf should throw temper::validation_error when k contains values <= 0.
  */
 TEST(CHISQUARE, pdf_throws_on_negative_x)
 {
@@ -1473,12 +1473,12 @@ TEST(CHISQUARE, pdf_throws_on_negative_x)
     Tensor<float> k({1}, MemoryLocation::DEVICE);
     k = std::vector<float>{0.0f};
 
-    EXPECT_THROW(stats::chisquare::pdf<float>(x, k), std::invalid_argument);
+    EXPECT_THROW(stats::chisquare::pdf<float>(x, k), temper::validation_error);
 }
 
 /**
  * @test CHISQUARE.pdf_throws_on_negative_or_zero_k
- * @brief pdf should throw std::invalid_argument when x contains negative values.
+ * @brief pdf should throw temper::validation_error when x contains negative values.
  */
 TEST(CHISQUARE, pdf_throws_on_negative_or_zero_k)
 {
@@ -1490,8 +1490,8 @@ TEST(CHISQUARE, pdf_throws_on_negative_or_zero_k)
     Tensor<float> k2({1}, MemoryLocation::DEVICE);
     k2 = std::vector<float>{-1.0f};
 
-    EXPECT_THROW(stats::chisquare::pdf<float>(x, k), std::invalid_argument);
-    EXPECT_THROW(stats::chisquare::pdf<float>(x, k2), std::invalid_argument);
+    EXPECT_THROW(stats::chisquare::pdf<float>(x, k), temper::validation_error);
+    EXPECT_THROW(stats::chisquare::pdf<float>(x, k2), temper::validation_error);
 }
 
 /**
@@ -1533,7 +1533,7 @@ TEST(CHISQUARE, pdf_throws_on_nonfinite_input)
 
 /**
  * @test CHISQUARE.logpdf_throws_on_empty_x
- * @brief logcdf should throw std::invalid_argument when x is empty.
+ * @brief logcdf should throw temper::validation_error when x is empty.
  */
 TEST(CHISQUARE, logpdf_throws_on_empty_x)
 {
@@ -1541,12 +1541,12 @@ TEST(CHISQUARE, logpdf_throws_on_empty_x)
     Tensor<float> k({1}, MemoryLocation::DEVICE);
     k = std::vector<float>{0.0f};
 
-    EXPECT_THROW(stats::chisquare::logpdf<float>(x, k), std::invalid_argument);
+    EXPECT_THROW(stats::chisquare::logpdf<float>(x, k), temper::validation_error);
 }
 
 /**
  * @test CHISQUARE.logpdf_throws_on_empty_k
- * @brief logpdf should throw std::invalid_argument when k is empty.
+ * @brief logpdf should throw temper::validation_error when k is empty.
  */
 TEST(CHISQUARE, logpdf_throws_on_empty_k)
 {
@@ -1554,12 +1554,12 @@ TEST(CHISQUARE, logpdf_throws_on_empty_k)
     x = std::vector<float>{1.0f};
     Tensor<float> k;
 
-    EXPECT_THROW(stats::chisquare::logpdf<float>(x, k), std::invalid_argument);
+    EXPECT_THROW(stats::chisquare::logpdf<float>(x, k), temper::validation_error);
 }
 
 /**
  * @test CHISQUARE.logpdf_throws_on_negative_x
- * @brief logpdf should throw std::invalid_argument when k contains values <= 0.
+ * @brief logpdf should throw temper::validation_error when k contains values <= 0.
  */
 TEST(CHISQUARE, logpdf_throws_on_negative_x)
 {
@@ -1568,12 +1568,12 @@ TEST(CHISQUARE, logpdf_throws_on_negative_x)
     Tensor<float> k({1}, MemoryLocation::DEVICE);
     k = std::vector<float>{0.0f};
 
-    EXPECT_THROW(stats::chisquare::logpdf<float>(x, k), std::invalid_argument);
+    EXPECT_THROW(stats::chisquare::logpdf<float>(x, k), temper::validation_error);
 }
 
 /**
  * @test CHISQUARE.logpdf_throws_on_negative_or_zero_k
- * @brief logpdf should throw std::invalid_argument when x
+ * @brief logpdf should throw temper::validation_error when x
  * contains negative values.
  */
 TEST(CHISQUARE, logpdf_throws_on_negative_or_zero_k)
@@ -1586,8 +1586,8 @@ TEST(CHISQUARE, logpdf_throws_on_negative_or_zero_k)
     Tensor<float> k2({1}, MemoryLocation::DEVICE);
     k2 = std::vector<float>{-1.0f};
 
-    EXPECT_THROW(stats::chisquare::logpdf<float>(x, k), std::invalid_argument);
-    EXPECT_THROW(stats::chisquare::logpdf<float>(x, k2), std::invalid_argument);
+    EXPECT_THROW(stats::chisquare::logpdf<float>(x, k), temper::validation_error);
+    EXPECT_THROW(stats::chisquare::logpdf<float>(x, k2), temper::validation_error);
 }
 
 /**
@@ -1629,7 +1629,7 @@ TEST(CHISQUARE, logpdf_throws_on_nonfinite_input)
 
 /**
  * @test CHISQUARE.cdf_throws_on_empty_x
- * @brief cdf should throw std::invalid_argument when x is empty.
+ * @brief cdf should throw temper::validation_error when x is empty.
  */
 TEST(CHISQUARE, cdf_throws_on_empty_x)
 {
@@ -1637,12 +1637,12 @@ TEST(CHISQUARE, cdf_throws_on_empty_x)
     Tensor<float> k({1}, MemoryLocation::DEVICE);
     k = std::vector<float>{0.0f};
 
-    EXPECT_THROW(stats::chisquare::cdf<float>(x, k), std::invalid_argument);
+    EXPECT_THROW(stats::chisquare::cdf<float>(x, k), temper::validation_error);
 }
 
 /**
  * @test CHISQUARE.cdf_throws_on_empty_k
- * @brief cdf should throw std::invalid_argument when k is empty.
+ * @brief cdf should throw temper::validation_error when k is empty.
  */
 TEST(CHISQUARE, cdf_throws_on_empty_k)
 {
@@ -1650,12 +1650,12 @@ TEST(CHISQUARE, cdf_throws_on_empty_k)
     x = std::vector<float>{1.0f};
     Tensor<float> k;
 
-    EXPECT_THROW(stats::chisquare::cdf<float>(x, k), std::invalid_argument);
+    EXPECT_THROW(stats::chisquare::cdf<float>(x, k), temper::validation_error);
 }
 
 /**
  * @test CHISQUARE.cdf_throws_on_negative_x
- * @brief cdf should throw std::invalid_argument when k contains values <= 0.
+ * @brief cdf should throw temper::validation_error when k contains values <= 0.
  */
 TEST(CHISQUARE, cdf_throws_on_negative_x)
 {
@@ -1664,12 +1664,12 @@ TEST(CHISQUARE, cdf_throws_on_negative_x)
     Tensor<float> k({1}, MemoryLocation::DEVICE);
     k = std::vector<float>{0.0f};
 
-    EXPECT_THROW(stats::chisquare::cdf<float>(x, k), std::invalid_argument);
+    EXPECT_THROW(stats::chisquare::cdf<float>(x, k), temper::validation_error);
 }
 
 /**
  * @test CHISQUARE.cdf_throws_on_negative_or_zero_k
- * @brief cdf should throw std::invalid_argument when x contains negative values.
+ * @brief cdf should throw temper::validation_error when x contains negative values.
  */
 TEST(CHISQUARE, cdf_throws_on_negative_or_zero_k)
 {
@@ -1681,8 +1681,8 @@ TEST(CHISQUARE, cdf_throws_on_negative_or_zero_k)
     Tensor<float> k2({1}, MemoryLocation::DEVICE);
     k2 = std::vector<float>{-1.0f};
 
-    EXPECT_THROW(stats::chisquare::cdf<float>(x, k), std::invalid_argument);
-    EXPECT_THROW(stats::chisquare::cdf<float>(x, k2), std::invalid_argument);
+    EXPECT_THROW(stats::chisquare::cdf<float>(x, k), temper::validation_error);
+    EXPECT_THROW(stats::chisquare::cdf<float>(x, k2), temper::validation_error);
 }
 
 /**
@@ -1722,7 +1722,7 @@ TEST(CHISQUARE, cdf_throws_on_nonfinite_input)
 
 /**
  * @test CHISQUARE.ppf_throws_on_empty_q
- * @brief ppf should throw std::invalid_argument when q is empty.
+ * @brief ppf should throw temper::validation_error when q is empty.
  */
 TEST(CHISQUARE, ppf_throws_on_empty_q)
 {
@@ -1730,12 +1730,12 @@ TEST(CHISQUARE, ppf_throws_on_empty_q)
     Tensor<float> k({1}, MemoryLocation::DEVICE);
     k = std::vector<float>{0.0f};
 
-    EXPECT_THROW(stats::chisquare::ppf<float>(q, k), std::invalid_argument);
+    EXPECT_THROW(stats::chisquare::ppf<float>(q, k), temper::validation_error);
 }
 
 /**
  * @test CHISQUARE.ppf_throws_on_empty_k
- * @brief ppf should throw std::invalid_argument when k is empty.
+ * @brief ppf should throw temper::validation_error when k is empty.
  */
 TEST(CHISQUARE, ppf_throws_on_empty_k)
 {
@@ -1743,7 +1743,7 @@ TEST(CHISQUARE, ppf_throws_on_empty_k)
     q = std::vector<float>{1.0f};
     Tensor<float> k;
 
-    EXPECT_THROW(stats::chisquare::ppf<float>(q, k), std::invalid_argument);
+    EXPECT_THROW(stats::chisquare::ppf<float>(q, k), temper::validation_error);
 }
 
 /**
@@ -1759,12 +1759,12 @@ TEST(CHISQUARE, ppf_throws_on_q_out_of_range)
     Tensor<float> k({1}, MemoryLocation::DEVICE);
     k = std::vector<float>{0.0f};
 
-    EXPECT_THROW(stats::chisquare::ppf<float>(q, k), std::invalid_argument);
+    EXPECT_THROW(stats::chisquare::ppf<float>(q, k), temper::validation_error);
 }
 
 /**
  * @test CHISQUARE.ppf_throws_on_negative_or_zero_k
- * @brief ppf should throw std::invalid_argument when x contains negative values.
+ * @brief ppf should throw temper::validation_error when x contains negative values.
  */
 TEST(CHISQUARE, ppf_throws_on_negative_or_zero_k)
 {
@@ -1776,8 +1776,8 @@ TEST(CHISQUARE, ppf_throws_on_negative_or_zero_k)
     Tensor<float> k2({1}, MemoryLocation::DEVICE);
     k2 = std::vector<float>{-1.0f};
 
-    EXPECT_THROW(stats::chisquare::ppf<float>(q, k), std::invalid_argument);
-    EXPECT_THROW(stats::chisquare::ppf<float>(q, k2), std::invalid_argument);
+    EXPECT_THROW(stats::chisquare::ppf<float>(q, k), temper::validation_error);
+    EXPECT_THROW(stats::chisquare::ppf<float>(q, k2), temper::validation_error);
 }
 
 /**
@@ -1817,7 +1817,7 @@ TEST(CHISQUARE, ppf_throws_on_nonfinite_output)
 
 /**
  * @test CHISQUARE.isf_throws_on_empty_q
- * @brief isf should throw std::invalid_argument when q is empty.
+ * @brief isf should throw temper::validation_error when q is empty.
  */
 TEST(CHISQUARE, isf_throws_on_empty_q)
 {
@@ -1825,12 +1825,12 @@ TEST(CHISQUARE, isf_throws_on_empty_q)
     Tensor<float> k({1}, MemoryLocation::DEVICE);
     k = std::vector<float>{0.0f};
 
-    EXPECT_THROW(stats::chisquare::isf<float>(q, k), std::invalid_argument);
+    EXPECT_THROW(stats::chisquare::isf<float>(q, k), temper::validation_error);
 }
 
 /**
  * @test CHISQUARE.isf_throws_on_empty_k
- * @brief isf should throw std::invalid_argument when k is empty.
+ * @brief isf should throw temper::validation_error when k is empty.
  */
 TEST(CHISQUARE, isf_throws_on_empty_k)
 {
@@ -1838,7 +1838,7 @@ TEST(CHISQUARE, isf_throws_on_empty_k)
     q = std::vector<float>{1.0f};
     Tensor<float> k;
 
-    EXPECT_THROW(stats::chisquare::isf<float>(q, k), std::invalid_argument);
+    EXPECT_THROW(stats::chisquare::isf<float>(q, k), temper::validation_error);
 }
 
 /**
@@ -1854,12 +1854,12 @@ TEST(CHISQUARE, isf_throws_on_q_out_of_range)
     Tensor<float> k({1}, MemoryLocation::DEVICE);
     k = std::vector<float>{0.0f};
 
-    EXPECT_THROW(stats::chisquare::isf<float>(q, k), std::invalid_argument);
+    EXPECT_THROW(stats::chisquare::isf<float>(q, k), temper::validation_error);
 }
 
 /**
  * @test CHISQUARE.isf_throws_on_negative_or_zero_k
- * @brief isf should throw std::invalid_argument when x contains negative values.
+ * @brief isf should throw temper::validation_error when x contains negative values.
  */
 TEST(CHISQUARE, isf_throws_on_negative_or_zero_k)
 {
@@ -1871,8 +1871,8 @@ TEST(CHISQUARE, isf_throws_on_negative_or_zero_k)
     Tensor<float> k2({1}, MemoryLocation::DEVICE);
     k2 = std::vector<float>{-1.0f};
 
-    EXPECT_THROW(stats::chisquare::isf<float>(q, k), std::invalid_argument);
-    EXPECT_THROW(stats::chisquare::isf<float>(q, k2), std::invalid_argument);
+    EXPECT_THROW(stats::chisquare::isf<float>(q, k), temper::validation_error);
+    EXPECT_THROW(stats::chisquare::isf<float>(q, k2), temper::validation_error);
 }
 
 /**
@@ -1917,18 +1917,18 @@ TEST(CHISQUARE, isf_throws_on_nonfinite_input)
 
 /**
  * @test CHISQUARE.rvs_throws_on_empty_k
- * @brief rvs should throw std::invalid_argument when k is empty.
+ * @brief rvs should throw temper::validation_error when k is empty.
  */
 TEST(CHISQUARE, rvs_throws_on_empty_k)
 {
     Tensor<float> k;
 
-    EXPECT_THROW(stats::chisquare::rvs<float>(k, {2}), std::invalid_argument);
+    EXPECT_THROW(stats::chisquare::rvs<float>(k, {2}), temper::validation_error);
 }
 
 /**
  * @test CHISQUARE.rvs_throws_on_empty_dimensions
- * @brief rvs should throw std::invalid_argument when the shape argument
+ * @brief rvs should throw temper::validation_error when the shape argument
  * is empty.
  */
 TEST(CHISQUARE, rvs_throws_on_empty_dimensions)
@@ -1936,12 +1936,12 @@ TEST(CHISQUARE, rvs_throws_on_empty_dimensions)
     Tensor<float> k({1}, MemoryLocation::DEVICE);
     k = std::vector<float>{1.0f};
 
-    EXPECT_THROW(stats::chisquare::rvs<float>(k, {}), std::invalid_argument);
+    EXPECT_THROW(stats::chisquare::rvs<float>(k, {}), temper::validation_error);
 }
 
 /**
  * @test CHISQUARE.rvs_throws_on_negative_or_zero_k
- * @brief rvs should throw std::invalid_argument when k contains negative values.
+ * @brief rvs should throw temper::validation_error when k contains negative values.
  */
 TEST(CHISQUARE, rvs_throws_on_negative_or_zero_k)
 {
@@ -1951,8 +1951,8 @@ TEST(CHISQUARE, rvs_throws_on_negative_or_zero_k)
     Tensor<float> k2({1}, MemoryLocation::DEVICE);
     k2 = std::vector<float>{-1.0f};
 
-    EXPECT_THROW(stats::chisquare::rvs<float>(k, {2}), std::invalid_argument);
-    EXPECT_THROW(stats::chisquare::rvs<float>(k2, {2}), std::invalid_argument);
+    EXPECT_THROW(stats::chisquare::rvs<float>(k, {2}), temper::validation_error);
+    EXPECT_THROW(stats::chisquare::rvs<float>(k2, {2}), temper::validation_error);
 }
 
 /**
@@ -1973,18 +1973,18 @@ TEST(CHISQUARE, rvs_throws_on_nan_input)
 
 /**
  * @test CHISQUARE.mean_throws_on_empty_k
- * @brief mean should throw std::invalid_argument when k is empty.
+ * @brief mean should throw temper::validation_error when k is empty.
  */
 TEST(CHISQUARE, mean_throws_on_empty_k)
 {
     Tensor<float> k;
 
-    EXPECT_THROW(stats::chisquare::mean<float>(k), std::invalid_argument);
+    EXPECT_THROW(stats::chisquare::mean<float>(k), temper::validation_error);
 }
 
 /**
  * @test CHISQUARE.mean_throws_on_negative_or_zero_k
- * @brief mean should throw std::invalid_argument when k
+ * @brief mean should throw temper::validation_error when k
  * contains negative values.
  */
 TEST(CHISQUARE, mean_throws_on_negative_or_zero_k)
@@ -1995,8 +1995,8 @@ TEST(CHISQUARE, mean_throws_on_negative_or_zero_k)
     Tensor<float> k2({1}, MemoryLocation::DEVICE);
     k2 = std::vector<float>{-1.0f};
 
-    EXPECT_THROW(stats::chisquare::mean<float>(k), std::invalid_argument);
-    EXPECT_THROW(stats::chisquare::mean<float>(k2), std::invalid_argument);
+    EXPECT_THROW(stats::chisquare::mean<float>(k), temper::validation_error);
+    EXPECT_THROW(stats::chisquare::mean<float>(k2), temper::validation_error);
 }
 
 /**
@@ -2035,18 +2035,18 @@ TEST(CHISQUARE, mean_throws_on_nonfinite_input)
 
 /**
  * @test CHISQUARE.var_throws_on_empty_k
- * @brief var should throw std::invalid_argument when k is empty.
+ * @brief var should throw temper::validation_error when k is empty.
  */
 TEST(CHISQUARE, var_throws_on_empty_k)
 {
     Tensor<float> k;
 
-    EXPECT_THROW(stats::chisquare::var<float>(k), std::invalid_argument);
+    EXPECT_THROW(stats::chisquare::var<float>(k), temper::validation_error);
 }
 
 /**
  * @test CHISQUARE.var_throws_on_negative_or_zero_k
- * @brief var should throw std::invalid_argument when k
+ * @brief var should throw temper::validation_error when k
  * contains negative values.
  */
 TEST(CHISQUARE, var_throws_on_negative_or_zero_k)
@@ -2057,8 +2057,8 @@ TEST(CHISQUARE, var_throws_on_negative_or_zero_k)
     Tensor<float> k2({1}, MemoryLocation::DEVICE);
     k2 = std::vector<float>{-1.0f};
 
-    EXPECT_THROW(stats::chisquare::var<float>(k), std::invalid_argument);
-    EXPECT_THROW(stats::chisquare::var<float>(k2), std::invalid_argument);
+    EXPECT_THROW(stats::chisquare::var<float>(k), temper::validation_error);
+    EXPECT_THROW(stats::chisquare::var<float>(k2), temper::validation_error);
 }
 
 /**
@@ -2093,18 +2093,18 @@ TEST(CHISQUARE, var_throws_on_inf)
 
 /**
  * @test CHISQUARE.stddev_throws_on_empty_k
- * @brief stddev should throw std::invalid_argument when k is empty.
+ * @brief stddev should throw temper::validation_error when k is empty.
  */
 TEST(CHISQUARE, stddev_throws_on_empty_k)
 {
     Tensor<float> k;
 
-    EXPECT_THROW(stats::chisquare::stddev<float>(k), std::invalid_argument);
+    EXPECT_THROW(stats::chisquare::stddev<float>(k), temper::validation_error);
 }
 
 /**
  * @test CHISQUARE.stddev_throws_on_negative_or_zero_k
- * @brief stddev should throw std::invalid_argument when k
+ * @brief stddev should throw temper::validation_error when k
  * contains negative values.
  */
 TEST(CHISQUARE, stddev_throws_on_negative_or_zero_k)
@@ -2115,8 +2115,8 @@ TEST(CHISQUARE, stddev_throws_on_negative_or_zero_k)
     Tensor<float> k2({1}, MemoryLocation::DEVICE);
     k2 = std::vector<float>{-1.0f};
 
-    EXPECT_THROW(stats::chisquare::stddev<float>(k), std::invalid_argument);
-    EXPECT_THROW(stats::chisquare::stddev<float>(k2), std::invalid_argument);
+    EXPECT_THROW(stats::chisquare::stddev<float>(k), temper::validation_error);
+    EXPECT_THROW(stats::chisquare::stddev<float>(k2), temper::validation_error);
 }
 
 /**

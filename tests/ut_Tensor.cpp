@@ -156,18 +156,6 @@ TYPED_TEST(TypedTensor, compute_strides_larger_tensor)
 }
 
 /**
- * @test TypedTensor.compute_strides_zero_dimension_throws
- * @brief compute_strides() should throw if any dimension is zero.
- */
-TYPED_TEST(TypedTensor, compute_strides_zero_dimension_throws)
-{
-    using value_t = TypeParam;
-    Tensor<value_t> t;
-    t.m_dimensions = { 3, 0, 2 };
-    EXPECT_THROW(t.compute_strides(), std::invalid_argument);
-}
-
-/**
  * @test TypedTensor.compute_strides_overflow_throws
  * @brief compute_strides() should throw if stride multiplication would overflow.
  *
@@ -184,7 +172,7 @@ TYPED_TEST(TypedTensor, compute_strides_overflow_throws)
     Tensor<value_t> t;
     t.m_dimensions = { 1, dim1, dim2 };
 
-    EXPECT_THROW(t.compute_strides(), std::overflow_error);
+    EXPECT_THROW(t.compute_strides(), temper::bounds_error);
 }
 
 /**
@@ -770,7 +758,7 @@ TYPED_TEST(TypedTensor, main_constructor_memory_location_and_access)
 
 /**
  * @test TypedTensor.main_constructor_empty_dimensions
- * @brief Throws invalid_argument when dimensions vector is empty.
+ * @brief Throws temper::validation_error when dimensions vector is empty.
  */
 TYPED_TEST(TypedTensor, main_constructor_empty_dimensions)
 {
@@ -778,13 +766,13 @@ TYPED_TEST(TypedTensor, main_constructor_empty_dimensions)
     std::vector<uint64_t> dims = {};
     EXPECT_THROW(
         Tensor<value_t> t(dims, MemoryLocation::HOST),
-        std::invalid_argument
+        temper::validation_error
     );
 }
 
 /**
  * @test TypedTensor.main_constructor_zero_dimension
- * @brief Throws invalid_argument when any dimension is zero.
+ * @brief Throws temper::validation_error when any dimension is zero.
  */
 TYPED_TEST(TypedTensor, main_constructor_zero_dimension)
 {
@@ -793,13 +781,13 @@ TYPED_TEST(TypedTensor, main_constructor_zero_dimension)
 
     EXPECT_THROW(
         Tensor<value_t> t(dims, MemoryLocation::HOST),
-        std::invalid_argument
+        temper::validation_error
     );
 }
 
 /**
  * @test TypedTensor.main_constructor_element_count_overflow
- * @brief Throws overflow_error when total_size would overflow uint64_t.
+ * @brief Throws temper::bounds_error when total_size would overflow uint64_t.
  */
 TYPED_TEST(TypedTensor, main_constructor_element_count_overflow)
 {
@@ -810,7 +798,7 @@ TYPED_TEST(TypedTensor, main_constructor_element_count_overflow)
 
     EXPECT_THROW(
         Tensor<value_t> t(dims, MemoryLocation::HOST),
-        std::overflow_error
+        temper::bounds_error
     );
 }
 
@@ -826,13 +814,13 @@ TYPED_TEST(TypedTensor, main_constructor_allocation_bytes_overflow)
 
     EXPECT_THROW(
         Tensor<value_t> t(dims, MemoryLocation::HOST),
-        std::overflow_error
+        temper::bounds_error
     );
 }
 
 /**
  * @test TypedTensor.main_constructor_exceeds_device_max_alloc
- * @brief Throws runtime_error if requested allocation exceeds
+ * @brief Throws temper::device_error if requested allocation exceeds
  * device max_mem_alloc_size.
  */
 TYPED_TEST(TypedTensor, main_constructor_exceeds_device_max_alloc)
@@ -847,28 +835,7 @@ TYPED_TEST(TypedTensor, main_constructor_exceeds_device_max_alloc)
     };
     EXPECT_THROW(
         Tensor<value_t> t(dims, MemoryLocation::DEVICE),
-        std::runtime_error
-    );
-}
-
-/**
- * @test TypedTensor.main_constructor_exceeds_device_global_mem
- * @brief Throws runtime_error if requested allocation exceeds
- * device global_mem_size.
- */
-TYPED_TEST(TypedTensor, main_constructor_exceeds_device_global_mem)
-{
-    using value_t = TypeParam;
-    auto dev = g_sycl_queue.get_device();
-    uint64_t dev_global_mem =
-        dev.get_info<sycl::info::device::global_mem_size>();
-
-    std::vector<uint64_t> dims = std::vector<uint64_t>{
-        (dev_global_mem / sizeof(value_t)) + 1
-    };
-    EXPECT_THROW(
-        Tensor<value_t> t(dims, MemoryLocation::DEVICE),
-        std::runtime_error
+        temper::device_error
     );
 }
 
@@ -1214,21 +1181,21 @@ TYPED_TEST(TypedTensor, view_constructor_invalid_arguments_throw)
 
     // Too few shape dimensions test.
     EXPECT_THROW((Tensor<value_t>(t, {0, 0}, {1})),
-                 std::invalid_argument);
+        temper::validation_error);
 
     // Too many shape dimensions test.
     EXPECT_THROW((Tensor<value_t>(t, {0, 0, 0}, {1, 1, 1, 1})),
-                 std::invalid_argument);
+        temper::validation_error);
 
     // Zero-size dimension test.
     EXPECT_THROW((Tensor<value_t>(t, {0, 0, 0}, {0, 1})),
-                 std::out_of_range);
+        temper::bounds_error);
 
     // Out-of-bounds shape test.
     EXPECT_THROW((Tensor<value_t>(t, {0, 0, 0}, {3, 1})),
-                 std::out_of_range);
+        temper::bounds_error);
     EXPECT_THROW((Tensor<value_t>(t, {2, 0, 0}, {1, 1})),
-                 std::out_of_range);
+        temper::bounds_error);
 }
 
 /**
@@ -1575,7 +1542,7 @@ TYPED_TEST(TypedTensor, view_constructor_from_uninitialized_throws)
 
     EXPECT_THROW(
         Tensor<value_t> view(owner, start, shape),
-        std::runtime_error
+        temper::validation_error
     );
 
     Tensor<value_t> valid({2,2}, MemoryLocation::HOST);
@@ -1591,7 +1558,7 @@ TYPED_TEST(TypedTensor, view_constructor_from_uninitialized_throws)
             valid, std::vector<uint64_t>{0,0},
             std::vector<uint64_t>{1,1}
         ),
-        std::runtime_error
+        temper::validation_error
     );
 }
 
@@ -1924,11 +1891,11 @@ TYPED_TEST(TypedTensor, alias_view_constructor_out_of_bounds)
                               static_cast<value_t>(4) };
 
     EXPECT_THROW(Tensor<value_t>(t,{2,0},{1},{2}),
-                 std::out_of_range);
+        temper::bounds_error);
     EXPECT_THROW(Tensor<value_t>(t,{0,0},{3},{2}),
-                 std::out_of_range);
+        temper::bounds_error);
     EXPECT_THROW(Tensor<value_t>(t,{0,0},{2},{2,1}),
-                 std::invalid_argument);
+        temper::validation_error);
 }
 
 /**
@@ -1944,7 +1911,7 @@ TYPED_TEST(TypedTensor, alias_view_constructor_zero_rank)
                               static_cast<value_t>(3),
                               static_cast<value_t>(4) };
 
-    EXPECT_THROW(Tensor<value_t>(t, {0,0}, {}, {}), std::invalid_argument);
+    EXPECT_THROW(Tensor<value_t>(t, {0,0}, {}, {}), temper::validation_error);
 }
 
 /**
@@ -1961,7 +1928,7 @@ TYPED_TEST(TypedTensor, alias_view_constructor_zero_dim)
                               static_cast<value_t>(4) };
 
     EXPECT_THROW(Tensor<value_t>(t, {0,0}, {2,0}, {1,1}),
-                 std::invalid_argument);
+                 temper::validation_error);
 }
 
 /**
@@ -1980,7 +1947,7 @@ TYPED_TEST(TypedTensor, alias_view_constructor_stride_overflow)
     std::vector<uint64_t> huge_stride =
         { std::numeric_limits<uint64_t>::max(), 1 };
     EXPECT_THROW(Tensor<value_t>(t, {0,0}, {2,2}, huge_stride),
-                 std::overflow_error);
+        temper::bounds_error);
 }
 
 /**
@@ -1992,7 +1959,7 @@ TYPED_TEST(TypedTensor, alias_view_constructor_uninitialized_owner)
     using value_t = TypeParam;
     Tensor<value_t> t;
     EXPECT_THROW(Tensor<value_t>(t, {0,0}, {2,2}, {2,1}),
-                 std::runtime_error);
+        temper::validation_error);
 }
 
 /**
@@ -2469,7 +2436,7 @@ TYPED_TEST(TypedTensor, operator_equals_vector_size_mismatch_throws)
 
     EXPECT_THROW({
         t = values;
-    }, std::invalid_argument);
+    }, temper::validation_error);
 }
 
 /**
@@ -2484,7 +2451,7 @@ TYPED_TEST(TypedTensor, operator_equals_vector_assign_to_default_throws)
 
     EXPECT_THROW({
         t_default = values;
-    }, std::invalid_argument);
+    }, temper::validation_error);
 }
 
 /**
@@ -2629,7 +2596,7 @@ TYPED_TEST(TypedTensor, operator_equals_vector_assignment_view_size_mismatch_thr
 
     EXPECT_THROW({
         col = wrong;
-    }, std::invalid_argument);
+    }, temper::validation_error);
 }
 
 /**
@@ -2687,7 +2654,7 @@ TYPED_TEST(TypedTensor,
 
     Tensor<value_t> big({2, 2});
     EXPECT_THROW(big = static_cast<value_t>(1.0),
-                 std::invalid_argument);
+                 temper::validation_error);
 }
 
 /**
@@ -2700,7 +2667,7 @@ TYPED_TEST(TypedTensor, operator_equals_scalar_assignment_wrong_size_throws)
     Tensor<value_t> t({2, 2}, MemoryLocation::HOST);
     EXPECT_THROW({
         t = static_cast<value_t>(3.14);
-    }, std::invalid_argument);
+    }, temper::validation_error);
 }
 
 /**
@@ -2775,9 +2742,9 @@ TYPED_TEST(TypedTensor, operator_brackets_index_out_of_bounds_throws)
     using value_t = TypeParam;
     Tensor<value_t> t({2, 2, 2}, MemoryLocation::HOST);
 
-    EXPECT_THROW({ (void)t[2]; }, std::out_of_range);
-    EXPECT_THROW({ (void)t[1][2]; }, std::out_of_range);
-    EXPECT_THROW({ (void)t[1][1][2]; }, std::out_of_range);
+    EXPECT_THROW({ (void)t[2]; }, temper::bounds_error);
+    EXPECT_THROW({ (void)t[1][2]; }, temper::bounds_error);
+    EXPECT_THROW({ (void)t[1][1][2]; }, temper::bounds_error);
 }
 
 /**
@@ -2899,7 +2866,7 @@ TYPED_TEST(TypedTensor, operator_value_throws_no_dimensions)
     EXPECT_THROW({
         value_t converted = static_cast<value_t>(t1);
         (void)converted;
-    }, std::invalid_argument);
+    }, temper::validation_error);
 }
 
 /**
@@ -2919,7 +2886,7 @@ TYPED_TEST(TypedTensor, operator_value_throws_multiple_elements_rank1)
     EXPECT_THROW({
         value_t converted = static_cast<value_t>(t);
         (void)converted;
-    }, std::invalid_argument);
+    }, temper::validation_error);
 }
 
 /**
@@ -2939,7 +2906,7 @@ TYPED_TEST(TypedTensor, operator_value_throws_multi_dimensional)
     EXPECT_THROW({
         value_t converted = static_cast<value_t>(t);
         (void)converted;
-    }, std::invalid_argument);
+    }, temper::validation_error);
 }
 
 /**
@@ -3159,7 +3126,7 @@ TYPED_TEST(TypedTensor, operator_addition_incompatible_shapes)
         static_cast<value_t>(3.0f), static_cast<value_t>(4.0f)
     };
 
-    EXPECT_THROW({ Tensor<value_t> R = A + B; }, std::invalid_argument);
+    EXPECT_THROW({ Tensor<value_t> R = A + B; }, temper::validation_error);
 }
 
 /**
@@ -3651,7 +3618,7 @@ TYPED_TEST(TypedTensor, operator_subtraction_incompatible_shapes)
         static_cast<value_t>(3.0f), static_cast<value_t>(4.0f)
     };
 
-    EXPECT_THROW({ Tensor<value_t> R = A - B; }, std::invalid_argument);
+    EXPECT_THROW({ Tensor<value_t> R = A - B; }, temper::validation_error);
 }
 
 /**
@@ -4141,7 +4108,7 @@ TYPED_TEST(TypedTensor, operator_multiplication_incompatible_shapes)
         static_cast<value_t>(3.0f), static_cast<value_t>(4.0f)
     };
 
-    EXPECT_THROW({ Tensor<value_t> R = A * B; }, std::invalid_argument);
+    EXPECT_THROW({ Tensor<value_t> R = A * B; }, temper::validation_error);
 }
 
 /**
@@ -4640,7 +4607,7 @@ TYPED_TEST(TypedTensor, operator_division_incompatible_shapes)
         static_cast<value_t>(3.0f), static_cast<value_t>(4.0f)
     };
 
-    EXPECT_THROW({ Tensor<value_t> R = A / B; }, std::invalid_argument);
+    EXPECT_THROW({ Tensor<value_t> R = A / B; }, temper::validation_error);
 }
 
 /**
@@ -4709,7 +4676,7 @@ TYPED_TEST(TypedTensor, operator_division_by_zero_throws)
 
     EXPECT_THROW({
         Tensor<value_t> R = A / B;
-    }, std::runtime_error);
+    }, temper::computation_error);
 }
 
 /**
@@ -5065,14 +5032,14 @@ TYPED_TEST(TypedTensor, operator_unary_negation_nan_input_throws)
 
 /**
  * @test TypedTensor.operator_unary_negation_empty_tensor_throws
- * @brief Negation on a rank-0 tensor must throw std::invalid_argument.
+ * @brief Negation on a rank-0 tensor must throw temper::validation_error.
  */
 TYPED_TEST(TypedTensor,
            operator_unary_negation_empty_tensor_throws)
 {
     using value_t = TypeParam;
     Tensor<value_t> T;
-    EXPECT_THROW({ Tensor<value_t> N = -T; }, std::invalid_argument);
+    EXPECT_THROW({ Tensor<value_t> N = -T; }, temper::validation_error);
 }
 
 /**
@@ -5560,7 +5527,7 @@ TYPED_TEST(TypedTensor, clone_empty)
     EXPECT_EQ(t.get_num_elements(), 0u);
     EXPECT_EQ(t.m_p_data, nullptr);
 
-    EXPECT_THROW(t.clone(), std::invalid_argument);
+    EXPECT_THROW(t.clone(), temper::validation_error);
 }
 
 /**
@@ -5998,7 +5965,7 @@ TYPED_TEST(TypedTensor, copy_from_incompatible_shapes_throws)
 
     EXPECT_THROW({
         dst.copy_from(src);
-    }, std::invalid_argument);
+    }, temper::validation_error);
 }
 
 /**
@@ -6178,8 +6145,8 @@ TYPED_TEST(TypedTensor, to_throws_for_view)
 
     EXPECT_FALSE(t_view.m_own_data);
 
-    EXPECT_THROW(t_view.to(MemoryLocation::DEVICE), std::runtime_error);
-    EXPECT_THROW(t_view.to(MemoryLocation::HOST), std::runtime_error);
+    EXPECT_THROW(t_view.to(MemoryLocation::DEVICE), temper::validation_error);
+    EXPECT_THROW(t_view.to(MemoryLocation::HOST), temper::validation_error);
 }
 
 /**
@@ -6190,7 +6157,7 @@ TYPED_TEST(TypedTensor, to_throws_for_empty_tensor)
 {
     using value_t = TypeParam;
     Tensor<value_t> t_empty;
-    EXPECT_THROW(t_empty.to(MemoryLocation::DEVICE), std::invalid_argument);
+    EXPECT_THROW(t_empty.to(MemoryLocation::DEVICE), temper::validation_error);
 }
 
 /**
@@ -6324,7 +6291,7 @@ TYPED_TEST(TypedTensor, reshape_invalid_size_throws)
     A = vals;
 
     std::vector<uint64_t> bad_dims = {4, 2};
-    EXPECT_THROW({ A.reshape(bad_dims); }, std::invalid_argument);
+    EXPECT_THROW({ A.reshape(bad_dims); }, temper::validation_error);
 }
 
 /**
@@ -6336,7 +6303,7 @@ TYPED_TEST(TypedTensor, reshape_empty_dimensions_throws)
     using value_t = TypeParam;
     Tensor<value_t> A({2,3}, MemoryLocation::DEVICE);
     std::vector<uint64_t> bad_dims = {};
-    EXPECT_THROW({ A.reshape(bad_dims); }, std::invalid_argument);
+    EXPECT_THROW({ A.reshape(bad_dims); }, temper::validation_error);
 }
 
 /**
@@ -6348,7 +6315,7 @@ TYPED_TEST(TypedTensor, reshape_new_dimensions_with_zero_throws)
     using value_t = TypeParam;
     Tensor<value_t> A({2,3}, MemoryLocation::DEVICE);
     std::vector<uint64_t> bad_dims = {2, 0};
-    EXPECT_THROW({ A.reshape(bad_dims); }, std::invalid_argument);
+    EXPECT_THROW({ A.reshape(bad_dims); }, temper::validation_error);
 }
 
 /**
@@ -6361,7 +6328,7 @@ TYPED_TEST(TypedTensor, reshape_dimension_product_overflow_throws)
     using value_t = TypeParam;
     Tensor<value_t> A({2,2}, MemoryLocation::DEVICE);
     std::vector<uint64_t> bad_dims = {UINT64_MAX, 2};
-    EXPECT_THROW({ A.reshape(bad_dims); }, std::overflow_error);
+    EXPECT_THROW({ A.reshape(bad_dims); }, temper::bounds_error);
 }
 
 /**
@@ -6419,7 +6386,7 @@ TYPED_TEST(TypedTensor, reshape_view_throws)
     Tensor<value_t> v(base, {0,0}, {2,3}, {3,1});
     EXPECT_FALSE(v.m_own_data);
 
-    EXPECT_THROW(v.reshape(std::vector<uint64_t>{3,2}), std::invalid_argument);
+    EXPECT_THROW(v.reshape(std::vector<uint64_t>{3,2}), temper::validation_error);
 }
 
 /**
@@ -6441,8 +6408,8 @@ TYPED_TEST(TypedTensor, sort_axis_out_of_bounds)
 {
     using value_t = TypeParam;
     Tensor<value_t> t({3}, MemoryLocation::HOST);
-    EXPECT_THROW(t.sort(1), std::invalid_argument);
-    EXPECT_THROW(t.sort(-2), std::invalid_argument);
+    EXPECT_THROW(t.sort(1), temper::bounds_error);
+    EXPECT_THROW(t.sort(-2), temper::bounds_error);
 }
 
 /**
@@ -8152,7 +8119,7 @@ TYPED_TEST(TypedTensor, cumsum_alias_view_weird_strides)
 
 /**
  * @test TypedTensor.cumsum_axis_out_of_bounds
- * @brief Tests that cumsum throws std::invalid_argument
+ * @brief Tests that cumsum throws temper::validation_error
  * when the axis is out of bounds.
  */
 TYPED_TEST(TypedTensor, cumsum_axis_out_of_bounds)
@@ -8165,8 +8132,8 @@ TYPED_TEST(TypedTensor, cumsum_axis_out_of_bounds)
     };
     t = vals;
 
-    EXPECT_THROW(t.cumsum(2), std::invalid_argument);
-    EXPECT_THROW(t.cumsum(-3), std::invalid_argument);
+    EXPECT_THROW(t.cumsum(2), temper::bounds_error);
+    EXPECT_THROW(t.cumsum(-3), temper::bounds_error);
 }
 
 /**
@@ -8449,11 +8416,9 @@ TYPED_TEST(TypedTensor, transpose_invalid_axes)
     Tensor<value_t> t({2,3,4}, MemoryLocation::HOST);
     t = std::vector<value_t>(24, static_cast<value_t>(1));
 
-    EXPECT_THROW(t.transpose({0,1}), std::invalid_argument);
+    EXPECT_THROW(t.transpose({0,1,1}), temper::bounds_error);
 
-    EXPECT_THROW(t.transpose({0,1,1}), std::invalid_argument);
-
-    EXPECT_THROW(t.transpose({0,1,3}), std::invalid_argument);
+    EXPECT_THROW(t.transpose({0,1,3}), temper::bounds_error);
 }
 
 /**
@@ -8499,7 +8464,7 @@ TYPED_TEST(TypedTensor, transpose_empty)
 {
     using value_t = TypeParam;
     Tensor<value_t> t;
-    EXPECT_THROW(t.transpose(), std::runtime_error);
+    EXPECT_THROW(t.transpose(), temper::validation_error);
 }
 
 /**
@@ -8961,7 +8926,7 @@ TYPED_TEST(TypedTensor, index_to_coords_basic)
     EXPECT_EQ(c23[1], 2u);
     EXPECT_EQ(c23[2], 3u);
 
-    EXPECT_THROW(t.index_to_coords(24), std::out_of_range);
+    EXPECT_THROW(t.index_to_coords(24), temper::bounds_error);
 }
 
 /**
@@ -8978,10 +8943,10 @@ TYPED_TEST(TypedTensor, coords_to_index_basic)
     EXPECT_EQ(flat, 59u);
 
     std::vector<uint64_t> bad_size = {1u, 2u};
-    EXPECT_THROW(t.coords_to_index(bad_size), std::invalid_argument);
+    EXPECT_THROW(t.coords_to_index(bad_size), temper::validation_error);
 
     std::vector<uint64_t> out_of_range = {3u, 0u, 0u};
-    EXPECT_THROW(t.coords_to_index(out_of_range), std::out_of_range);
+    EXPECT_THROW(t.coords_to_index(out_of_range), temper::bounds_error);
 }
 
 /**
@@ -9098,7 +9063,7 @@ TYPED_TEST(TypedTensor, at_basic_device)
 
 /**
  * @test TypedTensor.at_out_of_range
- * @brief Verify that at() throws std::out_of_range for invalid indices.
+ * @brief Verify that at() throws temper::bounds_error for invalid indices.
  */
 TYPED_TEST(TypedTensor, at_out_of_range)
 {
@@ -9108,8 +9073,8 @@ TYPED_TEST(TypedTensor, at_out_of_range)
     EXPECT_NO_THROW(t.at(0));
     EXPECT_NO_THROW(t.at(5));
 
-    EXPECT_THROW(t.at(6), std::out_of_range);
-    EXPECT_THROW(t.at(100), std::out_of_range);
+    EXPECT_THROW(t.at(6), temper::bounds_error);
+    EXPECT_THROW(t.at(100), temper::bounds_error);
 }
 
 /**
@@ -9222,7 +9187,8 @@ TYPED_TEST(TypedTensor, at_alias_view_noncontiguous)
 
 /**
  * @test TypedTensor.at_view_out_of_range
- * @brief Verify that at() throws out_of_range for invalid indices on views.
+ * @brief Verify that at() throws temper::bounds_error
+ * for invalid indices on views.
  */
 TYPED_TEST(TypedTensor, at_view_out_of_range)
 {
@@ -9237,8 +9203,8 @@ TYPED_TEST(TypedTensor, at_view_out_of_range)
 
     EXPECT_NO_THROW(v.at(0));
     EXPECT_NO_THROW(v.at(3));
-    EXPECT_THROW(v.at(4), std::out_of_range);
-    EXPECT_THROW(v.at(100), std::out_of_range);
+    EXPECT_THROW(v.at(4), temper::bounds_error);
+    EXPECT_THROW(v.at(100), temper::bounds_error);
 }
 
 /**

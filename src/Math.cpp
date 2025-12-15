@@ -17,7 +17,7 @@ Tensor<value_t> matmul(const Tensor<value_t> & first,
 {
     TEMPER_CHECK(first.get_dimensions().empty() ||
         second.get_dimensions().empty(),
-        std::invalid_argument,
+        validation_error,
         "matmul: either tensor has no elements.");
 
     const int64_t a_rank_orig = first.get_rank();
@@ -60,11 +60,10 @@ Tensor<value_t> matmul(const Tensor<value_t> & first,
     const uint64_t k_b = b_desc.shape[b_rank - 2];
     const uint64_t n = b_desc.shape[b_rank - 1];
 
-    if (k_a != k_b)
-    {
-        throw std::invalid_argument(
-            R"(matmul: inner dimensions must match.)");
-    }
+    TEMPER_CHECK(k_a != k_b,
+        validation_error,
+        R"(matmul: inner dimensions must match.)");
+
     const uint64_t K = k_a;
 
     const int64_t a_batch_rank = a_rank - 2;
@@ -234,40 +233,26 @@ Tensor<value_t> matmul(const Tensor<value_t> & first,
         total_elems = 1;
     }
 
-    uint64_t* p_divs = static_cast<uint64_t*>(
-        sycl::malloc_device(sizeof(uint64_t) * full_rank, g_sycl_queue));
-    uint64_t* p_a_batch = static_cast<uint64_t*>(
-        sycl::malloc_device(sizeof(uint64_t) * full_rank, g_sycl_queue));
-    uint64_t* p_b_batch = static_cast<uint64_t*>(
-        sycl::malloc_device(sizeof(uint64_t) * full_rank, g_sycl_queue));
-    uint64_t* p_res_strides = static_cast<uint64_t*>(
-        sycl::malloc_device(sizeof(uint64_t) * full_rank, g_sycl_queue));
-    int32_t* p_error_flag = static_cast<int32_t*>(
-        sycl::malloc_shared(sizeof(int32_t), g_sycl_queue));
-
-    if (!p_divs || !p_a_batch || !p_b_batch || !p_res_strides || !p_error_flag)
-    {
-        sycl::free(p_divs, g_sycl_queue);
-        sycl::free(p_a_batch, g_sycl_queue);
-        sycl::free(p_b_batch, g_sycl_queue);
-        sycl::free(p_res_strides, g_sycl_queue);
-        sycl::free(p_error_flag, g_sycl_queue);
-        throw std::bad_alloc();
-    }
-
-    g_sycl_queue.memcpy(p_divs, full_divs.data(),
-        sizeof(uint64_t) * full_rank).wait();
-    g_sycl_queue.memcpy(p_a_batch, a_batch_only.data(),
-        sizeof(uint64_t) * full_rank).wait();
-    g_sycl_queue.memcpy(p_b_batch, b_batch_only.data(),
-        sizeof(uint64_t) * full_rank).wait();
-    g_sycl_queue.memcpy(p_res_strides, res_full_strides.data(),
-        sizeof(uint64_t) * full_rank).wait();
-
-    *p_error_flag = 0;
+    sycl_utils::SyclArray<uint64_t> divs_ptr(g_sycl_queue, full_divs,
+        MemoryLocation::DEVICE);
+    sycl_utils::SyclArray<uint64_t> a_batch_ptr(g_sycl_queue, a_batch_only,
+        MemoryLocation::DEVICE);
+    sycl_utils::SyclArray<uint64_t> b_batch_ptr(g_sycl_queue, b_batch_only,
+        MemoryLocation::DEVICE);
+    sycl_utils::SyclArray<uint64_t> res_strides_ptr(g_sycl_queue,
+        res_full_strides, MemoryLocation::DEVICE);
+    sycl_utils::SyclArray<int32_t> error_flag_ptr(g_sycl_queue, 1,
+        MemoryLocation::HOST);
 
     const value_t* p_a = first.get_data();
     const value_t* p_b = second.get_data();
+    const uint64_t* p_divs = divs_ptr;
+    const uint64_t* p_a_batch = a_batch_ptr;
+    const uint64_t* p_b_batch = b_batch_ptr;
+    const uint64_t* p_res_strides = res_strides_ptr;
+    int32_t* p_error_flag = error_flag_ptr;
+    *p_error_flag = 0;
+
     value_t* p_r = result.get_data();
 
     g_sycl_queue.submit([&](sycl::handler& cgh)
@@ -334,12 +319,6 @@ Tensor<value_t> matmul(const Tensor<value_t> & first,
     }).wait();
 
     int32_t err = *p_error_flag;
-
-    sycl::free(p_error_flag, g_sycl_queue);
-    sycl::free(p_divs, g_sycl_queue);
-    sycl::free(p_a_batch, g_sycl_queue);
-    sycl::free(p_b_batch, g_sycl_queue);
-    sycl::free(p_res_strides, g_sycl_queue);
 
     TEMPER_CHECK(err == 1,
         nan_error,
@@ -429,75 +408,54 @@ template Tensor<uint64_t> transpose<uint64_t>
 
 template<typename value_t>
 Tensor<value_t> pad(const Tensor<value_t> & tensor,
-                    uint64_t pad_top,
-                    uint64_t pad_bottom,
-                    uint64_t pad_left,
-                    uint64_t pad_right,
-                    value_t pad_value)
+    uint64_t pad_top,
+    uint64_t pad_bottom,
+    uint64_t pad_left,
+    uint64_t pad_right,
+    value_t pad_value)
 {
 
     const std::vector<uint64_t> & input_shape = tensor.get_dimensions();
     const int64_t rank = tensor.get_rank();
 
-    if (input_shape.empty())
-    {
-        throw std::invalid_argument(R"(pad:
-            input tensor has no elements.)");
-    }
-
-    if (rank < 2)
-    {
-        throw std::invalid_argument(R"(pad:
-            input tensor has less than 2 dimensions.)");
-    }
+    TEMPER_CHECK(input_shape.empty(),
+        validation_error,
+        R"(pad: input tensor has no elements.)");
+    TEMPER_CHECK(rank < 2,
+        validation_error,
+        R"(pad: input tensor has less than 2 dimensions.)");
 
     constexpr uint64_t U64_MAX = std::numeric_limits<uint64_t>::max();
 
     std::vector<uint64_t> res_shape = input_shape;
-    if (pad_left > U64_MAX - pad_right)
-    {
-        throw std::overflow_error(R"(pad:
-            pad_left + pad_right overflows uint64_t)");
-    }
+
+    TEMPER_CHECK(pad_left > U64_MAX - pad_right,
+        bounds_error,
+        R"(pad: pad_left + pad_right overflows uint64_t)");
+
     uint64_t add_width = pad_left + pad_right;
-    if (res_shape[rank - 1] > U64_MAX - add_width)
-    {
-        throw std::overflow_error("pad: result width overflows uint64_t");
-    }
+
+    TEMPER_CHECK(res_shape[rank - 1] > U64_MAX - add_width,
+        bounds_error,
+        "pad: result width overflows uint64_t");
+
     res_shape[rank - 1] += add_width;
-    if (pad_top > U64_MAX - pad_bottom)
-    {
-        throw std::overflow_error(R"(pad:
-            pad_top + pad_bottom overflows uint64_t)");
-    }
+
+    TEMPER_CHECK(pad_top > U64_MAX - pad_bottom,
+        bounds_error,
+        R"(pad: pad_top + pad_bottom overflows uint64_t)");
+
     uint64_t add_height = pad_top + pad_bottom;
-    if (res_shape[rank - 2] > U64_MAX - add_height)
-    {
-        throw std::overflow_error(R"(pad:
-            result height overflows uint64_t)");
-    }
+
+    TEMPER_CHECK(res_shape[rank - 2] > U64_MAX - add_height,
+        bounds_error,
+        R"(pad: result height overflows uint64_t)");
+
     res_shape[rank - 2] += add_height;
 
     MemoryLocation res_loc = tensor.get_memory_location();
 
     Tensor<value_t> result (res_shape, res_loc);
-    (void) pad_value;
-
-    uint64_t* p_divs = static_cast<uint64_t*>(
-        sycl::malloc_device(sizeof(uint64_t) * rank, g_sycl_queue));
-    uint64_t* p_in_strides = static_cast<uint64_t*>(
-        sycl::malloc_device(sizeof(uint64_t) * rank, g_sycl_queue));
-    uint64_t* p_res_shape = static_cast<uint64_t*>(
-        sycl::malloc_device(sizeof(uint64_t) * rank, g_sycl_queue));
-
-    bool alloc_ok = (p_divs && p_in_strides && p_res_shape);
-    if (!alloc_ok)
-    {
-        sycl::free(p_divs, g_sycl_queue);
-        sycl::free(p_in_strides, g_sycl_queue);
-        sycl::free(p_res_shape, g_sycl_queue);
-        throw std::bad_alloc();
-    }
 
     std::vector<uint64_t> res_divs =
         temper::utils::compute_divisors(res_shape);
@@ -510,18 +468,18 @@ Tensor<value_t> pad(const Tensor<value_t> & tensor,
     in_batch_strides[rank - 1] = 0;
     in_batch_strides[rank -2] = 0;
 
-    g_sycl_queue.memcpy(p_in_strides,
-        in_batch_strides.data(), sizeof(uint64_t) * rank).wait();
-    g_sycl_queue.memcpy(p_res_shape,
-        res_shape.data(), sizeof(uint64_t) * rank).wait();
-
-    // Only the result divisors are needed, because they only differ from the
-    // input one by the last two and input does not use them.
-    g_sycl_queue.memcpy(p_divs,
-        res_divs.data(), sizeof(uint64_t) * rank).wait();
+    sycl_utils::SyclArray<uint64_t> divs_ptr(g_sycl_queue, res_divs,
+        MemoryLocation::DEVICE);
+    sycl_utils::SyclArray<uint64_t> in_strides_ptr(g_sycl_queue,
+        in_batch_strides, MemoryLocation::DEVICE);
+    sycl_utils::SyclArray<uint64_t> res_shape_ptr(g_sycl_queue,
+        res_shape, MemoryLocation::DEVICE);
 
     const value_t* p_in_data = tensor.get_data();
     value_t* p_res_data = result.get_data();
+    const uint64_t* p_divs = divs_ptr;
+    const uint64_t* p_in_strides = in_strides_ptr;
+    const uint64_t* p_res_shape = res_shape_ptr;
 
     const uint64_t pad_t = pad_top;
     const uint64_t pad_l = pad_left;
@@ -571,9 +529,9 @@ template Tensor<uint64_t> pad<uint64_t>
 
 template<typename value_t>
 Tensor<value_t> pad(const Tensor<value_t> & tensor,
-                    uint64_t pad_height,
-                    uint64_t pad_width,
-                    value_t pad_value)
+    uint64_t pad_height,
+    uint64_t pad_width,
+    value_t pad_value)
 {
     return pad(tensor, pad_height, pad_height, pad_width, pad_width, pad_value);
 }
@@ -589,11 +547,9 @@ Tensor<uint64_t> argmax(const Tensor<value_t> & tensor,
     const std::vector<uint64_t> & in_shape = tensor.get_dimensions();
     const int64_t rank = tensor.get_rank();
 
-    if (in_shape.empty())
-    {
-        throw std::invalid_argument(R"(argmax:
-            input tensor has no elements.)");
-    }
+    TEMPER_CHECK(rank == 0,
+        validation_error,
+        R"(argmax: input tensor has no elements.)");
 
     const bool flatten = !axis_opt.has_value();
 
@@ -606,10 +562,10 @@ Tensor<uint64_t> argmax(const Tensor<value_t> & tensor,
         {
             axis += rank;
         }
-        if (axis < 0 || axis >= rank)
-        {
-            throw std::invalid_argument("argmax: axis out of bounds");
-        }
+
+        TEMPER_CHECK(axis < 0 || axis >= rank,
+            bounds_error,
+            "argmax: axis out of bounds");
     }
 
     uint64_t total_output_elems = 1;
@@ -643,42 +599,27 @@ Tensor<uint64_t> argmax(const Tensor<value_t> & tensor,
     Tensor<uint64_t> result(res_full_shape, res_loc);
     uint64_t* p_out = result.get_data();
 
-    uint64_t* p_in_divs = static_cast<uint64_t*>(
-        sycl::malloc_device(sizeof(uint64_t) * rank, g_sycl_queue));
-    uint64_t* p_in_strides = static_cast<uint64_t*>(
-        sycl::malloc_device(sizeof(uint64_t) * rank, g_sycl_queue));
-    uint64_t* p_res_full_divs = nullptr;
-    if (!flatten)
-    {
-        p_res_full_divs = static_cast<uint64_t*>(
-            sycl::malloc_device(sizeof(uint64_t) * rank, g_sycl_queue));
-    }
+    sycl_utils::SyclArray<uint64_t> in_divs_arr(g_sycl_queue,
+        in_divs, MemoryLocation:: DEVICE);
+    sycl_utils::SyclArray<uint64_t> in_strides_arr(g_sycl_queue,
+        in_strides, MemoryLocation::DEVICE);
+    sycl_utils::SyclArray<int32_t> error_flag_arr(g_sycl_queue,
+        1, MemoryLocation::HOST);
 
-    int32_t* p_error_flag = static_cast<int32_t*>(
-        sycl::malloc_shared(sizeof(int32_t), g_sycl_queue));
+    const uint64_t* p_in_divs = in_divs_arr;
+    const uint64_t* p_in_strides = in_strides_arr;
+    int32_t* p_error_flag = error_flag_arr;
 
-    bool alloc_ok = (p_in_divs && p_in_strides && p_error_flag &&
-                     (flatten || p_res_full_divs));
-    if (!alloc_ok)
-    {
-        if (p_in_divs) sycl::free(p_in_divs, g_sycl_queue);
-        if (p_in_strides) sycl::free(p_in_strides, g_sycl_queue);
-        if (p_res_full_divs) sycl::free(p_res_full_divs, g_sycl_queue);
-        if (p_error_flag) sycl::free(p_error_flag, g_sycl_queue);
-        throw std::bad_alloc();
-    }
-
-    g_sycl_queue.memcpy(p_in_divs,
-        in_divs.data(), sizeof(uint64_t) * rank).wait();
-    g_sycl_queue.memcpy(p_in_strides,
-        in_strides.data(), sizeof(uint64_t) * rank).wait();
+    std::optional<sycl_utils::SyclArray<uint64_t>> res_full_divs_arr_opt;
     if (!flatten)
     {
         const std::vector<uint64_t> res_full_divs =
             temper::utils::compute_divisors(res_full_shape);
-        g_sycl_queue.memcpy(p_res_full_divs,
-            res_full_divs.data(), sizeof(uint64_t) * rank).wait();
+        res_full_divs_arr_opt. emplace(g_sycl_queue,
+            res_full_divs, MemoryLocation::DEVICE);
     }
+    const uint64_t* p_res_full_divs = (!flatten)
+        ? res_full_divs_arr_opt->data() : nullptr;
 
     *p_error_flag = 0;
 
@@ -747,11 +688,6 @@ Tensor<uint64_t> argmax(const Tensor<value_t> & tensor,
 
     int32_t err = *p_error_flag;
 
-    sycl::free(p_error_flag, g_sycl_queue);
-    sycl::free(p_in_divs, g_sycl_queue);
-    sycl::free(p_in_strides, g_sycl_queue);
-    if (p_res_full_divs) sycl::free(p_res_full_divs, g_sycl_queue);
-
     TEMPER_CHECK(err == 1,
         nan_error,
         R"(argmax: NaN detected in inputs.)");
@@ -771,11 +707,9 @@ Tensor<uint64_t> argsort(const Tensor<value_t> & tensor,
     const std::vector<uint64_t> & in_shape = tensor.get_dimensions();
     const int64_t rank = tensor.get_rank();
 
-    if (in_shape.empty())
-    {
-        throw std::invalid_argument(R"(argsort:
-            input tensor has no elements.)");
-    }
+    TEMPER_CHECK(rank == 0,
+        validation_error,
+        R"(argsort: input tensor has no elements.)");
 
     const bool flatten = !axis_opt.has_value();
     int64_t axis = -1;
@@ -787,10 +721,9 @@ Tensor<uint64_t> argsort(const Tensor<value_t> & tensor,
         {
             axis += rank;
         }
-        if (axis < 0 || axis >= rank)
-        {
-            throw std::invalid_argument("argsort: axis out of bounds");
-        }
+        TEMPER_CHECK(axis < 0 || axis >= rank,
+            bounds_error,
+            "argsort: axis out of bounds");
     }
 
     const uint64_t total_size = tensor.get_num_elements();
@@ -861,52 +794,25 @@ Tensor<uint64_t> argsort(const Tensor<value_t> & tensor,
                 idx_of(s, index_factors.data(), strides_for_dims.data(), D);
         }
     }
+    sycl_utils::SyclArray<uint64_t> slice_base_arr(g_sycl_queue,
+        host_slice_base, MemoryLocation:: DEVICE);
+    sycl_utils::SyclArray<uint64_t> divisors_arr(g_sycl_queue,
+        divisors, MemoryLocation::DEVICE);
+    sycl_utils::SyclArray<uint64_t> strides_arr(g_sycl_queue,
+        tensor.get_strides(), MemoryLocation::DEVICE);
+    sycl_utils::SyclArray<uint64_t> indices_buffer_arr(g_sycl_queue,
+        total_output_elems, MemoryLocation::DEVICE);
+    sycl_utils::SyclArray<uint64_t> merge_buffer_arr(g_sycl_queue,
+        total_output_elems, MemoryLocation::DEVICE);
 
-    uint64_t* p_slice_base = static_cast<uint64_t*>(
-        sycl::malloc_device(static_cast<size_t>(slice_count) * sizeof(uint64_t),
-                            g_sycl_queue));
-    uint64_t* p_divisors = static_cast<uint64_t*>(
-        sycl::malloc_device(sizeof(uint64_t) * rank, g_sycl_queue));
-    uint64_t* p_strides = static_cast<uint64_t*>(
-        sycl::malloc_device(sizeof(uint64_t) * rank, g_sycl_queue));
-
-    // buffers sized to total_output_elems (== total_size)
-    uint64_t* indices_buffer = static_cast<uint64_t*>(sycl::malloc_device
-        (static_cast<size_t>(total_output_elems) * sizeof(uint64_t),
-            g_sycl_queue));
-    uint64_t* merge_buffer = static_cast<uint64_t*>(sycl::malloc_device
-        (static_cast<size_t>(total_output_elems) * sizeof(uint64_t),
-            g_sycl_queue));
-
-    bool alloc_ok = (p_slice_base && p_divisors && p_strides &&
-                     indices_buffer && merge_buffer);
-
-    if (!alloc_ok)
-    {
-        if (p_slice_base)    sycl::free(p_slice_base, g_sycl_queue);
-        if (p_divisors)      sycl::free(p_divisors, g_sycl_queue);
-        if (p_strides)       sycl::free(p_strides, g_sycl_queue);
-        if (indices_buffer)  sycl::free(indices_buffer, g_sycl_queue);
-        if (merge_buffer)    sycl::free(merge_buffer, g_sycl_queue);
-        throw std::bad_alloc();
-    }
-
-    if (!host_slice_base.empty())
-    {
-        g_sycl_queue.memcpy(p_slice_base, host_slice_base.data(),
-            static_cast<size_t>(slice_count) * sizeof(uint64_t)).wait();
-    }
-    if (!divisors.empty())
-    {
-        g_sycl_queue.memcpy(p_divisors, divisors.data(),
-                            sizeof(uint64_t) * rank).wait();
-    }
-    g_sycl_queue.memcpy(p_strides, tensor.get_strides().data(),
-                        sizeof(uint64_t) * rank).wait();
-
+    const uint64_t* p_slice_base = slice_base_arr;
+    const uint64_t* p_divisors = divisors_arr;
+    const uint64_t* p_strides = strides_arr;
+    uint64_t* indices_buffer = indices_buffer_arr;
+    uint64_t* merge_buffer = merge_buffer_arr;
 
     g_sycl_queue.submit([&](sycl::handler& cgh) {
-        cgh.parallel_for(sycl::range<1>(static_cast<size_t>(total_output_elems)),
+        cgh.parallel_for(sycl:: range<1>(static_cast<size_t>(total_output_elems)),
             [=](sycl::id<1> idx)
         {
             uint64_t flat_idx = static_cast<uint64_t>(idx[0]);
@@ -1202,12 +1108,6 @@ Tensor<uint64_t> argsort(const Tensor<value_t> & tensor,
     g_sycl_queue.memcpy(p_out_data, merge_input,
         static_cast<size_t>(total_output_elems) * sizeof(uint64_t)).wait();
 
-    sycl::free(p_slice_base, g_sycl_queue);
-    sycl::free(indices_buffer, g_sycl_queue);
-    sycl::free(merge_buffer, g_sycl_queue);
-    sycl::free(p_divisors, g_sycl_queue);
-    sycl::free(p_strides, g_sycl_queue);
-
     return result;
 }
 template Tensor<uint64_t> argsort<float>
@@ -1223,10 +1123,9 @@ Tensor<value_t> gather(const Tensor<value_t> & tensor,
     const std::vector<uint64_t> & in_shape = tensor.get_dimensions();
     const int64_t in_rank = tensor.get_rank();
 
-    if (in_shape.empty())
-    {
-        throw std::invalid_argument(R"(gather: input tensor has no elements.)");
-    }
+    TEMPER_CHECK(in_rank == 0,
+        validation_error,
+        R"(gather: input tensor has no elements.)");
 
     const bool flatten = !axis_opt.has_value();
     int64_t axis = -1;
@@ -1237,10 +1136,9 @@ Tensor<value_t> gather(const Tensor<value_t> & tensor,
         {
             axis += in_rank;
         }
-        if (axis < 0 || axis >= in_rank)
-        {
-            throw std::invalid_argument("gather: axis out of bounds");
-        }
+        TEMPER_CHECK(axis < 0 || axis >= in_rank,
+            bounds_error,
+            "gather: axis out of bounds");
     }
 
     const uint64_t total_elems = tensor.get_num_elements();
@@ -1249,25 +1147,20 @@ Tensor<value_t> gather(const Tensor<value_t> & tensor,
     const int64_t idx_rank = indexes.get_rank();
     if (flatten)
     {
-        if (idx_rank != 1)
-        {
-            throw std::invalid_argument(R"(gather:
-                for flattened gather, indexes must be 1-D.)");
-        }
-        if (idx_elems != total_elems)
-        {
-            throw std::invalid_argument(R"(gather:
-                for flattened gather, indexes length must equal
+        TEMPER_CHECK(idx_rank != 1,
+            validation_error,
+            R"(gather:  for flattened gather, indexes must be 1-D.)");
+
+        TEMPER_CHECK(idx_elems != total_elems,
+            validation_error,
+            R"(gather: for flattened gather, indexes length must equal
                 total input elements.)");
-        }
     }
     else
     {
-        if (idx_rank > in_rank)
-        {
-            throw std::invalid_argument(R"(gather:
-                indexes tensor has higher rank than input tensor.)");
-        }
+        TEMPER_CHECK(idx_rank > in_rank,
+            validation_error,
+            R"(gather: indexes tensor has higher rank than input tensor.)");
     }
 
     temper::utils::TensorDesc a_desc;
@@ -1299,78 +1192,47 @@ Tensor<value_t> gather(const Tensor<value_t> & tensor,
     std::vector<uint64_t> in_divs =
         temper::utils::compute_divisors(a_desc.shape);
 
-    uint64_t* p_in_divs = static_cast<uint64_t*>(
-        sycl::malloc_device(sizeof(uint64_t) * static_cast<size_t>(in_rank),
-                            g_sycl_queue));
-    uint64_t* p_in_strides = static_cast<uint64_t*>(
-        sycl::malloc_device(sizeof(uint64_t) * static_cast<size_t>(in_rank),
-                            g_sycl_queue));
-    uint64_t* p_idx_bcast_strides = nullptr;
-    if (!flatten)
-    {
-        p_idx_bcast_strides = static_cast<uint64_t*>(
-            sycl::malloc_device(sizeof(uint64_t) * static_cast<size_t>(in_rank),
-                                g_sycl_queue));
-    }
+     // Create SyclArray objects for always-needed arrays
+    sycl_utils::SyclArray<uint64_t> in_divs_arr(g_sycl_queue,
+        in_divs, MemoryLocation:: DEVICE);
+    sycl_utils::SyclArray<uint64_t> in_strides_arr(g_sycl_queue,
+        a_desc. strides, MemoryLocation:: DEVICE);
+    sycl_utils::SyclArray<int32_t> error_flag_arr(g_sycl_queue,
+        1, MemoryLocation::HOST);
 
-    uint64_t* p_idx_divs = nullptr;
-    uint64_t* p_idx_strides = nullptr;
+    const uint64_t* p_in_divs = in_divs_arr;
+    const uint64_t* p_in_strides = in_strides_arr;
+    int32_t* p_error_flag = error_flag_arr;
+
+    std::optional<sycl_utils::SyclArray<uint64_t>> idx_bcast_strides_arr_opt;
+    std::optional<sycl_utils::SyclArray<uint64_t>> idx_divs_arr_opt;
+    std::optional<sycl_utils::SyclArray<uint64_t>> idx_strides_arr_opt;
+
+    const uint64_t* p_idx_bcast_strides = nullptr;
+    const uint64_t* p_idx_divs = nullptr;
+    const uint64_t* p_idx_strides = nullptr;
     int64_t idx_rank_actual = 0;
-    std::vector<uint64_t> idx_divs_vec;
-    std::vector<uint64_t> idx_strides_vec;
-    if (flatten)
-    {
-        idx_rank_actual = indexes.get_rank();
-        idx_divs_vec = temper::utils::compute_divisors(
-            indexes.get_dimensions());
-        idx_strides_vec = indexes.get_strides();
-        p_idx_divs = static_cast<uint64_t*>(sycl::malloc_device(
-            sizeof(uint64_t) * static_cast<size_t>(idx_rank_actual),
-            g_sycl_queue));
-        p_idx_strides = static_cast<uint64_t*>(sycl::malloc_device(
-            sizeof(uint64_t) * static_cast<size_t>(idx_rank_actual),
-            g_sycl_queue));
-    }
 
-    int32_t* p_error_flag = static_cast<int32_t*>(
-        sycl::malloc_shared(sizeof(int32_t), g_sycl_queue));
-
-    bool alloc_ok = (p_in_divs && p_in_strides && p_error_flag &&
-                 ((flatten && p_idx_divs && p_idx_strides) ||
-                  (!flatten && p_idx_bcast_strides)));
-    if (!alloc_ok)
-    {
-        if (p_in_divs) sycl::free(p_in_divs, g_sycl_queue);
-        if (p_in_strides) sycl::free(p_in_strides, g_sycl_queue);
-        if (p_idx_bcast_strides) sycl::free(p_idx_bcast_strides,
-                                             g_sycl_queue);
-        if (p_idx_divs) sycl::free(p_idx_divs, g_sycl_queue);
-        if (p_idx_strides) sycl::free(p_idx_strides, g_sycl_queue);
-        if (p_error_flag) sycl::free(p_error_flag, g_sycl_queue);
-        throw std::bad_alloc();
-    }
-
-    g_sycl_queue.memcpy(p_in_divs,
-        in_divs.data(), sizeof(uint64_t) * static_cast<size_t>(in_rank))
-        .wait();
-    g_sycl_queue.memcpy(p_in_strides,
-        a_desc.strides.data(), sizeof(uint64_t) * static_cast<size_t>(in_rank))
-        .wait();
     if (!flatten)
     {
-        g_sycl_queue.memcpy(p_idx_bcast_strides,
-            bres.strides[1].data(),
-            sizeof(uint64_t) * static_cast<size_t>(in_rank))
-            .wait();
+        idx_bcast_strides_arr_opt. emplace(g_sycl_queue,
+            bres.strides[1], MemoryLocation::DEVICE);
+        p_idx_bcast_strides = idx_bcast_strides_arr_opt->data();
     }
     else
     {
-        g_sycl_queue.memcpy(p_idx_divs,
-            idx_divs_vec.data(), sizeof(uint64_t) *
-            static_cast<size_t>(idx_rank_actual)).wait();
-        g_sycl_queue.memcpy(p_idx_strides,
-            idx_strides_vec.data(), sizeof(uint64_t) *
-            static_cast<size_t>(idx_rank_actual)).wait();
+        idx_rank_actual = indexes.get_rank();
+        std::vector<uint64_t> idx_divs_vec = temper::utils::compute_divisors(
+            indexes.get_dimensions());
+        std::vector<uint64_t> idx_strides_vec = indexes.get_strides();
+
+        idx_divs_arr_opt.emplace(g_sycl_queue,
+            idx_divs_vec, MemoryLocation::DEVICE);
+        idx_strides_arr_opt.emplace(g_sycl_queue,
+            idx_strides_vec, MemoryLocation::DEVICE);
+
+        p_idx_divs = idx_divs_arr_opt->data();
+        p_idx_strides = idx_strides_arr_opt->data();
     }
 
     const uint64_t* p_idx_base = indexes.get_data();
@@ -1427,24 +1289,10 @@ Tensor<value_t> gather(const Tensor<value_t> & tensor,
 
     int32_t err = *p_error_flag;
 
-    sycl::free(p_in_divs, g_sycl_queue);
-    sycl::free(p_in_strides, g_sycl_queue);
-    if (p_idx_bcast_strides) sycl::free(p_idx_bcast_strides, g_sycl_queue);
-    if (p_idx_divs) sycl::free(p_idx_divs, g_sycl_queue);
-    if (p_idx_strides) sycl::free(p_idx_strides, g_sycl_queue);
-    sycl::free(p_error_flag, g_sycl_queue);
-
-    if (err != 0)
-    {
-        if (err == 1)
-        {
-            throw std::out_of_range(R"(gather:
-                index value out of range for the selected axis
-                / flattened input.)");
-        }
-        throw std::runtime_error(R"(gather:
-            numeric/device error during gather.)");
-    }
+    TEMPER_CHECK(err == 1,
+        bounds_error,
+        R"(gather: index value out of range for the selected axis
+            / flattened input.)");
 
     return result;
 }
@@ -1465,17 +1313,13 @@ Tensor<value_t> linspace(const Tensor<value_t>& start,
     const std::vector<uint64_t> & start_shape = start.get_dimensions();
     const std::vector<uint64_t> & stop_shape = stop.get_dimensions();
 
-    if (start_shape.empty())
-    {
-        throw std::invalid_argument(R"(linspace:
-            start tensor has no elements.)");
-    }
+    TEMPER_CHECK(start_shape.empty(),
+        validation_error,
+        R"(linspace: start tensor has no elements.)");
 
-    if (stop_shape.empty())
-    {
-        throw std::invalid_argument(R"(linspace:
-            stop tensor has no elements.)");
-    }
+    TEMPER_CHECK(stop_shape.empty(),
+        validation_error,
+        R"(linspace: stop tensor has no elements.)");
 
     if (num == 0)
     {
@@ -1520,10 +1364,9 @@ Tensor<value_t> linspace(const Tensor<value_t>& start,
         {
             axis += out_rank;
         }
-        if (axis < 0 || axis >= out_rank)
-        {
-            throw std::invalid_argument(R"(linspace: axis out of range)");
-        }
+        TEMPER_CHECK(axis < 0 || axis >= out_rank,
+            bounds_error,
+            R"(linspace: axis out of range)");
     }
     else
     {
@@ -1532,10 +1375,10 @@ Tensor<value_t> linspace(const Tensor<value_t>& start,
         {
             axis += out_rank;
         }
-        if (axis < 0 || axis >= out_rank)
-        {
-            throw std::invalid_argument(R"(linspace: axis out of range)");
-        }
+        TEMPER_CHECK(axis < 0 || axis >= out_rank,
+            bounds_error,
+            R"(linspace: axis out of range)");
+
         out_shape.reserve(out_rank);
         for (int64_t d = 0; d < axis; ++d)
         {
@@ -1554,36 +1397,6 @@ Tensor<value_t> linspace(const Tensor<value_t>& start,
     Tensor<value_t> step_tensor(step_shape, res_loc);
 
     std::vector<uint64_t> out_divs = temper::utils::compute_divisors(out_shape);
-
-    uint64_t* p_out_divs = static_cast<uint64_t*>(
-        sycl::malloc_device(sizeof(uint64_t) * out_rank, g_sycl_queue));
-
-    uint64_t* p_a_bcast_strides_expanded = static_cast<uint64_t*>(
-        sycl::malloc_device(sizeof(uint64_t) * out_rank, g_sycl_queue));
-    uint64_t* p_b_bcast_strides_expanded = static_cast<uint64_t*>(
-        sycl::malloc_device(sizeof(uint64_t) * out_rank, g_sycl_queue));
-    uint64_t* p_res_strides_expanded = static_cast<uint64_t*>(
-        sycl::malloc_device(sizeof(uint64_t) * out_rank, g_sycl_queue));
-
-    int32_t* p_error_flag = static_cast<int32_t*>(
-        sycl::malloc_shared(sizeof(int32_t), g_sycl_queue));
-
-    bool alloc_ok = (p_out_divs &&
-                     p_a_bcast_strides_expanded && p_b_bcast_strides_expanded &&
-                     p_res_strides_expanded && p_error_flag);
-
-    if (!alloc_ok)
-    {
-        sycl::free(p_out_divs, g_sycl_queue);
-        sycl::free(p_a_bcast_strides_expanded, g_sycl_queue);
-        sycl::free(p_b_bcast_strides_expanded, g_sycl_queue);
-        sycl::free(p_res_strides_expanded, g_sycl_queue);
-        sycl::free(p_error_flag, g_sycl_queue);
-        throw std::bad_alloc();
-    }
-
-    g_sycl_queue.memcpy(p_out_divs,
-        out_divs.data(), sizeof(uint64_t) * out_rank).wait();
 
     std::vector<uint64_t> a_bcast_strides_expanded(out_rank, 0);
     std::vector<uint64_t> b_bcast_strides_expanded(out_rank, 0);
@@ -1618,12 +1431,22 @@ Tensor<value_t> linspace(const Tensor<value_t>& start,
         res_strides_expanded[d + 1] = res_divs[d];
     }
 
-    g_sycl_queue.memcpy(p_a_bcast_strides_expanded,
-        a_bcast_strides_expanded.data(), sizeof(uint64_t) * out_rank).wait();
-    g_sycl_queue.memcpy(p_b_bcast_strides_expanded,
-        b_bcast_strides_expanded.data(), sizeof(uint64_t) * out_rank).wait();
-    g_sycl_queue.memcpy(p_res_strides_expanded,
-        res_strides_expanded.data(), sizeof(uint64_t) * out_rank).wait();
+    sycl_utils::SyclArray<uint64_t> out_divs_ptr(g_sycl_queue, out_divs,
+        MemoryLocation::DEVICE);
+    sycl_utils::SyclArray<uint64_t> a_bcast_strides_expanded_ptr(g_sycl_queue,
+        a_bcast_strides_expanded, MemoryLocation::DEVICE);
+    sycl_utils::SyclArray<uint64_t> b_bcast_strides_expanded_ptr(g_sycl_queue,
+        b_bcast_strides_expanded, MemoryLocation::DEVICE);
+    sycl_utils::SyclArray<uint64_t> res_strides_expanded_ptr(g_sycl_queue,
+        res_strides_expanded, MemoryLocation::DEVICE);
+    sycl_utils::SyclArray<int32_t> error_flag_ptr(g_sycl_queue, 1,
+        MemoryLocation::HOST);
+
+    uint64_t* p_out_divs = out_divs_ptr;
+    uint64_t* p_a_bcast_strides_expanded = a_bcast_strides_expanded_ptr;
+    uint64_t* p_b_bcast_strides_expanded = b_bcast_strides_expanded_ptr;
+    uint64_t* p_res_strides_expanded = res_strides_expanded_ptr;
+    int32_t* p_error_flag = error_flag_ptr;
 
     *p_error_flag = 0;
 
@@ -1701,12 +1524,6 @@ Tensor<value_t> linspace(const Tensor<value_t>& start,
 
     int32_t err = *p_error_flag;
 
-    sycl::free(p_out_divs, g_sycl_queue);
-    sycl::free(p_a_bcast_strides_expanded, g_sycl_queue);
-    sycl::free(p_b_bcast_strides_expanded, g_sycl_queue);
-    sycl::free(p_res_strides_expanded, g_sycl_queue);
-    sycl::free(p_error_flag, g_sycl_queue);
-
     TEMPER_CHECK(err == 1,
         nan_error,
         R"(linspace: NaN detected in inputs.)");
@@ -1744,22 +1561,19 @@ float, uint64_t, MemoryLocation, bool, Tensor<float>*);
 
 template<typename value_t>
 Tensor<value_t> arange(value_t start,
-                       value_t stop,
-                       value_t step,
-                       MemoryLocation res_loc)
+    value_t stop,
+    value_t step,
+    MemoryLocation res_loc)
 {
-    if (step == static_cast<value_t>(0))
-    {
-        throw std::invalid_argument(R"(arange: step must be non-zero.)");
-    }
+    TEMPER_CHECK(step == static_cast<value_t>(0),
+        validation_error,
+        R"(arange:  step must be non-zero.)");
 
-    if (!std::isfinite(static_cast<double>(start)) ||
+    TEMPER_CHECK(! std::isfinite(static_cast<double>(start)) ||
         !std::isfinite(static_cast<double>(stop))  ||
-        !std::isfinite(static_cast<double>(step)))
-    {
-        throw std::runtime_error(R"(arange:
-            non-finite start/stop/step provided.)");
-    }
+        !std::isfinite(static_cast<double>(step)),
+        nonfinite_error,
+        R"(arange:  non-finite start/stop/step provided.)");
 
     double raw   = static_cast<double>(stop) - static_cast<double>(start);
     double ratio = raw / static_cast<double>(step);
@@ -1837,11 +1651,9 @@ value_t integral(std::function<value_t(value_t)> f,
     value_t b,
     uint64_t n_bins)
 {
-    if (n_bins < 1)
-    {
-        throw std::invalid_argument(R"(integral:
-            there need to be at least 1 interval)");
-    }
+    TEMPER_CHECK(n_bins < 1,
+        validation_error,
+        R"(integral: there need to be at least 1 interval)");
 
     const value_t delta = (b - a) / static_cast<value_t>(n_bins);
     value_t x = a;
@@ -1869,11 +1681,9 @@ Tensor<value_t> factorial(const Tensor<value_t> & tensor)
     const std::vector<uint64_t> & in_shape = tensor.get_dimensions();
     const uint64_t arr_len = static_cast<uint64_t>(in_shape.size());
 
-    if (in_shape.empty())
-    {
-        throw std::invalid_argument(R"(factorial:
-            input tensor has no elements.)");
-    }
+    TEMPER_CHECK(in_shape.empty(),
+        validation_error,
+        R"(factorial: input tensor has no elements.)");
 
     const uint64_t total_output_elems = tensor.get_num_elements();
     MemoryLocation res_loc = tensor.get_memory_location();
@@ -1883,26 +1693,17 @@ Tensor<value_t> factorial(const Tensor<value_t> & tensor)
         temper::utils::compute_divisors(in_shape);
     const std::vector<uint64_t> in_strides = tensor.get_strides();
 
-    uint64_t* p_in_divs = static_cast<uint64_t*>(sycl::malloc_device
-        (sizeof(uint64_t) * static_cast<size_t>(arr_len), g_sycl_queue));
-    uint64_t* p_in_strides = static_cast<uint64_t*>(sycl::malloc_device
-        (sizeof(uint64_t) * static_cast<size_t>(arr_len), g_sycl_queue));
-    int32_t* p_error_flag = static_cast<int32_t*>(
-        sycl::malloc_shared(sizeof(int32_t), g_sycl_queue));
+    sycl_utils::SyclArray<uint64_t> in_divs_arr(g_sycl_queue,
+        in_divs, MemoryLocation:: DEVICE);
+    sycl_utils::SyclArray<uint64_t> in_strides_arr(g_sycl_queue,
+        in_strides, MemoryLocation::DEVICE);
+    sycl_utils::SyclArray<int32_t> error_flag_arr(g_sycl_queue,
+        1, MemoryLocation::HOST);
 
-    bool alloc_ok = (p_in_divs && p_in_strides && p_error_flag);
-    if (!alloc_ok)
-    {
-        sycl::free(p_in_divs, g_sycl_queue);
-        sycl::free(p_in_strides, g_sycl_queue);
-        sycl::free(p_error_flag, g_sycl_queue);
-        throw std::bad_alloc();
-    }
+    const uint64_t* p_in_divs = in_divs_arr;
+    const uint64_t* p_in_strides = in_strides_arr;
+    int32_t* p_error_flag = error_flag_arr;
 
-    g_sycl_queue.memcpy(p_in_divs,
-        in_divs.data(), sizeof(uint64_t) * arr_len).wait();
-    g_sycl_queue.memcpy(p_in_strides,
-        in_strides.data(), sizeof(uint64_t) * arr_len).wait();
     *p_error_flag = 0;
 
     const value_t* p_in_data = tensor.get_data();
@@ -1943,10 +1744,6 @@ Tensor<value_t> factorial(const Tensor<value_t> & tensor)
 
     int32_t err = *p_error_flag;
 
-    sycl::free(p_error_flag, g_sycl_queue);
-    sycl::free(p_in_divs, g_sycl_queue);
-    sycl::free(p_in_strides, g_sycl_queue);
-
     TEMPER_CHECK(err == 1,
         nan_error,
         R"(factorial: NaN detected in inputs.)");
@@ -1955,16 +1752,9 @@ Tensor<value_t> factorial(const Tensor<value_t> & tensor)
         nonfinite_error,
         R"(factorial: non-finite result (overflow or Inf) produced.)");
 
-    if (err != 0)
-    {
-        if (err == 3)
-        {
-            throw std::invalid_argument(R"(factorial:
-                input contains negative or non-integer values.)");
-        }
-        throw std::runtime_error(R"(factorial:
-            numeric error during factorial.)");
-    }
+    TEMPER_CHECK(err == 3,
+        validation_error,
+        R"(factorial: input contains negative or non-integer values.)");
 
     return result;
 }
@@ -1975,10 +1765,10 @@ template<typename value_t>
 Tensor<value_t> log(const Tensor<value_t> & tensor)
 {
     const std::vector<uint64_t> & in_shape = tensor.get_dimensions();
-    if (in_shape.empty())
-    {
-        throw std::invalid_argument(R"(log: input tensor has no elements.)");
-    }
+
+    TEMPER_CHECK(in_shape.empty(),
+        validation_error,
+        R"(log: input tensor has no elements.)");
 
     const uint64_t arr_len = static_cast<uint64_t>(in_shape.size());
     const uint64_t total_output_elems = tensor.get_num_elements();
@@ -1989,28 +1779,17 @@ Tensor<value_t> log(const Tensor<value_t> & tensor)
         temper::utils::compute_divisors(in_shape);
     const std::vector<uint64_t> in_strides = tensor.get_strides();
 
-    uint64_t* p_in_divs = static_cast<uint64_t*>(
-        sycl::malloc_device(sizeof(uint64_t) * static_cast<size_t>(arr_len),
-                            g_sycl_queue));
-    uint64_t* p_in_strides = static_cast<uint64_t*>(
-        sycl::malloc_device(sizeof(uint64_t) * static_cast<size_t>(arr_len),
-                            g_sycl_queue));
-    int32_t* p_error_flag = static_cast<int32_t*>(
-        sycl::malloc_shared(sizeof(int32_t), g_sycl_queue));
+    sycl_utils::SyclArray<uint64_t> in_divs_arr(g_sycl_queue,
+        in_divs, MemoryLocation::DEVICE);
+    sycl_utils::SyclArray<uint64_t> in_strides_arr(g_sycl_queue,
+        in_strides, MemoryLocation::DEVICE);
+    sycl_utils::SyclArray<int32_t> error_flag_arr(g_sycl_queue,
+        1, MemoryLocation::HOST);
 
-    bool alloc_ok = (p_in_divs && p_in_strides && p_error_flag);
-    if (!alloc_ok)
-    {
-        sycl::free(p_in_divs, g_sycl_queue);
-        sycl::free(p_in_strides, g_sycl_queue);
-        sycl::free(p_error_flag, g_sycl_queue);
-        throw std::bad_alloc();
-    }
+    const uint64_t* p_in_divs = in_divs_arr;
+    const uint64_t* p_in_strides = in_strides_arr;
+    int32_t* p_error_flag = error_flag_arr;
 
-    g_sycl_queue.memcpy(p_in_divs, in_divs.data(),
-        sizeof(uint64_t) * arr_len).wait();
-    g_sycl_queue.memcpy(p_in_strides, in_strides.data(),
-        sizeof(uint64_t) * arr_len).wait();
     *p_error_flag = 0;
 
     const value_t* p_in_data = tensor.get_data();
@@ -2039,10 +1818,6 @@ Tensor<value_t> log(const Tensor<value_t> & tensor)
 
     int32_t err = *p_error_flag;
 
-    sycl::free(p_error_flag, g_sycl_queue);
-    sycl::free(p_in_divs, g_sycl_queue);
-    sycl::free(p_in_strides, g_sycl_queue);
-
     TEMPER_CHECK(err == 1,
         nan_error,
         R"(log: NaN detected in inputs.)");
@@ -2060,11 +1835,10 @@ Tensor<value_t> mean(const Tensor<value_t> & tensor,
     std::optional<int64_t> axis_opt)
 {
     const int64_t rank = tensor.get_rank();
-    if (rank == 0)
-    {
-        throw std::invalid_argument(R"(mean:
-            input tensor has no elements.)");
-    }
+    TEMPER_CHECK(rank == 0,
+        validation_error,
+        R"(mean: input tensor has no elements.)");
+
     const bool flatten = !axis_opt.has_value();
 
     uint64_t denom_u = 1;
@@ -2079,10 +1853,9 @@ Tensor<value_t> mean(const Tensor<value_t> & tensor,
         {
             axis += rank;
         }
-        if (axis < 0 || axis >= rank)
-        {
-            throw std::invalid_argument("mean: axis out of bounds");
-        }
+        TEMPER_CHECK(axis < 0 || axis >= rank,
+            bounds_error,
+            "mean: axis out of bounds");
         denom_u = tensor.get_dimensions()[axis];
     }
     Tensor<value_t> s = math::sum(tensor, axis_opt);
@@ -2104,28 +1877,22 @@ Tensor<value_t> var(const Tensor<value_t> & tensor,
     int64_t ddof)
 {
     const uint64_t total_elems = tensor.get_num_elements();
-    if (total_elems == 0)
-    {
-        throw std::invalid_argument(R"(var:
-            input tensor has no elements.)");
-    }
+    TEMPER_CHECK(total_elems == 0,
+        validation_error,
+        R"(var: input tensor has no elements.)");
 
-    if (ddof < 0)
-    {
-        throw std::invalid_argument(R"(var:
-            ddof must be non-negative.)");
-    }
+    TEMPER_CHECK(ddof < 0,
+        validation_error,
+        R"(var: ddof must be non-negative.)");
 
     const bool flatten = !axis_opt.has_value();
 
     uint64_t N = 0;
     if (flatten)
     {
-        if (static_cast<uint64_t>(ddof) >= total_elems)
-        {
-            throw std::invalid_argument
-                (R"(var: ddof >= number of elements.)");
-        }
+        TEMPER_CHECK(static_cast<uint64_t>(ddof) >= total_elems,
+            validation_error,
+            R"(var: ddof >= number of elements.)");
         N = total_elems;
     }
     else
@@ -2136,16 +1903,15 @@ Tensor<value_t> var(const Tensor<value_t> & tensor,
         {
             axis += rank;
         }
-        if (axis < 0 || axis >= rank)
-        {
-            throw std::invalid_argument("var: axis out of bounds");
-        }
+        TEMPER_CHECK(axis < 0 || axis >= rank,
+            bounds_error,
+            "var: axis out of bounds");
+
         const uint64_t axis_len = tensor.get_dimensions()[axis];
-        if (static_cast<uint64_t>(ddof) >= axis_len)
-        {
-            throw std::invalid_argument(R"(var:
-                ddof >= axis length.)");
-        }
+
+        TEMPER_CHECK(static_cast<uint64_t>(ddof) >= axis_len,
+            validation_error,
+            R"(var: ddof >= axis length.)");
         N = axis_len;
     }
 
@@ -2176,29 +1942,21 @@ Tensor<value_t> cov(const Tensor<value_t> & tensor,
     const uint64_t total_elems = tensor.get_num_elements();
     const std::vector<uint64_t> & original_shape = tensor.get_dimensions();
     const int64_t rank = tensor.get_rank();
-    if (total_elems == 0)
-    {
-        throw std::invalid_argument(R"(cov:
-            input tensor has no elements.)");
-    }
+    TEMPER_CHECK(total_elems == 0,
+        validation_error,
+        R"(cov: input tensor has no elements.)");
 
-    if(sample_axes.empty() || event_axes.empty())
-    {
-        throw std::invalid_argument(R"(cov:
-            axes arguments cannot be empty.)");
-    }
+    TEMPER_CHECK(sample_axes.empty() || event_axes.empty(),
+        validation_error,
+        R"(cov: axes arguments cannot be empty.)");
 
-    if (ddof < 0)
-    {
-        throw std::invalid_argument(R"(cov:
-            ddof must be non-negative.)");
-    }
+    TEMPER_CHECK(ddof < 0,
+        validation_error,
+        R"(cov:  ddof must be non-negative.)");
 
-    if (rank < 2)
-    {
-        throw std::invalid_argument(R"(cov:
-            rank must be >= 2.)");
-    }
+    TEMPER_CHECK(rank < 2,
+        validation_error,
+        R"(cov: rank must be >= 2.)");
 
     const uint64_t num_sample_axes = static_cast<int64_t>(sample_axes.size());
     const uint64_t num_event_axes  = static_cast<int64_t>(event_axes.size());
@@ -2212,15 +1970,13 @@ Tensor<value_t> cov(const Tensor<value_t> & tensor,
         {
             axis += rank;
         }
-        if (axis < 0 || axis >= rank)
-        {
-            throw std::invalid_argument("cov: axis out of bounds");
-        }
-        if (seen[axis])
-        {
-            throw std::invalid_argument(R"(cov:
-                the same axis cannot be used twice)");
-        }
+        TEMPER_CHECK(axis < 0 || axis >= rank,
+            bounds_error,
+            "cov: axis out of bounds");
+
+        TEMPER_CHECK(seen[axis],
+            validation_error,
+            R"(cov: the same axis cannot be used twice)");
         seen[axis] = true;
         sample_axes[i] = axis;
     }
@@ -2233,15 +1989,13 @@ Tensor<value_t> cov(const Tensor<value_t> & tensor,
         {
             axis += rank;
         }
-        if (axis < 0 || axis >= rank)
-        {
-            throw std::invalid_argument("cov: axis out of bounds");
-        }
-        if (seen[axis])
-        {
-            throw std::invalid_argument(R"(cov:
-                the same axis cannot be used twice)");
-        }
+        TEMPER_CHECK(axis < 0 || axis >= rank,
+            bounds_error,
+            "cov: axis out of bounds");
+
+        TEMPER_CHECK(seen[axis],
+            validation_error,
+            R"(cov: the same axis cannot be used twice)");
         seen[axis] = true;
         event_axes[i] = axis;
     }
@@ -2271,11 +2025,11 @@ Tensor<value_t> cov(const Tensor<value_t> & tensor,
     {
         sample_total *= original_shape[axis];
     }
-    if (static_cast<uint64_t>(ddof) >= sample_total)
-    {
-        throw std::invalid_argument(R"(cov:
-                not enough samples for ddof.)");
-    }
+
+    TEMPER_CHECK(static_cast<uint64_t>(ddof) >= sample_total,
+        validation_error,
+        R"(cov: not enough samples for ddof.)");
+
     for (int64_t axis : event_axes)
     {
         event_total *= original_shape[axis];
@@ -2325,11 +2079,9 @@ template <typename value_t>
 Tensor<value_t> cov(const Tensor<value_t> & tensor, int64_t ddof)
 {
     const int64_t rank = tensor.get_rank();
-    if (rank < 2)
-    {
-        throw std::invalid_argument(R"(cov:
-            rank must be >= 2.)");
-    }
+    TEMPER_CHECK(rank < 2,
+        validation_error,
+        R"(cov: rank must be >= 2.)");
 
     return math::cov(tensor, {rank - 2}, {rank - 1}, ddof);
 }
@@ -2341,11 +2093,10 @@ Tensor<value_t> stddev(const Tensor<value_t> & tensor,
     int64_t ddof)
 {
     const int64_t rank = tensor.get_rank();
-    if (rank == 0)
-    {
-        throw std::invalid_argument(R"(std:
-            input tensor has no elements.)");
-    }
+    TEMPER_CHECK(rank == 0,
+        validation_error,
+        R"(std: input tensor has no elements.)");
+
     Tensor<value_t> v = math::var(tensor, axis_opt, ddof);
     return math::sqrt(v);
 }
@@ -2358,19 +2109,17 @@ std::pair<Tensor<value_t>, Tensor<value_t>> eig(const Tensor<value_t> & tensor,
     value_t tol)
 {
     const int64_t rank = tensor.get_rank();
-    if (rank < 2)
-    {
-        throw std::invalid_argument("eig: rank must be >= 2.");
-    }
+    TEMPER_CHECK(rank < 2,
+        validation_error,
+        "eig: rank must be >= 2.");
 
     const std::vector<uint64_t> tensor_dims = tensor.get_dimensions();
     const std::vector<uint64_t> tensor_strides = tensor.get_strides();
 
-    if (tensor_dims[rank - 1] != tensor_dims[rank - 2])
-    {
-        throw std::invalid_argument(R"(eig:
-            last two dims must be square.)");
-    }
+    TEMPER_CHECK(tensor_dims[rank - 1] != tensor_dims[rank - 2],
+        validation_error,
+        R"(eig: last two dims must be square.)");
+
     const uint64_t n = tensor_dims[rank - 1];
 
     std::vector<uint64_t> batch_shape;
@@ -2411,37 +2160,32 @@ std::pair<Tensor<value_t>, Tensor<value_t>> eig(const Tensor<value_t> & tensor,
         batch_strides.push_back(tensor_strides[i]);
     }
 
-    value_t* p_A = nullptr;
-    value_t* p_Q = nullptr;
-    int32_t* p_error_flag = nullptr;
-    uint64_t* p_batch_divisors = nullptr;
-    uint64_t* p_batch_strides = nullptr;
+    sycl_utils::SyclArray<value_t> A_arr(g_sycl_queue,
+        total_matrix_elems, MemoryLocation:: DEVICE);
+    sycl_utils::SyclArray<value_t> Q_arr(g_sycl_queue,
+        total_matrix_elems, MemoryLocation::DEVICE);
+    sycl_utils::SyclArray<int32_t> error_flag_arr(g_sycl_queue,
+        1, MemoryLocation::HOST);
 
-    p_A = static_cast<value_t*>(sycl::malloc_device(
-        sizeof(value_t) * total_matrix_elems, g_sycl_queue));
-    p_Q = static_cast<value_t*>(sycl::malloc_device(
-        sizeof(value_t) * total_matrix_elems, g_sycl_queue));
+    value_t* p_A = A_arr;
+    value_t* p_Q = Q_arr;
+    int32_t* p_error_flag = error_flag_arr;
 
-    p_error_flag = static_cast<int32_t*>(
-        sycl::malloc_shared(sizeof(int32_t), g_sycl_queue));
+    std::optional<sycl_utils::SyclArray<uint64_t>> batch_divisors_arr_opt;
+    std::optional<sycl_utils::SyclArray<uint64_t>> batch_strides_arr_opt;
+
+    const uint64_t* p_batch_divisors = nullptr;
+    const uint64_t* p_batch_strides = nullptr;
 
     if (!batch_shape.empty())
     {
-        p_batch_divisors = static_cast<uint64_t*>( sycl::malloc_device
-            (sizeof(uint64_t) * batch_shape.size(), g_sycl_queue));
-        p_batch_strides = static_cast<uint64_t*>(sycl::malloc_device
-            (sizeof(uint64_t) * batch_shape.size(), g_sycl_queue));
-    }
+        batch_divisors_arr_opt. emplace(g_sycl_queue,
+            batch_divisors, MemoryLocation::DEVICE);
+        batch_strides_arr_opt.emplace(g_sycl_queue,
+            batch_strides, MemoryLocation::DEVICE);
 
-    if (!p_A || !p_Q || !p_error_flag ||
-        (!batch_shape.empty() && (!p_batch_divisors || !p_batch_strides)))
-    {
-        sycl::free(p_A, g_sycl_queue);
-        sycl::free(p_Q, g_sycl_queue);
-        sycl::free(p_error_flag, g_sycl_queue);
-        sycl::free(p_batch_divisors, g_sycl_queue);
-        sycl::free(p_batch_strides, g_sycl_queue);
-        throw std::bad_alloc();
+        p_batch_divisors = batch_divisors_arr_opt->data();
+        p_batch_strides = batch_strides_arr_opt->data();
     }
 
     *p_error_flag = 0;
@@ -2450,14 +2194,6 @@ std::pair<Tensor<value_t>, Tensor<value_t>> eig(const Tensor<value_t> & tensor,
     const uint64_t stride_row = tensor_strides[rank - 2];
     const uint64_t stride_col = tensor_strides[rank - 1];
     const int64_t batch_rank = static_cast<int64_t>(batch_shape.size());
-
-    if (!batch_shape.empty())
-    {
-        g_sycl_queue.memcpy(p_batch_divisors, batch_divisors.data(),
-                            sizeof(uint64_t) * batch_rank).wait();
-        g_sycl_queue.memcpy(p_batch_strides, batch_strides.data(),
-                            sizeof(uint64_t) * batch_rank).wait();
-    }
 
     g_sycl_queue.submit([&](sycl::handler& cgh)
     {
@@ -2587,10 +2323,9 @@ std::pair<Tensor<value_t>, Tensor<value_t>> eig(const Tensor<value_t> & tensor,
 
         if (iter % 10 == 9)
         {
-            value_t* p_max_off_diag = static_cast<value_t*>(
-                sycl::malloc_device(sizeof(value_t), g_sycl_queue));
-
-            g_sycl_queue.memset(p_max_off_diag, 0, sizeof(value_t)).wait();
+            sycl_utils::SyclArray<value_t> max_off_diag_arr(g_sycl_queue,
+                1, MemoryLocation::DEVICE);
+            value_t* p_max_off_diag = max_off_diag_arr;
 
             g_sycl_queue.submit([&](sycl::handler& cgh)
             {
@@ -2630,8 +2365,6 @@ std::pair<Tensor<value_t>, Tensor<value_t>> eig(const Tensor<value_t> & tensor,
             g_sycl_queue.memcpy(&max_off_diag,
                 p_max_off_diag, sizeof(value_t)).wait();
 
-            sycl::free(p_max_off_diag, g_sycl_queue);
-
             if (max_off_diag < tol) break;
             if (*p_error_flag != 0) break;
         }
@@ -2667,11 +2400,6 @@ std::pair<Tensor<value_t>, Tensor<value_t>> eig(const Tensor<value_t> & tensor,
     }).wait();
 
     int32_t err = *p_error_flag;
-    sycl::free(p_A, g_sycl_queue);
-    sycl::free(p_Q, g_sycl_queue);
-    sycl::free(p_error_flag, g_sycl_queue);
-    sycl::free(p_batch_divisors, g_sycl_queue);
-    sycl::free(p_batch_strides, g_sycl_queue);
 
     TEMPER_CHECK(err == 1,
         nan_error,
@@ -2681,16 +2409,9 @@ std::pair<Tensor<value_t>, Tensor<value_t>> eig(const Tensor<value_t> & tensor,
         nonfinite_error,
         R"(eig: non-finite result (overflow or Inf) during computation.)");
 
-    if (err != 0)
-    {
-        if (err == 3)
-        {
-            throw std::runtime_error(R"(eig:
-                division by zero detected during computation.)");
-        }
-        throw std::runtime_error(R"(eig:
-            numeric error during eigendecomposition.)");
-    }
+    TEMPER_CHECK(err == 3,
+        computation_error,
+        R"(eig: division by zero detected during computation.)");
 
     return std::make_pair(eigvals_tensor, eigvecs_tensor);
 }
@@ -2701,10 +2422,10 @@ template <typename value_t>
 Tensor<value_t> sqrt(const Tensor<value_t>& tensor)
 {
     const int64_t rank = tensor.get_rank();
-    if (rank == 0)
-    {
-        throw std::invalid_argument("sqrt: input tensor has no elements.");
-    }
+    TEMPER_CHECK(rank == 0,
+        validation_error,
+        "sqrt: input tensor has no elements.");
+
     const std::vector<uint64_t>& dims = tensor.get_dimensions();
 
     const uint64_t total_elems = tensor.get_num_elements();
@@ -2715,25 +2436,17 @@ Tensor<value_t> sqrt(const Tensor<value_t>& tensor)
         temper::utils::compute_divisors(dims);
     const std::vector<uint64_t> strides = tensor.get_strides();
 
-    uint64_t* p_divs = static_cast<uint64_t*>(
-        sycl::malloc_device(sizeof(uint64_t) * rank, g_sycl_queue));
-    uint64_t* p_strides = static_cast<uint64_t*>(
-        sycl::malloc_device(sizeof(uint64_t) * rank, g_sycl_queue));
-    int32_t* p_error_flag = static_cast<int32_t*>(
-        sycl::malloc_shared(sizeof(int32_t), g_sycl_queue));
+    sycl_utils::SyclArray<uint64_t> divs_arr(g_sycl_queue,
+        divisors, MemoryLocation::DEVICE);
+    sycl_utils:: SyclArray<uint64_t> strides_arr(g_sycl_queue,
+        strides, MemoryLocation:: DEVICE);
+    sycl_utils::SyclArray<int32_t> error_flag_arr(g_sycl_queue,
+        1, MemoryLocation::HOST);
 
-    if (!p_divs || !p_strides || !p_error_flag)
-    {
-        sycl::free(p_divs, g_sycl_queue);
-        sycl::free(p_strides, g_sycl_queue);
-        sycl::free(p_error_flag, g_sycl_queue);
-        throw std::bad_alloc();
-    }
+    const uint64_t* p_divs = divs_arr;
+    const uint64_t* p_strides = strides_arr;
+    int32_t* p_error_flag = error_flag_arr;
 
-    g_sycl_queue.memcpy(p_divs, divisors.data(),
-                        sizeof(uint64_t) * rank).wait();
-    g_sycl_queue.memcpy(p_strides, strides.data(),
-                        sizeof(uint64_t) * rank).wait();
     *p_error_flag = 0;
 
     const value_t* p_in = tensor.get_data();
@@ -2760,9 +2473,6 @@ Tensor<value_t> sqrt(const Tensor<value_t>& tensor)
     }).wait();
 
     int32_t err = *p_error_flag;
-    sycl::free(p_error_flag, g_sycl_queue);
-    sycl::free(p_divs, g_sycl_queue);
-    sycl::free(p_strides, g_sycl_queue);
 
     TEMPER_CHECK(err == 1,
         nan_error,
@@ -2782,11 +2492,9 @@ Tensor<value_t> pow(const Tensor<value_t> & a, const Tensor<value_t> & b)
     const std::vector<uint64_t> & a_shape = a.get_dimensions();
     const std::vector<uint64_t> & b_shape = b.get_dimensions();
 
-    if (a_shape.empty() || b_shape.empty())
-    {
-        throw std::invalid_argument(R"(pow:
-            either input tensor has no elements.)");
-    }
+    TEMPER_CHECK(a_shape.empty() || b_shape.empty(),
+        validation_error,
+        R"(pow: either input tensor has no elements.)");
 
     temper::utils::TensorDesc a_desc;
     temper::utils::TensorDesc b_desc;
@@ -2816,34 +2524,19 @@ Tensor<value_t> pow(const Tensor<value_t> & a, const Tensor<value_t> & b)
     std::vector<uint64_t> full_divs =
         temper::utils::compute_divisors(full_shape);
 
-    uint64_t* p_divs = static_cast<uint64_t*>(
-        sycl::malloc_device(sizeof(uint64_t) * static_cast<size_t>(full_rank),
-                            g_sycl_queue));
-    uint64_t* p_a_strides = static_cast<uint64_t*>(
-        sycl::malloc_device(sizeof(uint64_t) * static_cast<size_t>(full_rank),
-                            g_sycl_queue));
-    uint64_t* p_b_strides = static_cast<uint64_t*>(
-        sycl::malloc_device(sizeof(uint64_t) * static_cast<size_t>(full_rank),
-                            g_sycl_queue));
-    int32_t* p_error_flag = static_cast<int32_t*>(
-        sycl::malloc_shared(sizeof(int32_t), g_sycl_queue));
+    sycl_utils::SyclArray<uint64_t> divs_arr(g_sycl_queue,
+        full_divs, MemoryLocation:: DEVICE);
+    sycl_utils::SyclArray<uint64_t> a_strides_arr(g_sycl_queue,
+        bcast.strides[0], MemoryLocation:: DEVICE);
+    sycl_utils::SyclArray<uint64_t> b_strides_arr(g_sycl_queue,
+        bcast.strides[1], MemoryLocation::DEVICE);
+    sycl_utils::SyclArray<int32_t> error_flag_arr(g_sycl_queue,
+        1, MemoryLocation::HOST);
 
-    bool alloc_ok = (p_divs && p_a_strides && p_b_strides && p_error_flag);
-    if (!alloc_ok)
-    {
-        if (p_divs) sycl::free(p_divs, g_sycl_queue);
-        if (p_a_strides) sycl::free(p_a_strides, g_sycl_queue);
-        if (p_b_strides) sycl::free(p_b_strides, g_sycl_queue);
-        if (p_error_flag) sycl::free(p_error_flag, g_sycl_queue);
-        throw std::bad_alloc();
-    }
-
-    g_sycl_queue.memcpy(p_divs, full_divs.data(),
-        sizeof(uint64_t) * static_cast<size_t>(full_rank)).wait();
-    g_sycl_queue.memcpy(p_a_strides, bcast.strides[0].data(),
-        sizeof(uint64_t) * static_cast<size_t>(full_rank)).wait();
-    g_sycl_queue.memcpy(p_b_strides, bcast.strides[1].data(),
-        sizeof(uint64_t) * static_cast<size_t>(full_rank)).wait();
+    const uint64_t* p_divs = divs_arr;
+    const uint64_t* p_a_strides = a_strides_arr;
+    const uint64_t* p_b_strides = b_strides_arr;
+    int32_t* p_error_flag = error_flag_arr;
 
     *p_error_flag = 0;
 
@@ -2878,11 +2571,6 @@ Tensor<value_t> pow(const Tensor<value_t> & a, const Tensor<value_t> & b)
 
     int32_t err = *p_error_flag;
 
-    sycl::free(p_error_flag, g_sycl_queue);
-    sycl::free(p_divs, g_sycl_queue);
-    sycl::free(p_a_strides, g_sycl_queue);
-    sycl::free(p_b_strides, g_sycl_queue);
-
     TEMPER_CHECK(err == 1,
         nan_error,
         R"(pow: NaN detected in inputs.)");
@@ -2902,10 +2590,9 @@ template<typename value_t>
 Tensor<value_t> exp(const Tensor<value_t> & tensor)
 {
     const std::vector<uint64_t> & in_shape = tensor.get_dimensions();
-    if (in_shape.empty())
-    {
-        throw std::invalid_argument(R"(exp: input tensor has no elements.)");
-    }
+    TEMPER_CHECK(in_shape.empty(),
+        validation_error,
+        R"(exp: input tensor has no elements.)");
 
     const uint64_t arr_len = static_cast<uint64_t>(in_shape.size());
     const uint64_t total_output_elems = tensor.get_num_elements();
@@ -2916,28 +2603,17 @@ Tensor<value_t> exp(const Tensor<value_t> & tensor)
         temper::utils::compute_divisors(in_shape);
     const std::vector<uint64_t> in_strides = tensor.get_strides();
 
-    uint64_t* p_in_divs = static_cast<uint64_t*>(
-        sycl::malloc_device(sizeof(uint64_t) * static_cast<size_t>(arr_len),
-                            g_sycl_queue));
-    uint64_t* p_in_strides = static_cast<uint64_t*>(
-        sycl::malloc_device(sizeof(uint64_t) * static_cast<size_t>(arr_len),
-                            g_sycl_queue));
-    int32_t* p_error_flag = static_cast<int32_t*>(
-        sycl::malloc_shared(sizeof(int32_t), g_sycl_queue));
+    sycl_utils::SyclArray<uint64_t> in_divs_arr(g_sycl_queue,
+        in_divs, MemoryLocation::DEVICE);
+    sycl_utils::SyclArray<uint64_t> in_strides_arr(g_sycl_queue,
+        in_strides, MemoryLocation::DEVICE);
+    sycl_utils::SyclArray<int32_t> error_flag_arr(g_sycl_queue,
+        1, MemoryLocation::HOST);
 
-    bool alloc_ok = (p_in_divs && p_in_strides && p_error_flag);
-    if (!alloc_ok)
-    {
-        sycl::free(p_in_divs, g_sycl_queue);
-        sycl::free(p_in_strides, g_sycl_queue);
-        sycl::free(p_error_flag, g_sycl_queue);
-        throw std::bad_alloc();
-    }
+    const uint64_t* p_in_divs = in_divs_arr;
+    const uint64_t* p_in_strides = in_strides_arr;
+    int32_t* p_error_flag = error_flag_arr;
 
-    g_sycl_queue.memcpy(p_in_divs, in_divs.data(),
-        sizeof(uint64_t) * arr_len).wait();
-    g_sycl_queue.memcpy(p_in_strides, in_strides.data(),
-        sizeof(uint64_t) * arr_len).wait();
     *p_error_flag = 0;
 
     const value_t* p_in_data = tensor.get_data();
@@ -2965,10 +2641,6 @@ Tensor<value_t> exp(const Tensor<value_t> & tensor)
     }).wait();
 
     int32_t err = *p_error_flag;
-
-    sycl::free(p_error_flag, g_sycl_queue);
-    sycl::free(p_in_divs, g_sycl_queue);
-    sycl::free(p_in_strides, g_sycl_queue);
 
     TEMPER_CHECK(err == 1,
         nan_error,

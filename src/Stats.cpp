@@ -42,21 +42,15 @@ Tensor<value_t> pdf(const Tensor<value_t>& x,
     const std::vector<uint64_t> & loc_shape = loc.get_dimensions();
     const std::vector<uint64_t> & scale_shape = scale.get_dimensions();
 
-    if (x_shape.empty())
-    {
-        throw std::invalid_argument(R"(norm::pdf:
-            x tensor has no elements.)");
-    }
-    if (loc_shape.empty())
-    {
-        throw std::invalid_argument(R"(norm::pdf:
-            loc tensor has no elements.)");
-    }
-    if (scale_shape.empty())
-    {
-        throw std::invalid_argument(R"(norm::pdf:
-            scale tensor has no elements.)");
-    }
+    TEMPER_CHECK(x_shape.empty(),
+        validation_error,
+        R"(norm::pdf: x tensor has no elements.)");
+    TEMPER_CHECK(loc_shape.empty(),
+        validation_error,
+        R"(norm::pdf: loc tensor has no elements.)");
+    TEMPER_CHECK(scale_shape.empty(),
+        validation_error,
+        R"(norm::pdf: scale tensor has no elements.)");
 
     temper::utils::TensorDesc a_desc{x_shape, x.get_strides()};
     temper::utils::TensorDesc b_desc{loc_shape, loc.get_strides()};
@@ -73,50 +67,24 @@ Tensor<value_t> pdf(const Tensor<value_t>& x,
     const std::vector<uint64_t> scale_bcast = std::move(res.strides[2]);
 
     Tensor<value_t> result(out_shape, x.get_memory_location());
-
-    uint64_t* p_out_divs = static_cast<uint64_t*>(
-        sycl::malloc_device(sizeof(uint64_t) * static_cast<size_t>(out_rank),
-                            g_sycl_queue));
-    uint64_t* p_x_bcast = static_cast<uint64_t*>(
-        sycl::malloc_device(sizeof(uint64_t) * static_cast<size_t>(out_rank),
-                            g_sycl_queue));
-    uint64_t* p_loc_bcast = static_cast<uint64_t*>(
-        sycl::malloc_device(sizeof(uint64_t) * static_cast<size_t>(out_rank),
-                            g_sycl_queue));
-    uint64_t* p_scale_bcast = static_cast<uint64_t*>(
-        sycl::malloc_device(sizeof(uint64_t) * static_cast<size_t>(out_rank),
-                            g_sycl_queue));
-
-    int32_t* p_error_flag = static_cast<int32_t*>(
-        sycl::malloc_shared(sizeof(int32_t), g_sycl_queue));
-
-    bool alloc_ok = (p_out_divs && p_x_bcast && p_loc_bcast &&
-                     p_scale_bcast && p_error_flag);
-
-    if (!alloc_ok)
-    {
-        sycl::free(p_out_divs, g_sycl_queue);
-        sycl::free(p_x_bcast, g_sycl_queue);
-        sycl::free(p_loc_bcast, g_sycl_queue);
-        sycl::free(p_scale_bcast, g_sycl_queue);
-        sycl::free(p_error_flag, g_sycl_queue);
-        throw std::bad_alloc();
-    }
-
     const std::vector<uint64_t> out_divs = std::move(res.divisors);
 
-    g_sycl_queue.memcpy(p_out_divs,
-        out_divs.data(), sizeof(uint64_t) * static_cast<size_t>(out_rank))
-        .wait();
-    g_sycl_queue.memcpy(p_x_bcast,
-        x_bcast.data(), sizeof(uint64_t) * static_cast<size_t>(out_rank))
-        .wait();
-    g_sycl_queue.memcpy(p_loc_bcast,
-        loc_bcast.data(), sizeof(uint64_t) * static_cast<size_t>(out_rank))
-        .wait();
-    g_sycl_queue.memcpy(p_scale_bcast,
-        scale_bcast.data(), sizeof(uint64_t) * static_cast<size_t>(out_rank))
-        .wait();
+    sycl_utils::SyclArray<uint64_t> out_divs_arr(g_sycl_queue,
+        out_divs, MemoryLocation::DEVICE);
+    sycl_utils::SyclArray<uint64_t> x_bcast_arr(g_sycl_queue,
+        x_bcast, MemoryLocation::DEVICE);
+    sycl_utils::SyclArray<uint64_t> loc_bcast_arr(g_sycl_queue,
+        loc_bcast, MemoryLocation::DEVICE);
+    sycl_utils::SyclArray<uint64_t> scale_bcast_arr(g_sycl_queue,
+        scale_bcast, MemoryLocation::DEVICE);
+    sycl_utils::SyclArray<int32_t> error_flag_arr(g_sycl_queue,
+        1, MemoryLocation::HOST);
+
+    const uint64_t* p_out_divs = out_divs_arr;
+    const uint64_t* p_x_bcast = x_bcast_arr;
+    const uint64_t* p_loc_bcast = loc_bcast_arr;
+    const uint64_t* p_scale_bcast = scale_bcast_arr;
+    int32_t* p_error_flag = error_flag_arr;
 
     *p_error_flag = 0;
 
@@ -164,12 +132,6 @@ Tensor<value_t> pdf(const Tensor<value_t>& x,
 
     int32_t err = *p_error_flag;
 
-    sycl::free(p_out_divs, g_sycl_queue);
-    sycl::free(p_x_bcast, g_sycl_queue);
-    sycl::free(p_loc_bcast, g_sycl_queue);
-    sycl::free(p_scale_bcast, g_sycl_queue);
-    sycl::free(p_error_flag, g_sycl_queue);
-
     TEMPER_CHECK(err == 1,
         nan_error,
         R"(norm::pdf: NaN detected in inputs.)");
@@ -178,15 +140,9 @@ Tensor<value_t> pdf(const Tensor<value_t>& x,
         nonfinite_error,
         R"(norm::pdf: non-finite result (overflow or Inf) produced.)");
 
-    if (err != 0)
-    {
-        if (err == 3)
-        {
-            throw std::invalid_argument(R"(norm::pdf: scale must be positive.)");
-        }
-        throw std::runtime_error(R"(norm::pdf:
-            numeric error during pdf computation.)");
-    }
+    TEMPER_CHECK(err == 3,
+        validation_error,
+        R"(norm::pdf: scale must be positive.)");
 
     return result;
 }
@@ -202,21 +158,15 @@ Tensor<value_t> logpdf(const Tensor<value_t>& x,
     const std::vector<uint64_t> & loc_shape = loc.get_dimensions();
     const std::vector<uint64_t> & scale_shape = scale.get_dimensions();
 
-    if (x_shape.empty())
-    {
-        throw std::invalid_argument(R"(norm::logpdf:
-            x tensor has no elements.)");
-    }
-    if (loc_shape.empty())
-    {
-        throw std::invalid_argument(R"(norm::logpdf:
-            loc tensor has no elements.)");
-    }
-    if (scale_shape.empty())
-    {
-        throw std::invalid_argument(R"(norm::logpdf:
-            scale tensor has no elements.)");
-    }
+    TEMPER_CHECK(x_shape.empty(),
+        validation_error,
+        R"(norm::logpdf: x tensor has no elements.)");
+    TEMPER_CHECK(loc_shape.empty(),
+        validation_error,
+        R"(norm::logpdf: loc tensor has no elements.)");
+    TEMPER_CHECK(scale_shape.empty(),
+        validation_error,
+        R"(norm::logpdf: scale tensor has no elements.)");
 
     temper::utils::TensorDesc a_desc{x_shape, x.get_strides()};
     temper::utils::TensorDesc b_desc{loc_shape, loc.get_strides()};
@@ -233,50 +183,24 @@ Tensor<value_t> logpdf(const Tensor<value_t>& x,
     const std::vector<uint64_t> scale_bcast = std::move(res.strides[2]);
 
     Tensor<value_t> result(out_shape, x.get_memory_location());
-
-    uint64_t* p_out_divs = static_cast<uint64_t*>(
-        sycl::malloc_device(sizeof(uint64_t) * static_cast<size_t>(out_rank),
-                            g_sycl_queue));
-    uint64_t* p_x_bcast = static_cast<uint64_t*>(
-        sycl::malloc_device(sizeof(uint64_t) * static_cast<size_t>(out_rank),
-                            g_sycl_queue));
-    uint64_t* p_loc_bcast = static_cast<uint64_t*>(
-        sycl::malloc_device(sizeof(uint64_t) * static_cast<size_t>(out_rank),
-                            g_sycl_queue));
-    uint64_t* p_scale_bcast = static_cast<uint64_t*>(
-        sycl::malloc_device(sizeof(uint64_t) * static_cast<size_t>(out_rank),
-                            g_sycl_queue));
-
-    int32_t* p_error_flag = static_cast<int32_t*>(
-        sycl::malloc_shared(sizeof(int32_t), g_sycl_queue));
-
-    bool alloc_ok = (p_out_divs && p_x_bcast && p_loc_bcast &&
-                     p_scale_bcast && p_error_flag);
-
-    if (!alloc_ok)
-    {
-        sycl::free(p_out_divs, g_sycl_queue);
-        sycl::free(p_x_bcast, g_sycl_queue);
-        sycl::free(p_loc_bcast, g_sycl_queue);
-        sycl::free(p_scale_bcast, g_sycl_queue);
-        sycl::free(p_error_flag, g_sycl_queue);
-        throw std::bad_alloc();
-    }
-
     const std::vector<uint64_t> out_divs = std::move(res.divisors);
 
-    g_sycl_queue.memcpy(p_out_divs,
-        out_divs.data(), sizeof(uint64_t) * static_cast<size_t>(out_rank))
-        .wait();
-    g_sycl_queue.memcpy(p_x_bcast,
-        x_bcast.data(), sizeof(uint64_t) * static_cast<size_t>(out_rank))
-        .wait();
-    g_sycl_queue.memcpy(p_loc_bcast,
-        loc_bcast.data(), sizeof(uint64_t) * static_cast<size_t>(out_rank))
-        .wait();
-    g_sycl_queue.memcpy(p_scale_bcast,
-        scale_bcast.data(), sizeof(uint64_t) * static_cast<size_t>(out_rank))
-        .wait();
+    sycl_utils::SyclArray<uint64_t> out_divs_arr(g_sycl_queue,
+        out_divs, MemoryLocation::DEVICE);
+    sycl_utils::SyclArray<uint64_t> x_bcast_arr(g_sycl_queue,
+        x_bcast, MemoryLocation::DEVICE);
+    sycl_utils::SyclArray<uint64_t> loc_bcast_arr(g_sycl_queue,
+        loc_bcast, MemoryLocation::DEVICE);
+    sycl_utils::SyclArray<uint64_t> scale_bcast_arr(g_sycl_queue,
+        scale_bcast, MemoryLocation::DEVICE);
+    sycl_utils::SyclArray<int32_t> error_flag_arr(g_sycl_queue,
+        1, MemoryLocation::HOST);
+
+    const uint64_t* p_out_divs = out_divs_arr;
+    const uint64_t* p_x_bcast = x_bcast_arr;
+    const uint64_t* p_loc_bcast = loc_bcast_arr;
+    const uint64_t* p_scale_bcast = scale_bcast_arr;
+    int32_t* p_error_flag = error_flag_arr;
 
     *p_error_flag = 0;
 
@@ -324,12 +248,6 @@ Tensor<value_t> logpdf(const Tensor<value_t>& x,
 
     int32_t err = *p_error_flag;
 
-    sycl::free(p_out_divs, g_sycl_queue);
-    sycl::free(p_x_bcast, g_sycl_queue);
-    sycl::free(p_loc_bcast, g_sycl_queue);
-    sycl::free(p_scale_bcast, g_sycl_queue);
-    sycl::free(p_error_flag, g_sycl_queue);
-
     TEMPER_CHECK(err == 1,
         nan_error,
         R"(norm::logpdf: NaN detected in inputs.)");
@@ -338,16 +256,9 @@ Tensor<value_t> logpdf(const Tensor<value_t>& x,
         nonfinite_error,
         R"(norm::logpdf: non-finite result (overflow or Inf) produced.)");
 
-    if (err != 0)
-    {
-        if (err == 3)
-        {
-            throw std::invalid_argument(R"(norm::logpdf:
-                scale must be positive.)");
-        }
-        throw std::runtime_error(R"(norm::logpdf:
-            numeric error during logpdf computation.)");
-    }
+    TEMPER_CHECK(err == 3,
+        validation_error,
+        R"(norm::logpdf: scale must be positive.)");
 
     return result;
 }
@@ -363,21 +274,15 @@ Tensor<value_t> cdf(const Tensor<value_t>& x,
     const std::vector<uint64_t> & loc_shape = loc.get_dimensions();
     const std::vector<uint64_t> & scale_shape = scale.get_dimensions();
 
-    if (x_shape.empty())
-    {
-        throw std::invalid_argument(R"(norm::cdf:
-            x tensor has no elements.)");
-    }
-    if (loc_shape.empty())
-    {
-        throw std::invalid_argument(R"(norm::cdf:
-            loc tensor has no elements.)");
-    }
-    if (scale_shape.empty())
-    {
-        throw std::invalid_argument(R"(norm::cdf:
-            scale tensor has no elements.)");
-    }
+    TEMPER_CHECK(x_shape.empty(),
+        validation_error,
+        R"(norm::cdf: x tensor has no elements.)");
+    TEMPER_CHECK(loc_shape.empty(),
+        validation_error,
+        R"(norm::cdf: loc tensor has no elements.)");
+    TEMPER_CHECK(scale_shape.empty(),
+        validation_error,
+        R"(norm::cdf: scale tensor has no elements.)");
 
     temper::utils::TensorDesc a_desc{x_shape, x.get_strides()};
     temper::utils::TensorDesc b_desc{loc_shape, loc.get_strides()};
@@ -395,49 +300,24 @@ Tensor<value_t> cdf(const Tensor<value_t>& x,
 
     Tensor<value_t> result(out_shape, x.get_memory_location());
 
-    uint64_t* p_out_divs = static_cast<uint64_t*>(
-        sycl::malloc_device(sizeof(uint64_t) * static_cast<size_t>(out_rank),
-                            g_sycl_queue));
-    uint64_t* p_x_bcast = static_cast<uint64_t*>(
-        sycl::malloc_device(sizeof(uint64_t) * static_cast<size_t>(out_rank),
-                            g_sycl_queue));
-    uint64_t* p_loc_bcast = static_cast<uint64_t*>(
-        sycl::malloc_device(sizeof(uint64_t) * static_cast<size_t>(out_rank),
-                            g_sycl_queue));
-    uint64_t* p_scale_bcast = static_cast<uint64_t*>(
-        sycl::malloc_device(sizeof(uint64_t) * static_cast<size_t>(out_rank),
-                            g_sycl_queue));
-
-    int32_t* p_error_flag = static_cast<int32_t*>(
-        sycl::malloc_shared(sizeof(int32_t), g_sycl_queue));
-
-    bool alloc_ok = (p_out_divs && p_x_bcast && p_loc_bcast &&
-                     p_scale_bcast && p_error_flag);
-
-    if (!alloc_ok)
-    {
-        sycl::free(p_out_divs, g_sycl_queue);
-        sycl::free(p_x_bcast, g_sycl_queue);
-        sycl::free(p_loc_bcast, g_sycl_queue);
-        sycl::free(p_scale_bcast, g_sycl_queue);
-        sycl::free(p_error_flag, g_sycl_queue);
-        throw std::bad_alloc();
-    }
-
     const std::vector<uint64_t> out_divs = std::move(res.divisors);
 
-    g_sycl_queue.memcpy(p_out_divs,
-        out_divs.data(), sizeof(uint64_t) * static_cast<size_t>(out_rank))
-        .wait();
-    g_sycl_queue.memcpy(p_x_bcast,
-        x_bcast.data(), sizeof(uint64_t) * static_cast<size_t>(out_rank))
-        .wait();
-    g_sycl_queue.memcpy(p_loc_bcast,
-        loc_bcast.data(), sizeof(uint64_t) * static_cast<size_t>(out_rank))
-        .wait();
-    g_sycl_queue.memcpy(p_scale_bcast,
-        scale_bcast.data(), sizeof(uint64_t) * static_cast<size_t>(out_rank))
-        .wait();
+    sycl_utils::SyclArray<uint64_t> out_divs_arr(g_sycl_queue,
+        out_divs, MemoryLocation::DEVICE);
+    sycl_utils::SyclArray<uint64_t> x_bcast_arr(g_sycl_queue,
+        x_bcast, MemoryLocation::DEVICE);
+    sycl_utils::SyclArray<uint64_t> loc_bcast_arr(g_sycl_queue,
+        loc_bcast, MemoryLocation::DEVICE);
+    sycl_utils::SyclArray<uint64_t> scale_bcast_arr(g_sycl_queue,
+        scale_bcast, MemoryLocation::DEVICE);
+    sycl_utils::SyclArray<int32_t> error_flag_arr(g_sycl_queue,
+        1, MemoryLocation::HOST);
+
+    const uint64_t* p_out_divs = out_divs_arr;
+    const uint64_t* p_x_bcast = x_bcast_arr;
+    const uint64_t* p_loc_bcast = loc_bcast_arr;
+    const uint64_t* p_scale_bcast = scale_bcast_arr;
+    int32_t* p_error_flag = error_flag_arr;
 
     *p_error_flag = 0;
 
@@ -485,12 +365,6 @@ Tensor<value_t> cdf(const Tensor<value_t>& x,
 
     int32_t err = *p_error_flag;
 
-    sycl::free(p_out_divs, g_sycl_queue);
-    sycl::free(p_x_bcast, g_sycl_queue);
-    sycl::free(p_loc_bcast, g_sycl_queue);
-    sycl::free(p_scale_bcast, g_sycl_queue);
-    sycl::free(p_error_flag, g_sycl_queue);
-
     TEMPER_CHECK(err == 1,
         nan_error,
         R"(norm::cdf: NaN detected in inputs.)");
@@ -499,16 +373,9 @@ Tensor<value_t> cdf(const Tensor<value_t>& x,
         nonfinite_error,
         R"(norm::cdf: non-finite result (overflow or Inf) produced.)");
 
-    if (err != 0)
-    {
-        if (err == 3)
-        {
-            throw std::invalid_argument(R"(norm::cdf:
-                scale must be positive.)");
-        }
-        throw std::runtime_error(R"(norm::cdf:
-            numeric error during cdf computation.)");
-    }
+    TEMPER_CHECK(err == 3,
+        validation_error,
+        R"(norm::cdf: scale must be positive.)");
 
     return result;
 }
@@ -524,21 +391,17 @@ Tensor<value_t> ppf(const Tensor<value_t>& q,
     const std::vector<uint64_t> & loc_shape = loc.get_dimensions();
     const std::vector<uint64_t> & scale_shape = scale.get_dimensions();
 
-    if (q_shape.empty())
-    {
-        throw std::invalid_argument(R"(norm::ppf:
-            q tensor has no elements.)");
-    }
-    if (loc_shape.empty())
-    {
-        throw std::invalid_argument(R"(norm::ppf:
-            loc tensor has no elements.)");
-    }
-    if (scale_shape.empty())
-    {
-        throw std::invalid_argument(R"(norm::ppf:
-            scale tensor has no elements.)");
-    }
+    TEMPER_CHECK(q_shape.empty(),
+        validation_error,
+        R"(norm::ppf: q tensor has no elements.)");
+
+    TEMPER_CHECK(loc_shape.empty(),
+        validation_error,
+        R"(norm::ppf: loc tensor has no elements.)");
+
+    TEMPER_CHECK(scale_shape.empty(),
+        validation_error,
+        R"(norm::ppf: scale tensor has no elements.)");
 
     temper::utils::TensorDesc a_desc{q_shape, q.get_strides()};
     temper::utils::TensorDesc b_desc{loc_shape, loc.get_strides()};
@@ -557,49 +420,24 @@ Tensor<value_t> ppf(const Tensor<value_t>& q,
 
     Tensor<value_t> result(out_shape, q.get_memory_location());
 
-    uint64_t* p_out_divs = static_cast<uint64_t*>(
-        sycl::malloc_device(sizeof(uint64_t) * static_cast<size_t>(out_rank),
-                            g_sycl_queue));
-    uint64_t* p_q_bcast = static_cast<uint64_t*>(
-        sycl::malloc_device(sizeof(uint64_t) * static_cast<size_t>(out_rank),
-                            g_sycl_queue));
-    uint64_t* p_loc_bcast = static_cast<uint64_t*>(
-        sycl::malloc_device(sizeof(uint64_t) * static_cast<size_t>(out_rank),
-                            g_sycl_queue));
-    uint64_t* p_scale_bcast = static_cast<uint64_t*>(
-        sycl::malloc_device(sizeof(uint64_t) * static_cast<size_t>(out_rank),
-                            g_sycl_queue));
-
-    int32_t* p_error_flag = static_cast<int32_t*>(
-        sycl::malloc_shared(sizeof(int32_t), g_sycl_queue));
-
-    bool alloc_ok = (p_out_divs && p_q_bcast && p_loc_bcast &&
-                     p_scale_bcast && p_error_flag);
-
-    if (!alloc_ok)
-    {
-        sycl::free(p_out_divs, g_sycl_queue);
-        sycl::free(p_q_bcast, g_sycl_queue);
-        sycl::free(p_loc_bcast, g_sycl_queue);
-        sycl::free(p_scale_bcast, g_sycl_queue);
-        sycl::free(p_error_flag, g_sycl_queue);
-        throw std::bad_alloc();
-    }
-
     const std::vector<uint64_t> out_divs = std::move(res.divisors);
 
-    g_sycl_queue.memcpy(p_out_divs,
-        out_divs.data(), sizeof(uint64_t) * static_cast<size_t>(out_rank))
-        .wait();
-    g_sycl_queue.memcpy(p_q_bcast,
-        q_bcast.data(), sizeof(uint64_t) * static_cast<size_t>(out_rank))
-        .wait();
-    g_sycl_queue.memcpy(p_loc_bcast,
-        loc_bcast.data(), sizeof(uint64_t) * static_cast<size_t>(out_rank))
-        .wait();
-    g_sycl_queue.memcpy(p_scale_bcast,
-        scale_bcast.data(), sizeof(uint64_t) * static_cast<size_t>(out_rank))
-        .wait();
+    sycl_utils::SyclArray<uint64_t> out_divs_arr(g_sycl_queue,
+        out_divs, MemoryLocation::DEVICE);
+    sycl_utils::SyclArray<uint64_t> q_bcast_arr(g_sycl_queue,
+        q_bcast, MemoryLocation::DEVICE);
+    sycl_utils::SyclArray<uint64_t> loc_bcast_arr(g_sycl_queue,
+        loc_bcast, MemoryLocation::DEVICE);
+    sycl_utils::SyclArray<uint64_t> scale_bcast_arr(g_sycl_queue,
+        scale_bcast, MemoryLocation::DEVICE);
+    sycl_utils::SyclArray<int32_t> error_flag_arr(g_sycl_queue,
+        1, MemoryLocation::HOST);
+
+    const uint64_t* p_out_divs = out_divs_arr;
+    const uint64_t* p_q_bcast = q_bcast_arr;
+    const uint64_t* p_loc_bcast = loc_bcast_arr;
+    const uint64_t* p_scale_bcast = scale_bcast_arr;
+    int32_t* p_error_flag = error_flag_arr;
 
     *p_error_flag = 0;
 
@@ -707,12 +545,6 @@ Tensor<value_t> ppf(const Tensor<value_t>& q,
 
     int32_t err = *p_error_flag;
 
-    sycl::free(p_out_divs, g_sycl_queue);
-    sycl::free(p_q_bcast, g_sycl_queue);
-    sycl::free(p_loc_bcast, g_sycl_queue);
-    sycl::free(p_scale_bcast, g_sycl_queue);
-    sycl::free(p_error_flag, g_sycl_queue);
-
     TEMPER_CHECK(err == 1,
         nan_error,
         R"(norm::ppf: NaN detected in inputs.)");
@@ -721,20 +553,13 @@ Tensor<value_t> ppf(const Tensor<value_t>& q,
         nonfinite_error,
         R"(norm::ppf: non-finite result (overflow or Inf) produced.)");
 
-    if (err != 0)
-    {
-        if (err == 3)
-        {
-            throw std::invalid_argument(R"(norm::ppf:
-                q values must be in [0,1].)");
-        }
-        if (err == 4)
-        {
-            throw std::invalid_argument(R"(norm::ppf: scale must be positive.)");
-        }
-        throw std::runtime_error(R"(norm::ppf:
-            numeric error during ppf computation.)");
-    }
+    TEMPER_CHECK(err == 3,
+        validation_error,
+        R"(norm::ppf: q values must be in [0,1].)");
+
+    TEMPER_CHECK(err == 4,
+        validation_error,
+        R"(norm::ppf: scale must be positive.)");
 
     return result;
 }
@@ -750,21 +575,18 @@ Tensor<value_t> isf(const Tensor<value_t>& q,
     const std::vector<uint64_t> & loc_shape = loc.get_dimensions();
     const std::vector<uint64_t> & scale_shape = scale.get_dimensions();
 
-    if (q_shape.empty())
-    {
-        throw std::invalid_argument(R"(norm::isf:
-            q tensor has no elements.)");
-    }
-    if (loc_shape.empty())
-    {
-        throw std::invalid_argument(R"(norm::isf:
-            loc tensor has no elements.)");
-    }
-    if (scale_shape.empty())
-    {
-        throw std::invalid_argument(R"(norm::isf:
-            scale tensor has no elements.)");
-    }
+    TEMPER_CHECK(q_shape.empty(),
+        validation_error,
+        R"(norm::isf: q tensor has no elements.)");
+
+    TEMPER_CHECK(loc_shape.empty(),
+        validation_error,
+        R"(norm::isf: loc tensor has no elements.)");
+
+    TEMPER_CHECK(scale_shape.empty(),
+        validation_error,
+        R"(norm::isf: scale tensor has no elements.)");
+
     return ppf((Tensor<value_t>(static_cast<value_t>(1)) - q), loc, scale);
 }
 template Tensor<float> isf<float>
@@ -780,38 +602,22 @@ Tensor<value_t> rvs(const Tensor<value_t>& loc,
     const std::vector<uint64_t> & loc_shape = loc.get_dimensions();
     const std::vector<uint64_t> & scale_shape = scale.get_dimensions();
 
-    if (loc_shape.empty())
-    {
-        throw std::invalid_argument(R"(norm::rvs:
-            loc tensor has no elements.)");
-    }
-    if (scale_shape.empty())
-    {
-        throw std::invalid_argument(R"(norm::rvs:
-            scale tensor has no elements.)");
-    }
+    TEMPER_CHECK(loc_shape.empty(),
+        validation_error,
+        R"(norm::rvs: loc tensor has no elements.)");
+
+    TEMPER_CHECK(scale_shape.empty(),
+        validation_error,
+        R"(norm::rvs: scale tensor has no elements.)");
 
     Tensor<value_t> q(out_shape, res_loc);
     const uint64_t total_output_elems = q.get_num_elements();
 
-    const int64_t out_rank = static_cast<int64_t>(out_shape.size());
-    std::vector<uint64_t> out_divs = temper::utils::compute_divisors(out_shape);
-    uint64_t* p_out_divs = static_cast<uint64_t*>(
-        sycl::malloc_device(sizeof(uint64_t) * out_rank, g_sycl_queue));
+    sycl_utils::SyclArray<int32_t> error_flag_arr(g_sycl_queue,
+        1, MemoryLocation::HOST);
 
-    int32_t* p_error_flag = static_cast<int32_t*>(
-        sycl::malloc_shared(sizeof(int32_t), g_sycl_queue));
+    int32_t* p_error_flag = error_flag_arr;
 
-    bool alloc_ok = (p_out_divs && p_error_flag);
-    if (!alloc_ok)
-    {
-        sycl::free(p_out_divs, g_sycl_queue);
-        sycl::free(p_error_flag, g_sycl_queue);
-        throw std::bad_alloc();
-    }
-
-    g_sycl_queue.memcpy(p_out_divs,
-        out_divs.data(), sizeof(uint64_t) * out_rank).wait();
     *p_error_flag = 0;
 
     value_t* p_q = q.get_data();
@@ -848,14 +654,10 @@ Tensor<value_t> rvs(const Tensor<value_t>& loc,
     }).wait();
 
     int32_t err = *p_error_flag;
-    sycl::free(p_out_divs, g_sycl_queue);
-    sycl::free(p_error_flag, g_sycl_queue);
 
-    if (err != 0)
-    {
-        throw std::runtime_error(R"(norm::rvs:
-            numeric error during uniform generation.)");
-    }
+    TEMPER_CHECK(err != 0,
+        computation_error,
+        R"(norm::rvs: numeric error during uniform generation.)");
 
     Tensor<value_t> result = ppf(q, loc, scale);
 
@@ -906,16 +708,13 @@ Tensor<value_t> pdf(const Tensor<value_t>& x,
     const std::vector<uint64_t> & x_shape = x.get_dimensions();
     const std::vector<uint64_t> & k_shape = k.get_dimensions();
 
-    if (x_shape.empty())
-    {
-        throw std::invalid_argument(R"(chisquare::pdf:
-            x tensor has no elements.)");
-    }
-    if (k_shape.empty())
-    {
-        throw std::invalid_argument(R"(chisquare::pdf:
-            k tensor has no elements.)");
-    }
+    TEMPER_CHECK(x_shape.empty(),
+        validation_error,
+        R"(chisquare::pdf: x tensor has no elements.)");
+
+    TEMPER_CHECK(k_shape.empty(),
+        validation_error,
+        R"(chisquare::pdf: k tensor has no elements.)");
 
     temper::utils::TensorDesc x_desc{x_shape, x.get_strides()};
     temper::utils::TensorDesc k_desc{k_shape, k.get_strides()};
@@ -931,41 +730,21 @@ Tensor<value_t> pdf(const Tensor<value_t>& x,
 
     Tensor<value_t> result(out_shape, x.get_memory_location());
 
-    uint64_t* p_out_divs = static_cast<uint64_t*>(
-        sycl::malloc_device(sizeof(uint64_t) * static_cast<size_t>(out_rank),
-                            g_sycl_queue));
-    uint64_t* p_x_bcast = static_cast<uint64_t*>(
-        sycl::malloc_device(sizeof(uint64_t) * static_cast<size_t>(out_rank),
-                            g_sycl_queue));
-    uint64_t* p_k_bcast = static_cast<uint64_t*>(
-        sycl::malloc_device(sizeof(uint64_t) * static_cast<size_t>(out_rank),
-                            g_sycl_queue));
-
-    int32_t* p_error_flag = static_cast<int32_t*>(
-        sycl::malloc_shared(sizeof(int32_t), g_sycl_queue));
-
-    bool alloc_ok = (p_out_divs && p_x_bcast && p_k_bcast && p_error_flag);
-
-    if (!alloc_ok)
-    {
-        sycl::free(p_out_divs, g_sycl_queue);
-        sycl::free(p_x_bcast, g_sycl_queue);
-        sycl::free(p_k_bcast, g_sycl_queue);
-        sycl::free(p_error_flag, g_sycl_queue);
-        throw std::bad_alloc();
-    }
-
     const std::vector<uint64_t> out_divs = std::move(res.divisors);
 
-    g_sycl_queue.memcpy(p_out_divs,
-        out_divs.data(), sizeof(uint64_t) * static_cast<size_t>(out_rank))
-        .wait();
-    g_sycl_queue.memcpy(p_x_bcast,
-        x_bcast.data(), sizeof(uint64_t) * static_cast<size_t>(out_rank))
-        .wait();
-    g_sycl_queue.memcpy(p_k_bcast,
-        k_bcast.data(), sizeof(uint64_t) * static_cast<size_t>(out_rank))
-        .wait();
+    sycl_utils::SyclArray<uint64_t> out_divs_arr(g_sycl_queue,
+        out_divs, MemoryLocation::DEVICE);
+    sycl_utils::SyclArray<uint64_t> x_bcast_arr(g_sycl_queue,
+        x_bcast, MemoryLocation::DEVICE);
+    sycl_utils::SyclArray<uint64_t> k_bcast_arr(g_sycl_queue,
+        k_bcast, MemoryLocation::DEVICE);
+    sycl_utils::SyclArray<int32_t> error_flag_arr(g_sycl_queue,
+        1, MemoryLocation::HOST);
+
+    const uint64_t* p_out_divs = out_divs_arr;
+    const uint64_t* p_x_bcast = x_bcast_arr;
+    const uint64_t* p_k_bcast = k_bcast_arr;
+    int32_t* p_error_flag = error_flag_arr;
 
     *p_error_flag = 0;
 
@@ -1006,11 +785,6 @@ Tensor<value_t> pdf(const Tensor<value_t>& x,
 
     int32_t err = *p_error_flag;
 
-    sycl::free(p_out_divs, g_sycl_queue);
-    sycl::free(p_x_bcast, g_sycl_queue);
-    sycl::free(p_k_bcast, g_sycl_queue);
-    sycl::free(p_error_flag, g_sycl_queue);
-
     TEMPER_CHECK(err == 1,
         nan_error,
         R"(chisquare::pdf: NaN detected in inputs.)");
@@ -1019,21 +793,13 @@ Tensor<value_t> pdf(const Tensor<value_t>& x,
         nonfinite_error,
         R"(chisquare::pdf: non-finite result (overflow or Inf) produced.)");
 
-    if (err != 0)
-    {
-        if (err == 3)
-        {
-            throw std::invalid_argument(R"(chisquare::pdf:
-                k must be positive.)");
-        }
-        if (err == 4)
-        {
-            throw std::invalid_argument(R"(chisquare::pdf:
-                x must be positive.)");
-        }
-        throw std::runtime_error(R"(chisquare::pdf:
-            numeric error during pdf computation.)");
-    }
+    TEMPER_CHECK(err == 3,
+        validation_error,
+        R"(chisquare::pdf: k must be positive.)");
+
+    TEMPER_CHECK(err == 4,
+        validation_error,
+        R"(chisquare::pdf: x must be positive.)");
 
     return result;
 }
@@ -1047,16 +813,13 @@ Tensor<value_t> logpdf(const Tensor<value_t>& x,
     const std::vector<uint64_t> & x_shape = x.get_dimensions();
     const std::vector<uint64_t> & k_shape = k.get_dimensions();
 
-    if (x_shape.empty())
-    {
-        throw std::invalid_argument(R"(chisquare::logpdf:
-            x tensor has no elements.)");
-    }
-    if (k_shape.empty())
-    {
-        throw std::invalid_argument(R"(chisquare::logpdf:
-            k tensor has no elements.)");
-    }
+    TEMPER_CHECK(x_shape.empty(),
+        validation_error,
+        R"(chisquare::logpdf: x tensor has no elements.)");
+
+    TEMPER_CHECK(k_shape.empty(),
+        validation_error,
+        R"(chisquare::logpdf: k tensor has no elements.)");
 
     temper::utils::TensorDesc x_desc{x_shape, x.get_strides()};
     temper::utils::TensorDesc k_desc{k_shape, k.get_strides()};
@@ -1072,33 +835,21 @@ Tensor<value_t> logpdf(const Tensor<value_t>& x,
 
     Tensor<value_t> result(out_shape, x.get_memory_location());
 
-    uint64_t* p_out_divs = static_cast<uint64_t*>(
-        sycl::malloc_device(sizeof(uint64_t) * out_rank, g_sycl_queue));
-    uint64_t* p_x_bcast = static_cast<uint64_t*>(
-        sycl::malloc_device(sizeof(uint64_t) * out_rank, g_sycl_queue));
-    uint64_t* p_k_bcast = static_cast<uint64_t*>(
-        sycl::malloc_device(sizeof(uint64_t) * out_rank, g_sycl_queue));
+    const std::vector<uint64_t> out_divs = std::move(res.divisors);
 
-    int32_t* p_error_flag = static_cast<int32_t*>(
-        sycl::malloc_shared(sizeof(int32_t), g_sycl_queue));
+    sycl_utils::SyclArray<uint64_t> out_divs_arr(g_sycl_queue,
+        out_divs, MemoryLocation::DEVICE);
+    sycl_utils::SyclArray<uint64_t> x_bcast_arr(g_sycl_queue,
+        x_bcast, MemoryLocation::DEVICE);
+    sycl_utils::SyclArray<uint64_t> k_bcast_arr(g_sycl_queue,
+        k_bcast, MemoryLocation::DEVICE);
+    sycl_utils::SyclArray<int32_t> error_flag_arr(g_sycl_queue,
+        1, MemoryLocation::HOST);
 
-    if (!p_out_divs || !p_x_bcast || !p_k_bcast || !p_error_flag)
-    {
-        sycl::free(p_out_divs, g_sycl_queue);
-        sycl::free(p_x_bcast, g_sycl_queue);
-        sycl::free(p_k_bcast, g_sycl_queue);
-        sycl::free(p_error_flag, g_sycl_queue);
-        throw std::bad_alloc();
-    }
-
-    const std::vector<uint64_t> out_divs = res.divisors;
-
-    g_sycl_queue.memcpy(p_out_divs, out_divs.data(),
-        sizeof(uint64_t) * out_rank).wait();
-    g_sycl_queue.memcpy(p_x_bcast, x_bcast.data(),
-        sizeof(uint64_t) * out_rank).wait();
-    g_sycl_queue.memcpy(p_k_bcast, k_bcast.data(),
-        sizeof(uint64_t) * out_rank).wait();
+    const uint64_t* p_out_divs = out_divs_arr;
+    const uint64_t* p_x_bcast = x_bcast_arr;
+    const uint64_t* p_k_bcast = k_bcast_arr;
+    int32_t* p_error_flag = error_flag_arr;
 
     *p_error_flag = 0;
 
@@ -1142,11 +893,6 @@ Tensor<value_t> logpdf(const Tensor<value_t>& x,
 
     int32_t err = *p_error_flag;
 
-    sycl::free(p_out_divs, g_sycl_queue);
-    sycl::free(p_x_bcast, g_sycl_queue);
-    sycl::free(p_k_bcast, g_sycl_queue);
-    sycl::free(p_error_flag, g_sycl_queue);
-
     TEMPER_CHECK(err == 1,
         nan_error,
         R"(chisquare::logpdf: NaN detected in inputs.)");
@@ -1155,21 +901,13 @@ Tensor<value_t> logpdf(const Tensor<value_t>& x,
         nonfinite_error,
         R"(chisquare::logpdf: non-finite result (overflow or Inf) produced.)");
 
-    if (err != 0)
-    {
-        if (err == 3)
-        {
-            throw std::invalid_argument(R"(chisquare::logpdf:
-                k must be positive.)");
-        }
-        if (err == 4)
-        {
-            throw std::invalid_argument(R"(chisquare::logpdf:
-                x must be positive.)");
-        }
-        throw std::runtime_error(R"(chisquare::logpdf:
-            numeric error during pdf computation.)");
-    }
+    TEMPER_CHECK(err == 3,
+        validation_error,
+        R"(chisquare::logpdf: k must be positive.)");
+
+    TEMPER_CHECK(err == 4,
+        validation_error,
+        R"(chisquare::logpdf: x must be positive.)");
 
     return result;
 }
@@ -1183,16 +921,13 @@ Tensor<value_t> cdf(const Tensor<value_t>& x,
     const std::vector<uint64_t> & x_shape = x.get_dimensions();
     const std::vector<uint64_t> & k_shape = k.get_dimensions();
 
-    if (x_shape.empty())
-    {
-        throw std::invalid_argument(R"(chisquare::cdf:
-            x tensor has no elements.)");
-    }
-    if (k_shape.empty())
-    {
-        throw std::invalid_argument(R"(chisquare::cdf:
-            k tensor has no elements.)");
-    }
+    TEMPER_CHECK(x_shape.empty(),
+        validation_error,
+        R"(chisquare::cdf: x tensor has no elements.)");
+
+    TEMPER_CHECK(k_shape.empty(),
+        validation_error,
+        R"(chisquare::cdf: k tensor has no elements.)");
 
     temper::utils::TensorDesc x_desc{x_shape, x.get_strides()};
     temper::utils::TensorDesc k_desc{k_shape, k.get_strides()};
@@ -1208,41 +943,21 @@ Tensor<value_t> cdf(const Tensor<value_t>& x,
 
     Tensor<value_t> result(out_shape, x.get_memory_location());
 
-    uint64_t* p_out_divs = static_cast<uint64_t*>(
-        sycl::malloc_device(sizeof(uint64_t) * static_cast<size_t>(out_rank),
-                            g_sycl_queue));
-    uint64_t* p_x_bcast = static_cast<uint64_t*>(
-        sycl::malloc_device(sizeof(uint64_t) * static_cast<size_t>(out_rank),
-                            g_sycl_queue));
-    uint64_t* p_k_bcast = static_cast<uint64_t*>(
-        sycl::malloc_device(sizeof(uint64_t) * static_cast<size_t>(out_rank),
-                            g_sycl_queue));
-
-    int32_t* p_error_flag = static_cast<int32_t*>(
-        sycl::malloc_shared(sizeof(int32_t), g_sycl_queue));
-
-    bool alloc_ok = (p_out_divs && p_x_bcast && p_k_bcast && p_error_flag);
-
-    if (!alloc_ok)
-    {
-        sycl::free(p_out_divs, g_sycl_queue);
-        sycl::free(p_x_bcast, g_sycl_queue);
-        sycl::free(p_k_bcast, g_sycl_queue);
-        sycl::free(p_error_flag, g_sycl_queue);
-        throw std::bad_alloc();
-    }
-
     const std::vector<uint64_t> out_divs = std::move(res.divisors);
 
-    g_sycl_queue.memcpy(p_out_divs,
-        out_divs.data(), sizeof(uint64_t) * static_cast<size_t>(out_rank))
-        .wait();
-    g_sycl_queue.memcpy(p_x_bcast,
-        x_bcast.data(), sizeof(uint64_t) * static_cast<size_t>(out_rank))
-        .wait();
-    g_sycl_queue.memcpy(p_k_bcast,
-        k_bcast.data(), sizeof(uint64_t) * static_cast<size_t>(out_rank))
-        .wait();
+    sycl_utils::SyclArray<uint64_t> out_divs_arr(g_sycl_queue,
+        out_divs, MemoryLocation::DEVICE);
+    sycl_utils::SyclArray<uint64_t> x_bcast_arr(g_sycl_queue,
+        x_bcast, MemoryLocation::DEVICE);
+    sycl_utils::SyclArray<uint64_t> k_bcast_arr(g_sycl_queue,
+        k_bcast, MemoryLocation::DEVICE);
+    sycl_utils::SyclArray<int32_t> error_flag_arr(g_sycl_queue,
+        1, MemoryLocation::HOST);
+
+    const uint64_t* p_out_divs = out_divs_arr;
+    const uint64_t* p_x_bcast = x_bcast_arr;
+    const uint64_t* p_k_bcast = k_bcast_arr;
+    int32_t* p_error_flag = error_flag_arr;
 
     *p_error_flag = 0;
 
@@ -1281,11 +996,6 @@ Tensor<value_t> cdf(const Tensor<value_t>& x,
 
     int32_t err = *p_error_flag;
 
-    sycl::free(p_out_divs, g_sycl_queue);
-    sycl::free(p_x_bcast, g_sycl_queue);
-    sycl::free(p_k_bcast, g_sycl_queue);
-    sycl::free(p_error_flag, g_sycl_queue);
-
     TEMPER_CHECK(err == 1,
         nan_error,
         R"(chisquare::cdf: NaN detected in inputs.)");
@@ -1294,21 +1004,13 @@ Tensor<value_t> cdf(const Tensor<value_t>& x,
         nonfinite_error,
         R"(chisquare::cdf: non-finite result (overflow or Inf) produced.)");
 
-    if (err != 0)
-    {
-        if (err == 3)
-        {
-            throw std::invalid_argument(R"(chisquare::cdf:
-                k must be positive.)");
-        }
-        if (err == 4)
-        {
-            throw std::invalid_argument(R"(chisquare::cdf:
-                x must be positive.)");
-        }
-        throw std::runtime_error(R"(chisquare::cdf:
-            numeric error during pdf computation.)");
-    }
+    TEMPER_CHECK(err == 3,
+        validation_error,
+        R"(chisquare::cdf: k must be positive.)");
+
+    TEMPER_CHECK(err == 4,
+        validation_error,
+        R"(chisquare::cdf: x must be positive.)");
 
     return result;
 }
@@ -1322,16 +1024,13 @@ Tensor<value_t> ppf(const Tensor<value_t>& q,
     const std::vector<uint64_t> & q_shape = q.get_dimensions();
     const std::vector<uint64_t> & k_shape = k.get_dimensions();
 
-    if (q_shape.empty())
-    {
-        throw std::invalid_argument(R"(chisquare::ppf:
-            q tensor has no elements.)");
-    }
-    if (k_shape.empty())
-    {
-        throw std::invalid_argument(R"(chisquare::ppf:
-            k tensor has no elements.)");
-    }
+    TEMPER_CHECK(q_shape.empty(),
+        validation_error,
+        R"(chisquare::ppf: q tensor has no elements.)");
+
+    TEMPER_CHECK(k_shape.empty(),
+        validation_error,
+        R"(chisquare::ppf: k tensor has no elements.)");
 
     temper::utils::TensorDesc q_desc{q_shape, q.get_strides()};
     temper::utils::TensorDesc k_desc{k_shape, k.get_strides()};
@@ -1347,41 +1046,21 @@ Tensor<value_t> ppf(const Tensor<value_t>& q,
 
     Tensor<value_t> result(out_shape, q.get_memory_location());
 
-    uint64_t* p_out_divs = static_cast<uint64_t*>(
-        sycl::malloc_device(sizeof(uint64_t) * static_cast<size_t>(out_rank),
-                            g_sycl_queue));
-    uint64_t* p_q_bcast = static_cast<uint64_t*>(
-        sycl::malloc_device(sizeof(uint64_t) * static_cast<size_t>(out_rank),
-                            g_sycl_queue));
-    uint64_t* p_k_bcast = static_cast<uint64_t*>(
-        sycl::malloc_device(sizeof(uint64_t) * static_cast<size_t>(out_rank),
-                            g_sycl_queue));
-
-    int32_t* p_error_flag = static_cast<int32_t*>(
-        sycl::malloc_shared(sizeof(int32_t), g_sycl_queue));
-
-    bool alloc_ok = (p_out_divs && p_q_bcast && p_k_bcast && p_error_flag);
-
-    if (!alloc_ok)
-    {
-        sycl::free(p_out_divs, g_sycl_queue);
-        sycl::free(p_q_bcast, g_sycl_queue);
-        sycl::free(p_k_bcast, g_sycl_queue);
-        sycl::free(p_error_flag, g_sycl_queue);
-        throw std::bad_alloc();
-    }
-
     const std::vector<uint64_t> out_divs = std::move(res.divisors);
 
-    g_sycl_queue.memcpy(p_out_divs,
-        out_divs.data(), sizeof(uint64_t) * static_cast<size_t>(out_rank))
-        .wait();
-    g_sycl_queue.memcpy(p_q_bcast,
-        q_bcast.data(), sizeof(uint64_t) * static_cast<size_t>(out_rank))
-        .wait();
-    g_sycl_queue.memcpy(p_k_bcast,
-        k_bcast.data(), sizeof(uint64_t) * static_cast<size_t>(out_rank))
-        .wait();
+    sycl_utils::SyclArray<uint64_t> out_divs_arr(g_sycl_queue,
+        out_divs, MemoryLocation::DEVICE);
+    sycl_utils::SyclArray<uint64_t> q_bcast_arr(g_sycl_queue,
+        q_bcast, MemoryLocation::DEVICE);
+    sycl_utils::SyclArray<uint64_t> k_bcast_arr(g_sycl_queue,
+        k_bcast, MemoryLocation::DEVICE);
+    sycl_utils::SyclArray<int32_t> error_flag_arr(g_sycl_queue,
+        1, MemoryLocation::HOST);
+
+    const uint64_t* p_out_divs = out_divs_arr;
+    const uint64_t* p_q_bcast = q_bcast_arr;
+    const uint64_t* p_k_bcast = k_bcast_arr;
+    int32_t* p_error_flag = error_flag_arr;
 
     *p_error_flag = 0;
 
@@ -1421,11 +1100,6 @@ Tensor<value_t> ppf(const Tensor<value_t>& q,
 
     int32_t err = *p_error_flag;
 
-    sycl::free(p_out_divs, g_sycl_queue);
-    sycl::free(p_q_bcast, g_sycl_queue);
-    sycl::free(p_k_bcast, g_sycl_queue);
-    sycl::free(p_error_flag, g_sycl_queue);
-
     TEMPER_CHECK(err == 1,
         nan_error,
         R"(chisquare::ppf: NaN detected in inputs.)");
@@ -1434,21 +1108,13 @@ Tensor<value_t> ppf(const Tensor<value_t>& q,
         nonfinite_error,
         R"(chisquare::ppf: non-finite result (overflow or Inf) produced.)");
 
-    if (err != 0)
-    {
-        if (err == 3)
-        {
-            throw std::invalid_argument(R"(chisquare::ppf:
-                k must be positive.)");
-        }
-        if (err == 4)
-        {
-            throw std::invalid_argument(R"(chisquare::ppf:
-                q values must be in [0,1].)");
-        }
-        throw std::runtime_error(R"(chisquare::ppf:
-            numeric error during pdf computation.)");
-    }
+    TEMPER_CHECK(err == 3,
+        validation_error,
+        R"(chisquare::ppf: k must be positive.)");
+
+    TEMPER_CHECK(err == 4,
+        validation_error,
+        R"(chisquare::ppf: q values must be in [0,1].)");
 
     return result;
 }
@@ -1462,16 +1128,13 @@ Tensor<value_t> isf(const Tensor<value_t>& q,
     const std::vector<uint64_t> & q_shape = q.get_dimensions();
     const std::vector<uint64_t> & k_shape = k.get_dimensions();
 
-    if (q_shape.empty())
-    {
-        throw std::invalid_argument(R"(chisquare::isf:
-            q tensor has no elements.)");
-    }
-    if (k_shape.empty())
-    {
-        throw std::invalid_argument(R"(chisquare::isf:
-            k tensor has no elements.)");
-    }
+    TEMPER_CHECK(q_shape.empty(),
+        validation_error,
+        R"(chisquare::isf: q tensor has no elements.)");
+
+    TEMPER_CHECK(k_shape.empty(),
+        validation_error,
+        R"(chisquare::isf: k tensor has no elements.)");
     return ppf((Tensor<value_t>(static_cast<value_t>(1)) - q), k);
 }
 template Tensor<float> isf<float>
@@ -1485,33 +1148,17 @@ Tensor<value_t> rvs(const Tensor<value_t>& k,
 {
     const std::vector<uint64_t> & k_shape = k.get_dimensions();
 
-    if (k_shape.empty())
-    {
-        throw std::invalid_argument(R"(chisquare::rvs:
-            k tensor has no elements.)");
-    }
+    TEMPER_CHECK(k_shape.empty(),
+        validation_error,
+        R"(chisquare::rvs: k tensor has no elements.)");
 
     Tensor<value_t> q(out_shape, res_loc);
     const uint64_t total_output_elems = q.get_num_elements();
 
-    const int64_t out_rank = static_cast<int64_t>(out_shape.size());
-    std::vector<uint64_t> out_divs = temper::utils::compute_divisors(out_shape);
-    uint64_t* p_out_divs = static_cast<uint64_t*>(
-        sycl::malloc_device(sizeof(uint64_t) * out_rank, g_sycl_queue));
+    sycl_utils::SyclArray<int32_t> error_flag_arr(g_sycl_queue,
+        1, MemoryLocation::HOST);
 
-    int32_t* p_error_flag = static_cast<int32_t*>(
-        sycl::malloc_shared(sizeof(int32_t), g_sycl_queue));
-
-    bool alloc_ok = (p_out_divs && p_error_flag);
-    if (!alloc_ok)
-    {
-        sycl::free(p_out_divs, g_sycl_queue);
-        sycl::free(p_error_flag, g_sycl_queue);
-        throw std::bad_alloc();
-    }
-
-    g_sycl_queue.memcpy(p_out_divs,
-        out_divs.data(), sizeof(uint64_t) * out_rank).wait();
+    int32_t* p_error_flag = error_flag_arr;
     *p_error_flag = 0;
 
     value_t* p_q = q.get_data();
@@ -1547,14 +1194,10 @@ Tensor<value_t> rvs(const Tensor<value_t>& k,
     }).wait();
 
     int32_t err = *p_error_flag;
-    sycl::free(p_out_divs, g_sycl_queue);
-    sycl::free(p_error_flag, g_sycl_queue);
 
-    if (err != 0)
-    {
-        throw std::runtime_error(R"(chisquare::rvs:
-            numeric error during uniform generation.)");
-    }
+    TEMPER_CHECK(err != 0,
+        computation_error,
+        R"(chisquare::rvs: numeric error during uniform generation.)");
 
     return ppf(q, k);
 }
@@ -1565,11 +1208,11 @@ template<typename value_t>
 Tensor<value_t> mean(const Tensor<value_t>& k)
 {
     const int64_t rank = k.get_rank();
-    if (rank == 0)
-    {
-        throw std::invalid_argument(R"(chisquare::mean:
-            input tensor has no elements.)");
-    }
+
+    TEMPER_CHECK(rank == 0,
+        validation_error,
+        R"(chisquare::mean: input tensor has no elements.)");
+
     const std::vector<uint64_t>& dims = k.get_dimensions();
 
     const uint64_t total_elems = k.get_num_elements();
@@ -1578,27 +1221,19 @@ Tensor<value_t> mean(const Tensor<value_t>& k)
 
     const std::vector<uint64_t> divisors =
         temper::utils::compute_divisors(dims);
-    const std::vector<uint64_t> strides = k.get_strides();
+    const std::vector<uint64_t> & strides = k.get_strides();
 
-    uint64_t* p_divs = static_cast<uint64_t*>(
-        sycl::malloc_device(sizeof(uint64_t) * rank, g_sycl_queue));
-    uint64_t* p_strides = static_cast<uint64_t*>(
-        sycl::malloc_device(sizeof(uint64_t) * rank, g_sycl_queue));
-    int32_t* p_error_flag = static_cast<int32_t*>(
-        sycl::malloc_shared(sizeof(int32_t), g_sycl_queue));
+    sycl_utils::SyclArray<uint64_t> divs_arr(g_sycl_queue,
+        divisors, MemoryLocation::DEVICE);
+    sycl_utils::SyclArray<uint64_t> strides_arr(g_sycl_queue,
+        strides, MemoryLocation::DEVICE);
+    sycl_utils::SyclArray<int32_t> error_flag_arr(g_sycl_queue,
+        1, MemoryLocation::HOST);
 
-    if (!p_divs || !p_strides || !p_error_flag)
-    {
-        sycl::free(p_divs, g_sycl_queue);
-        sycl::free(p_strides, g_sycl_queue);
-        sycl::free(p_error_flag, g_sycl_queue);
-        throw std::bad_alloc();
-    }
+    const uint64_t* p_divs = divs_arr;
+    const uint64_t* p_strides = strides_arr;
+    int32_t* p_error_flag = error_flag_arr;
 
-    g_sycl_queue.memcpy(p_divs, divisors.data(),
-                        sizeof(uint64_t) * rank).wait();
-    g_sycl_queue.memcpy(p_strides, strides.data(),
-                        sizeof(uint64_t) * rank).wait();
     *p_error_flag = 0;
 
     const value_t* p_in = k.get_data();
@@ -1622,9 +1257,6 @@ Tensor<value_t> mean(const Tensor<value_t>& k)
     }).wait();
 
     int32_t err = *p_error_flag;
-    sycl::free(p_error_flag, g_sycl_queue);
-    sycl::free(p_divs, g_sycl_queue);
-    sycl::free(p_strides, g_sycl_queue);
 
     TEMPER_CHECK(err == 1,
         nan_error,
@@ -1635,7 +1267,7 @@ Tensor<value_t> mean(const Tensor<value_t>& k)
         R"(chisquare::mean: non-finite result (overflow or Inf) produced.)");
 
     TEMPER_CHECK(err == 3,
-        std::invalid_argument,
+        validation_error,
         R"(chisquare::mean: k must be positive.)");
 
     return result;
@@ -1646,11 +1278,10 @@ template<typename value_t>
 Tensor<value_t> var(const Tensor<value_t>& k)
 {
     const int64_t rank = k.get_rank();
-    if (rank == 0)
-    {
-        throw std::invalid_argument(R"(chisquare::var:
-            input tensor has no elements.)");
-    }
+    TEMPER_CHECK(rank == 0,
+        validation_error,
+        R"(chisquare::var: input tensor has no elements.)");
+
     const std::vector<uint64_t>& dims = k.get_dimensions();
 
     const uint64_t total_elems = k.get_num_elements();
@@ -1659,27 +1290,19 @@ Tensor<value_t> var(const Tensor<value_t>& k)
 
     const std::vector<uint64_t> divisors =
         temper::utils::compute_divisors(dims);
-    const std::vector<uint64_t> strides = k.get_strides();
+    const std::vector<uint64_t> & strides = k.get_strides();
 
-    uint64_t* p_divs = static_cast<uint64_t*>(
-        sycl::malloc_device(sizeof(uint64_t) * rank, g_sycl_queue));
-    uint64_t* p_strides = static_cast<uint64_t*>(
-        sycl::malloc_device(sizeof(uint64_t) * rank, g_sycl_queue));
-    int32_t* p_error_flag = static_cast<int32_t*>(
-        sycl::malloc_shared(sizeof(int32_t), g_sycl_queue));
+    sycl_utils::SyclArray<uint64_t> divs_arr(g_sycl_queue,
+        divisors, MemoryLocation::DEVICE);
+    sycl_utils::SyclArray<uint64_t> strides_arr(g_sycl_queue,
+        strides, MemoryLocation::DEVICE);
+    sycl_utils::SyclArray<int32_t> error_flag_arr(g_sycl_queue,
+        1, MemoryLocation::HOST);
 
-    if (!p_divs || !p_strides || !p_error_flag)
-    {
-        sycl::free(p_divs, g_sycl_queue);
-        sycl::free(p_strides, g_sycl_queue);
-        sycl::free(p_error_flag, g_sycl_queue);
-        throw std::bad_alloc();
-    }
+    const uint64_t* p_divs = divs_arr;
+    const uint64_t* p_strides = strides_arr;
+    int32_t* p_error_flag = error_flag_arr;
 
-    g_sycl_queue.memcpy(p_divs, divisors.data(),
-                        sizeof(uint64_t) * rank).wait();
-    g_sycl_queue.memcpy(p_strides, strides.data(),
-                        sizeof(uint64_t) * rank).wait();
     *p_error_flag = 0;
 
     const value_t* p_in = k.get_data();
@@ -1705,9 +1328,6 @@ Tensor<value_t> var(const Tensor<value_t>& k)
     }).wait();
 
     int32_t err = *p_error_flag;
-    sycl::free(p_error_flag, g_sycl_queue);
-    sycl::free(p_divs, g_sycl_queue);
-    sycl::free(p_strides, g_sycl_queue);
 
     TEMPER_CHECK(err == 1,
         nan_error,
@@ -1717,16 +1337,9 @@ Tensor<value_t> var(const Tensor<value_t>& k)
         nonfinite_error,
         R"(chisquare::var: non-finite result (overflow or Inf) produced.)");
 
-    if (err != 0)
-    {
-        if (err == 3)
-        {
-            throw std::invalid_argument(R"(chisquare::var:
-                k must be positive.)");
-        }
-        throw std::runtime_error(R"(chisquare::var:
-            numeric error during computation.)");
-    }
+    TEMPER_CHECK(err == 3,
+        validation_error,
+        R"(chisquare::var: k must be positive.)");
 
     return result;
 }

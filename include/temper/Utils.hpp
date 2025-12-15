@@ -14,6 +14,8 @@
 #include <stdexcept>
 #include <numeric>
 
+#include "Errors.hpp"
+
 namespace temper::utils
 {
 
@@ -85,10 +87,9 @@ compute_divisors(const std::vector<uint64_t>& shape)
  */
 inline BroadcastResult compute_broadcast(const std::vector<TensorDesc>& inputs)
 {
-    if (inputs.empty())
-    {
-        throw std::invalid_argument("compute_broadcast: no inputs provided");
-    }
+    TEMPER_CHECK(inputs.empty(),
+        validation_error,
+        "compute_broadcast: no inputs provided");
 
     int64_t max_rank = 0;
     for (const auto &t : inputs)
@@ -138,8 +139,10 @@ inline BroadcastResult compute_broadcast(const std::vector<TensorDesc>& inputs)
             }
             else
             {
-                throw std::invalid_argument(R"(compute_broadcast:
-                    incompatible shapes for broadcasting)");
+                TEMPER_CHECK(true,
+                    validation_error,
+                    R"(compute_broadcast:
+                        incompatible shapes for broadcasting)");
             }
         }
         res.shape[d] = out_sz;

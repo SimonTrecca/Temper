@@ -366,7 +366,7 @@ TYPED_TEST(TypedMatmul, batched_broadcast_batches)
 
 /**
  * @test TypedMatmul.empty_throws
- * @brief matmul should throw std::invalid_argument if inputs are empty.
+ * @brief matmul should throw temper::validation_error if inputs are empty.
  */
 TYPED_TEST(TypedMatmul, empty_throws)
 {
@@ -386,8 +386,8 @@ TYPED_TEST(TypedMatmul, empty_throws)
     Tensor<value_t> A2({2, 2}, MemoryLocation::DEVICE);
     A2 = b_vals;
 
-    EXPECT_THROW(math::matmul<value_t>(A, B), std::invalid_argument);
-    EXPECT_THROW(math::matmul<value_t>(A2, B2), std::invalid_argument);
+    EXPECT_THROW(math::matmul<value_t>(A, B), temper::validation_error);
+    EXPECT_THROW(math::matmul<value_t>(A2, B2), temper::validation_error);
 
 }
 
@@ -554,7 +554,7 @@ TYPED_TEST(TypedReshape, reshape_free_function_invalid_size)
 
     EXPECT_THROW(
         { auto r = math::reshape<value_t>(src, {4, 2}); },
-        std::invalid_argument
+        temper::validation_error
     );
 }
 
@@ -608,7 +608,7 @@ TYPED_TEST(TypedReshape, reshape_free_function_empty_tensor)
 
     EXPECT_THROW(
         { auto r = math::reshape<value_t>(empty, {1}); },
-        std::invalid_argument
+        temper::validation_error
     );
 }
 
@@ -736,8 +736,8 @@ TYPED_TEST(TypedSort, sort_function_axis_out_of_bounds)
     using value_t = TypeParam;
     Tensor<value_t> t({3}, MemoryLocation::HOST);
 
-    EXPECT_THROW(math::sort<value_t>(t, 1), std::invalid_argument);
-    EXPECT_THROW(math::sort<value_t>(t, -2), std::invalid_argument);
+    EXPECT_THROW(math::sort<value_t>(t, 1), temper::bounds_error);
+    EXPECT_THROW(math::sort<value_t>(t, -2), temper::bounds_error);
 }
 
 template<typename T>
@@ -1804,7 +1804,7 @@ TYPED_TEST(TypedCumsum, cumsum_alias_view_weird_strides)
 
 /**
  * @test TypedCumsum.cumsum_axis_out_of_bounds
- * @brief Tests that cumsum throws std::invalid_argument when the axis
+ * @brief Tests that cumsum throws temper::bounds_error when the axis
  * is out of bounds.
  */
 TYPED_TEST(TypedCumsum, cumsum_axis_out_of_bounds)
@@ -1818,8 +1818,8 @@ TYPED_TEST(TypedCumsum, cumsum_axis_out_of_bounds)
     };
     t = vals;
 
-    EXPECT_THROW(math::cumsum<value_t>(t, 2), std::invalid_argument);
-    EXPECT_THROW(math::cumsum<value_t>(t, -3), std::invalid_argument);
+    EXPECT_THROW(math::cumsum<value_t>(t, 2), temper::bounds_error);
+    EXPECT_THROW(math::cumsum<value_t>(t, -3), temper::bounds_error);
 }
 
 /**
@@ -2120,11 +2120,11 @@ TYPED_TEST(TypedTranspose, transpose_invalid_axes)
     t = std::vector<value_t>(24, static_cast<value_t>(1));
 
     EXPECT_THROW(math::transpose<value_t>(t, {0, 1}),
-                 std::invalid_argument);
+        temper::validation_error);
     EXPECT_THROW(math::transpose<value_t>(t, {0, 1, 1}),
-                 std::invalid_argument);
+        temper::bounds_error);
     EXPECT_THROW(math::transpose<value_t>(t, {0, 1, 3}),
-                 std::invalid_argument);
+        temper::bounds_error);
 }
 
 /**
@@ -2174,7 +2174,7 @@ TYPED_TEST(TypedTranspose, transpose_empty)
 {
     using value_t = TypeParam;
     Tensor<value_t> t;
-    EXPECT_THROW(math::transpose<value_t>(t), std::runtime_error);
+    EXPECT_THROW(math::transpose<value_t>(t), temper::validation_error);
 }
 
 template<typename T>
@@ -2609,7 +2609,7 @@ TYPED_TEST(TypedPad, pad_4d_tensor_preserves_batches)
 
 /**
  * @test TypedPad.pad_empty
- * @brief Calling pad on an empty tensor must throw std::invalid_argument.
+ * @brief Calling pad on an empty tensor must throw temper::validation_error.
  */
 TYPED_TEST(TypedPad, pad_empty)
 {
@@ -2617,12 +2617,12 @@ TYPED_TEST(TypedPad, pad_empty)
     Tensor<value_t> t;
     value_t fill = static_cast<value_t>(0);
     EXPECT_THROW(math::pad<value_t>(t, 1, 2, 3, 4, fill),
-        std::invalid_argument);
+        temper::validation_error);
 }
 
 /**
  * @test TypedPad.pad_rank1
- * @brief Calling pad on a rank-1 tensor must throw std::invalid_argument.
+ * @brief Calling pad on a rank-1 tensor must throw temper::validation_error.
  */
 TYPED_TEST(TypedPad, pad_rank1)
 {
@@ -2630,7 +2630,7 @@ TYPED_TEST(TypedPad, pad_rank1)
     Tensor<value_t> t({10});
     value_t fill = static_cast<value_t>(0);
     EXPECT_THROW(math::pad<value_t>(t, 1, 2, 3, 4, fill),
-                 std::invalid_argument);
+                 temper::validation_error);
 }
 
 /**
@@ -2645,7 +2645,7 @@ TYPED_TEST(TypedPad, pad_padwidth_overflow)
     value_t fill = static_cast<value_t>(0);
 
     EXPECT_THROW(math::pad<value_t>(t, 1, 2, big, 1, fill),
-                 std::overflow_error);
+                 temper::bounds_error);
 }
 
 /**
@@ -2660,7 +2660,7 @@ TYPED_TEST(TypedPad, pad_padheight_overflow)
     value_t fill = static_cast<value_t>(0);
 
     EXPECT_THROW(math::pad<value_t>(t, big, 1, 3, 4, fill),
-                 std::overflow_error);
+                 temper::bounds_error);
 }
 
 /**
@@ -2921,7 +2921,7 @@ TYPED_TEST(TypedArgmax, argmax_tie_prefers_first)
 
 /**
  * @test TypedArgmax.argmax_axis_out_of_range
- * @brief argmax should throw std::invalid_argument for invalid axes.
+ * @brief argmax should throw temper::bounds_error for invalid axes.
  */
 TYPED_TEST(TypedArgmax, argmax_axis_out_of_range)
 {
@@ -2934,8 +2934,8 @@ TYPED_TEST(TypedArgmax, argmax_axis_out_of_range)
         static_cast<value_t>(5), static_cast<value_t>(6)
     };
 
-    EXPECT_THROW(math::argmax<value_t>(t, 2), std::invalid_argument);
-    EXPECT_THROW(math::argmax<value_t>(t, -3), std::invalid_argument);
+    EXPECT_THROW(math::argmax<value_t>(t, 2), temper::bounds_error);
+    EXPECT_THROW(math::argmax<value_t>(t, -3), temper::bounds_error);
 }
 
 /**
@@ -3359,8 +3359,8 @@ TYPED_TEST(TypedArgsort, argsort_axis_out_of_range)
                               static_cast<value_t>(5),
                               static_cast<value_t>(6) };
 
-    EXPECT_THROW(math::argsort<value_t>(t, 2, false), std::invalid_argument);
-    EXPECT_THROW(math::argsort<value_t>(t, -3, false), std::invalid_argument);
+    EXPECT_THROW(math::argsort<value_t>(t, 2, false), temper::bounds_error);
+    EXPECT_THROW(math::argsort<value_t>(t, -3, false), temper::bounds_error);
 }
 
 /**
@@ -3952,7 +3952,7 @@ TYPED_TEST(TypedGather, gather_both_views)
 /**
  * @test TypedGather.axis_out_of_range_throws
  * @brief Passing an axis outside the valid range must
- * throw std::invalid_argument.
+ * throw temper::bounds_error.
  */
 TYPED_TEST(TypedGather, axis_out_of_range_throws)
 {
@@ -3965,13 +3965,13 @@ TYPED_TEST(TypedGather, axis_out_of_range_throws)
     t = vals;
     Tensor<uint64_t> idx = math::argsort(t, 0);
 
-    EXPECT_THROW(math::gather(t, idx, 5), std::invalid_argument);
+    EXPECT_THROW(math::gather(t, idx, 5), temper::bounds_error);
 }
 
 /**
  * @test TypedGather.indexes_rank_higher_than_input_throws
  * @brief If indexes tensor has rank greater than the input tensor, gather must
- * throw std::invalid_argument.
+ * throw temper::validation_error.
  */
 TYPED_TEST(TypedGather, indexes_rank_higher_than_input_throws)
 {
@@ -3987,13 +3987,13 @@ TYPED_TEST(TypedGather, indexes_rank_higher_than_input_throws)
     std::vector<uint64_t> dummy(1*2*2, 0);
     idx = dummy;
 
-    EXPECT_THROW(math::gather(t, idx, 0), std::invalid_argument);
+    EXPECT_THROW(math::gather(t, idx, 0), temper::validation_error);
 }
 
 /**
  * @test TypedGather.flattened_indexes_not_1d_throws
  * @brief For flattened gather (axis == nullopt) the indexes tensor must be
- * 1-D; otherwise std::invalid_argument must be thrown.
+ * 1-D; otherwise temper::validation_error must be thrown.
  */
 TYPED_TEST(TypedGather, flattened_indexes_not_1d_throws)
 {
@@ -4009,13 +4009,13 @@ TYPED_TEST(TypedGather, flattened_indexes_not_1d_throws)
     Tensor<uint64_t> idx({2,1}, MemoryLocation::DEVICE);
     idx = std::vector<uint64_t>{0,1};
 
-    EXPECT_THROW(math::gather(t, idx, std::nullopt), std::invalid_argument);
+    EXPECT_THROW(math::gather(t, idx, std::nullopt), temper::validation_error);
 }
 
 /**
  * @test TypedGather.flattened_indexes_wrong_length_throws
  * @brief For flattened gather the 1-D indexes length must equal the total
- * number of input elements; otherwise std::invalid_argument must be thrown.
+ * number of input elements; otherwise temper::validation_error must be thrown.
  */
 TYPED_TEST(TypedGather, flattened_indexes_wrong_length_throws)
 {
@@ -4031,13 +4031,13 @@ TYPED_TEST(TypedGather, flattened_indexes_wrong_length_throws)
     Tensor<uint64_t> idx({5}, MemoryLocation::DEVICE);
     idx = std::vector<uint64_t>{0,1,2,3,4};
 
-    EXPECT_THROW(math::gather(t, idx, std::nullopt), std::invalid_argument);
+    EXPECT_THROW(math::gather(t, idx, std::nullopt), temper::validation_error);
 }
 
 /**
  * @test TypedGather.index_value_out_of_range_flattened_throws
  * @brief Flattened gather with any index >= total_input_elems must throw
- * std::out_of_range.
+ * temper::bounds_error.
  */
 TYPED_TEST(TypedGather, index_value_out_of_range_flattened_throws)
 {
@@ -4053,13 +4053,13 @@ TYPED_TEST(TypedGather, index_value_out_of_range_flattened_throws)
     Tensor<uint64_t> idx({4}, MemoryLocation::DEVICE);
     idx = std::vector<uint64_t>{3,2,1,4};
 
-    EXPECT_THROW(math::gather(t, idx, std::nullopt), std::out_of_range);
+    EXPECT_THROW(math::gather(t, idx, std::nullopt), temper::bounds_error);
 }
 
 /**
  * @test TypedGather.index_value_out_of_range_axis_throws
  * @brief In axis-based gather, any index value that is >= size of the chosen
- * axis must cause std::out_of_range to be thrown.
+ * axis must cause temper::bounds_error to be thrown.
  */
 TYPED_TEST(TypedGather, index_value_out_of_range_axis_throws)
 {
@@ -4075,13 +4075,13 @@ TYPED_TEST(TypedGather, index_value_out_of_range_axis_throws)
     Tensor<uint64_t> idx({2,3}, MemoryLocation::DEVICE);
     idx = std::vector<uint64_t>{0,1,2, 0,5,1};
 
-    EXPECT_THROW(math::gather(t, idx, 1), std::out_of_range);
+    EXPECT_THROW(math::gather(t, idx, 1), temper::bounds_error);
 }
 
 /**
  * @test TypedGather.incompatible_broadcast_throws
  * @brief If indexes cannot be broadcast to the input shape (for axis-based
- * gather), std::invalid_argument must be thrown.
+ * gather), temper::validation_error must be thrown.
  */
 TYPED_TEST(TypedGather, incompatible_broadcast_throws)
 {
@@ -4096,7 +4096,7 @@ TYPED_TEST(TypedGather, incompatible_broadcast_throws)
     Tensor<uint64_t> idx({2,2}, MemoryLocation::DEVICE);
     idx = std::vector<uint64_t>{0,1, 1,0};
 
-    EXPECT_THROW(math::gather(t, idx, 0), std::invalid_argument);
+    EXPECT_THROW(math::gather(t, idx, 0), temper::validation_error);
 }
 
 /**
@@ -4347,7 +4347,7 @@ TEST(LINSPACE, axis_out_of_range_throws)
         {
             math::linspace(start, stop, 3, MemoryLocation::DEVICE, 5, true);
         },
-        std::invalid_argument
+        temper::bounds_error
     );
 }
 
@@ -4788,7 +4788,7 @@ TYPED_TEST(TypedArange, zero_step_throws)
                 static_cast<value_t>(0), static_cast<value_t>(5),
                 static_cast<value_t>(0), MemoryLocation::DEVICE);
         },
-        std::invalid_argument);
+        temper::validation_error);
 }
 
 /**
@@ -4806,19 +4806,19 @@ TYPED_TEST(TypedArange, non_finite_inputs_throw)
                      std::numeric_limits<value_t>::quiet_NaN(),
                      static_cast<value_t>(1), static_cast<value_t>(1),
                      MemoryLocation::DEVICE),
-                 std::runtime_error);
+                 temper::nonfinite_error);
 
     EXPECT_THROW(math::arange<value_t>(
                      static_cast<value_t>(0),
                      std::numeric_limits<value_t>::infinity(),
                      static_cast<value_t>(1), MemoryLocation::DEVICE),
-                 std::runtime_error);
+                 temper::nonfinite_error);
 
     EXPECT_THROW(math::arange<value_t>(
                      static_cast<value_t>(0), static_cast<value_t>(1),
                      std::numeric_limits<value_t>::quiet_NaN(),
                      MemoryLocation::DEVICE),
-                 std::runtime_error);
+                 temper::nonfinite_error);
 }
 
 /**
@@ -5044,7 +5044,7 @@ TEST(INTEGRAL, invalid_bins)
     auto f = std::function<float(float)>([](float) -> float { return 1.0f; });
 
     EXPECT_THROW(math::integral<float>
-        (f, 0.0f, 1.0f, 0), std::invalid_argument);
+        (f, 0.0f, 1.0f, 0), temper::validation_error);
 }
 
 /**
@@ -5231,7 +5231,7 @@ TYPED_TEST(TypedFactorial, negative_and_noninteger_throws)
     // Negative input should throw for all signed types
     Tensor<value_t> neg({1}, MemoryLocation::DEVICE);
     neg = std::vector<value_t>{ static_cast<value_t>(-1) };
-    EXPECT_THROW(math::factorial<value_t>(neg), std::invalid_argument);
+    EXPECT_THROW(math::factorial<value_t>(neg), temper::validation_error);
 
     if constexpr (!std::is_floating_point_v<value_t>)
     {
@@ -5242,7 +5242,7 @@ TYPED_TEST(TypedFactorial, negative_and_noninteger_throws)
     nonint = std::vector<value_t>{
         static_cast<value_t>(2.5), static_cast<value_t>(3.14159)
     };
-    EXPECT_THROW(math::factorial<value_t>(nonint), std::invalid_argument);
+    EXPECT_THROW(math::factorial<value_t>(nonint), temper::validation_error);
 }
 
 /**
@@ -5748,13 +5748,13 @@ TEST(MEAN, mean_non_finite_throws)
 
 /**
  * @test MEAN.mean_empty
- * @brief mean() on an empty tensor throws std::invalid_argument.
+ * @brief mean() on an empty tensor throws temper::validation_error.
  */
 TEST(MEAN, mean_empty)
 {
     Tensor<float> t;
 
-    EXPECT_THROW(math::mean(t), std::invalid_argument);
+    EXPECT_THROW(math::mean(t), temper::validation_error);
 }
 
 /**
@@ -5880,12 +5880,12 @@ TEST(VAR, var_non_finite_throws)
 
 /**
  * @test VAR.var_empty
- * @brief var() on empty tensor throws std::invalid_argument.
+ * @brief var() on empty tensor throws temper::validation_error.
  */
 TEST(VAR, var_empty)
 {
     Tensor<float> t;
-    EXPECT_THROW(math::var(t, std::nullopt, 0), std::invalid_argument);
+    EXPECT_THROW(math::var(t, std::nullopt, 0), temper::validation_error);
 }
 
 /**
@@ -5895,7 +5895,7 @@ TEST(VAR, var_empty)
 TEST(COV, cov_empty)
 {
     Tensor<float> t;
-    EXPECT_THROW(math::cov(t, {1}, {1}), std::invalid_argument);
+    EXPECT_THROW(math::cov(t, {1}, {1}), temper::validation_error);
 }
 
 /**
@@ -5905,7 +5905,7 @@ TEST(COV, cov_empty)
 TEST(COV, cov_axis_empty)
 {
     Tensor<float> t({2, 3});
-    EXPECT_THROW(math::cov(t, {}, {}), std::invalid_argument);
+    EXPECT_THROW(math::cov(t, {}, {}), temper::validation_error);
 }
 
 /**
@@ -5915,7 +5915,7 @@ TEST(COV, cov_axis_empty)
 TEST(COV, cov_ddof_negative)
 {
     Tensor<float> t({1});
-    EXPECT_THROW(math::cov(t, {1}, {1}, -45), std::invalid_argument);
+    EXPECT_THROW(math::cov(t, {1}, {1}, -45), temper::validation_error);
 }
 
 
@@ -5926,7 +5926,7 @@ TEST(COV, cov_ddof_negative)
 TEST(COV, cov_axis_out_of_range)
 {
     Tensor<float> t({2, 3});
-    EXPECT_THROW(math::cov(t, {15, 16, 17}, {2, 18}), std::invalid_argument);
+    EXPECT_THROW(math::cov(t, {15, 16, 17}, {2, 18}), temper::bounds_error);
 }
 
 /**
@@ -5936,7 +5936,7 @@ TEST(COV, cov_axis_out_of_range)
 TEST(COV, cov_rank_lower_than_2)
 {
     Tensor<float> t({2});
-    EXPECT_THROW(math::cov(t, {1}, {0}), std::invalid_argument);
+    EXPECT_THROW(math::cov(t, {1}, {0}), temper::validation_error);
 }
 
 /**
@@ -5946,7 +5946,7 @@ TEST(COV, cov_rank_lower_than_2)
 TEST(COV, cov_duplicate_axes)
 {
     Tensor<float> t({2, 3});
-    EXPECT_THROW(math::cov(t, {0}, {0}), std::invalid_argument);
+    EXPECT_THROW(math::cov(t, {0}, {0}), temper::validation_error);
 }
 
 
@@ -5957,7 +5957,7 @@ TEST(COV, cov_duplicate_axes)
 TEST(COV, cov_ddof_too_high)
 {
     Tensor<float> t({2, 3});
-    EXPECT_THROW(math::cov(t, {0}, {1}, 2), std::invalid_argument);
+    EXPECT_THROW(math::cov(t, {0}, {1}, 2), temper::validation_error);
 }
 
 /**
@@ -6722,12 +6722,12 @@ TEST(STDDEV, stddev_non_finite_throws)
 
 /**
  * @test STDDEV.stddev_empty
- * @brief math::std on an empty tensor throws std::invalid_argument.
+ * @brief math::std on an empty tensor throws temper::validation_error.
  */
 TEST(STDDEV, stddev_empty)
 {
     Tensor<float> t;
-    EXPECT_THROW(math::stddev(t, std::nullopt, 0), std::invalid_argument);
+    EXPECT_THROW(math::stddev(t, std::nullopt, 0), temper::validation_error);
 }
 
 /**
@@ -6739,8 +6739,8 @@ TEST(STDDEV, stddev_ddof_invalid_throws)
     Tensor<float> t({3}, MemoryLocation::DEVICE);
     t = std::vector<float>{1.0f, 2.0f, 3.0f};
 
-    EXPECT_THROW(math::stddev(t, std::nullopt, 3), std::invalid_argument);
-    EXPECT_THROW(math::stddev(t, std::nullopt, 4), std::invalid_argument);
+    EXPECT_THROW(math::stddev(t, std::nullopt, 3), temper::validation_error);
+    EXPECT_THROW(math::stddev(t, std::nullopt, 4), temper::validation_error);
 }
 
 /**
@@ -7106,7 +7106,7 @@ TYPED_TEST(TypedPow, alias_views_noncontiguous_strides)
 TEST(EIG, eig_empty)
 {
     Tensor<float> t;
-    EXPECT_THROW(math::eig(t, 100, 1e-6f), std::invalid_argument);
+    EXPECT_THROW(math::eig(t, 100, 1e-6f), temper::validation_error);
 }
 
 /**
@@ -7116,7 +7116,7 @@ TEST(EIG, eig_empty)
 TEST(EIG, eig_rank_lower_than_2)
 {
     Tensor<float> t({2});
-    EXPECT_THROW(math::eig(t, 100, 1e-6f), std::invalid_argument);
+    EXPECT_THROW(math::eig(t, 100, 1e-6f), temper::validation_error);
 }
 
 /**
@@ -7126,7 +7126,7 @@ TEST(EIG, eig_rank_lower_than_2)
 TEST(EIG, eig_last_two_not_square)
 {
     Tensor<float> t({2, 3, 4});
-    EXPECT_THROW(math::eig(t, 100, 1e-6f), std::invalid_argument);
+    EXPECT_THROW(math::eig(t, 100, 1e-6f), temper::validation_error);
 }
 
 /**
@@ -7808,12 +7808,12 @@ TEST(SQRT, sqrt_inf_throws)
 
 /**
  * @test SQRT.sqrt_empty_throws
- * @brief sqrt() on an empty tensor should throw std::invalid_argument.
+ * @brief sqrt() on an empty tensor should throw temper::validation_error.
  */
 TEST(SQRT, sqrt_empty_throws)
 {
     Tensor<float> t;
-    EXPECT_THROW(math::sqrt(t), std::invalid_argument);
+    EXPECT_THROW(math::sqrt(t), temper::validation_error);
 }
 
 /**
@@ -7939,12 +7939,12 @@ TEST(EXP, exp_nan_throws)
 
 /**
  * @test EXP.exp_empty_throws
- * @brief exp() on an empty tensor should throw std::invalid_argument.
+ * @brief exp() on an empty tensor should throw temper::validation_error.
  */
 TEST(EXP, exp_empty_throws)
 {
     Tensor<float> t;
-    EXPECT_THROW(math::exp(t), std::invalid_argument);
+    EXPECT_THROW(math::exp(t), temper::validation_error);
 }
 
 } // namespace Test
