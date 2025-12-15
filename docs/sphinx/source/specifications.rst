@@ -167,3 +167,139 @@ Specification (Must)
      *after* performing a computation that generates new numeric values,
      but **before** returning them to any caller (internal or external).
 
+5. ``validation_error`` Policy: Invalid Inputs
+----------------------------------------------
+
+Description
+^^^^^^^^^^^
+``validation_error`` is the canonical exception for invalid user inputs,
+incompatible tensor metadata, or precondition failures detected **before**
+computation begins.
+
+Rationale
+^^^^^^^^^
+Validation failures are deterministic and should be caught early to
+prevent wasted device dispatch and undefined behaviour. A single error
+type ensures consistency across public APIs and internal helpers.
+
+Specification (Must)
+^^^^^^^^^^^^^^^^^^^^
+
+.. admonition:: Validation Error Enforcement
+   :class: primary
+
+   * **When to Use:** The library **must** throw ``validation_error`` when:
+
+     1. A public API receives invalid arguments (e.g., null handles).
+     2. Tensor metadata is incompatible (e.g., mismatched ranks).
+     3. Any precondition is violated **before** kernel dispatch.
+
+   * **Enforcement:** All checks **must** be implemented via the
+     centralized error reporting utility and executed **before**
+     allocating device error flags or launching kernels.
+
+   * **Message:** The error message **must** identify the parameter/tensor,
+     the violated constraint, and the operation context.
+
+
+6. ``bounds_error`` Policy: Indexing Violations
+-----------------------------------------------
+
+Description
+^^^^^^^^^^^
+``bounds_error`` is the canonical exception for index out-of-range and
+invalid bounds conditions during tensor indexing or storage access.
+
+Rationale
+^^^^^^^^^
+Bounds issues are distinct from general validation as they imply access
+outside legal memory ranges. Separating them allows consistent mapping
+from device-side error codes to a specific host exception.
+
+Specification (Must)
+^^^^^^^^^^^^^^^^^^^^
+
+.. admonition:: Bounds Error Enforcement
+   :class: primary
+
+   * **When to Use:** The library **must** throw ``bounds_error`` when:
+
+     1. An index is < 0 or >= dimension extent.
+     2. Slice ranges or computed offsets exceed valid storage spans.
+
+   * **Device Mapping:** If bounds checks occur inside kernels, the host
+     **must** translate the resulting device error code into
+     ``bounds_error``.
+
+   * **Enforcement:** Host checks **must** occur **before** any memory
+     access depending on the index. The centralized utility **must** be
+     used to raise the exception.
+
+
+7. ``computation_error`` Policy: General Numerical Failures
+-----------------------------------------------------------
+
+Description
+^^^^^^^^^^^
+``computation_error`` is the canonical exception for numerical failures
+occurring **during** or **as a result of** computation that are **not**
+covered by specific NaN or non-finite policies.
+
+Rationale
+^^^^^^^^^
+Distinct exception types for NaN and non-finite results (Specs #3 & #4)
+allow users to target specific data issues. ``computation_error`` serves
+as the handler for remaining mathematical failures (e.g., divergence).
+
+Specification (Must)
+^^^^^^^^^^^^^^^^^^^^
+
+.. admonition:: Computation Error Enforcement
+   :class: primary
+
+   * **When to Use:** The library **must** throw ``computation_error`` when:
+
+     1. A computation fails to converge or satisfy numerical post-conditions.
+     2. A mathematical domain error occurs that is not strictly an input
+        validation issue.
+
+   * **Exclusions:**
+
+     - **NaN Validation** (Spec #3) **must** throw ``nan_error``.
+     - **Non-Finite Validation** (Spec #4) **must** throw ``nonfinite_error``.
+
+   * **Enforcement:** Host checks must use the centralized utility. Device
+     checks use the kernel error protocol and are translated on host.
+
+
+8. ``device_error`` Policy: Execution Failures
+----------------------------------------------
+
+Description
+^^^^^^^^^^^
+``device_error`` is the canonical exception for failures related to SYCL
+device execution, runtime exceptions, or asynchronous protocol faults.
+
+Rationale
+^^^^^^^^^
+A dedicated error type is required to distinguish "runtime/environment
+failures" from mathematical errors or input validation issues.
+
+Specification (Must)
+^^^^^^^^^^^^^^^^^^^^
+
+.. admonition:: Device Error Enforcement
+   :class: primary
+
+   * **When to Use:** The library **must** throw ``device_error`` when:
+
+     1. The SYCL runtime reports an exception (sync or async).
+     2. The device-host atomic protocol reports a code reserved for runtime
+        faults (e.g., illegal state, resource failure).
+
+   * **SYCL Translation:** If SYCL throws a host exception, the library
+     **must** catch it at the API boundary and rethrow as ``device_error``,
+     preserving the original message.
+
+   * **Device Protocol:** Kernel-level runtime faults **must** use the
+     device error protocol and be translated to ``device_error`` on host.
