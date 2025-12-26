@@ -13,6 +13,7 @@ CMakeUserPresets.json
 build-debug*/
 .venv*/
 api/
+temper-env/
 
 # CLion
 #  JetBrains specific template is maintained in a separate JetBrains.gitignore that can

@@ -5978,7 +5978,6 @@ TEST(COV, cov_nan_throws)
     EXPECT_THROW(math::cov(t, {0}, {1}, 2), temper::nan_error);
 }
 
-
 /**
  * @test TENSOR.cov_basic
  * @brief Basic 2D covariance computation (non-view).

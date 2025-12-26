@@ -13,6 +13,40 @@
 
 namespace temper::nn
 {
+
+/**
+ * @brief 2D convolution operation.
+ *
+ * Performs 2D convolution between input and kernel tensors with
+ * broadcasting support.  The last two dimensions are treated as the
+ * spatial dimensions (height, width).
+ *
+ * Input shape:  (..., in_channels, height, width)
+ * Kernel shape: (..., out_channels, in_channels, kernel_h, kernel_w)
+ * Output shape: (..., out_channels, out_h, out_w)
+ *
+ * where out_h = (height + 2*pad_h - kernel_h) / stride + 1
+ *       out_w = (width + 2*pad_w - kernel_w) / stride + 1
+ *
+ * Leading dimensions (...) are broadcasted between input and kernel.
+ *
+ * @param input Input tensor (rank >= 3).
+ * @param kernel Kernel/filter tensor (rank >= 4).
+ * @param stride Stride for the convolution (default: 1).
+ * @param padding Padding applied to (height, width) (default: {0, 0}).
+ * @return Tensor<value_t> Result of convolution.
+ */
+template <typename value_t>
+Tensor<value_t> conv2d(const Tensor<value_t>& input,
+    const Tensor<value_t>& kernel,
+    uint64_t stride = 1,
+    std::pair<uint64_t, uint64_t> padding = {0, 0});
+/// \cond
+extern template Tensor<float> conv2d<float>
+    (const Tensor<float>&, const Tensor<float>&, uint64_t,
+     std::pair<uint64_t, uint64_t>);
+/// \endcond
+
  /* todo
     all activation functions
     all initialization functions

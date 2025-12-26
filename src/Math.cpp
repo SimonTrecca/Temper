@@ -414,7 +414,6 @@ Tensor<value_t> pad(const Tensor<value_t> & tensor,
     uint64_t pad_right,
     value_t pad_value)
 {
-
     const std::vector<uint64_t> & input_shape = tensor.get_dimensions();
     const int64_t rank = tensor.get_rank();
 
@@ -1952,18 +1951,18 @@ Tensor<value_t> cov(const Tensor<value_t> & tensor,
 
     TEMPER_CHECK(ddof < 0,
         validation_error,
-        R"(cov:  ddof must be non-negative.)");
+        R"(cov: ddof must be non-negative.)");
 
     TEMPER_CHECK(rank < 2,
         validation_error,
         R"(cov: rank must be >= 2.)");
 
-    const uint64_t num_sample_axes = static_cast<int64_t>(sample_axes.size());
-    const uint64_t num_event_axes  = static_cast<int64_t>(event_axes.size());
+    const int64_t num_sample_axes = static_cast<int64_t>(sample_axes.size());
+    const int64_t num_event_axes  = static_cast<int64_t>(event_axes.size());
     // Check if the sample axes are regular
     // (within tensor range, not replicated).
     std::vector<bool> seen(rank, false);
-    for (uint64_t i = 0; i < sample_axes.size(); ++i)
+    for (int64_t i = 0; i < num_sample_axes; ++i)
     {
         int64_t axis = sample_axes[i];
         if (axis < 0)
@@ -1982,7 +1981,7 @@ Tensor<value_t> cov(const Tensor<value_t> & tensor,
     }
 
     // We do the same for event axes.
-    for (uint64_t i = 0; i < event_axes.size(); ++i)
+    for (int64_t i = 0; i < num_event_axes; ++i)
     {
         int64_t axis = event_axes[i];
         if (axis < 0)
@@ -2055,7 +2054,7 @@ Tensor<value_t> cov(const Tensor<value_t> & tensor,
     Tensor<value_t> centered = t_tensor_clone - mu;
 
     Tensor<value_t> denom({1}, tensor.get_memory_location());
-    denom = 1.0f / (sample_total - ddof);
+    denom = value_t(1) / value_t(sample_total - ddof);
 
     std::vector<int64_t> transpose_order;
     transpose_order.reserve(centered.get_rank());
