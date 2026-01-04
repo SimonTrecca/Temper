@@ -677,6 +677,45 @@ Tensor<value_t> exp(const Tensor<value_t> & tensor);
 extern template Tensor<float> exp<float>(const Tensor<float>&);
 /// \endcond
 
+/**
+ * @brief Upsampling modes for spatial upsampling operations.
+ */
+enum class UpsampleMode
+{
+    ZEROS,   ///< Insert zeros between elements (for transposed convolution)
+    NEAREST  ///< Nearest neighbor upsampling (repeat values)
+};
+
+/**
+ * @brief Upsample the last two spatial dimensions by inserting values.
+ *
+ * Upsamples the height and width dimensions (last two) of the input tensor
+ * by inserting elements according to the specified mode. The input tensor
+ * must have rank >= 3, with the last three dimensions interpreted as
+ * (channels, height, width). Batch dimensions are preserved.
+ *
+ * For ZEROS mode with stride s:
+ *   out_height = in_height * s - (s - 1)
+ *   out_width  = in_width * s - (s - 1)
+ *
+ * @param tensor Input tensor (must have rank >= 3).
+ * @param stride Upsampling factor for both height and width.
+ * @param mode Upsampling mode (default:  ZEROS).
+ * @return Tensor<value_t> Upsampled tensor with same batch dimensions
+ *         and channel count.
+ */
+template<typename value_t>
+Tensor<value_t> upsample(const Tensor<value_t> & tensor,
+    uint64_t stride,
+    UpsampleMode mode = UpsampleMode::ZEROS);
+/// \cond
+extern template Tensor<float> upsample<float>
+    (const Tensor<float>&, uint64_t, UpsampleMode);
+extern template Tensor<uint64_t> upsample<uint64_t>
+    (const Tensor<uint64_t>&, uint64_t, UpsampleMode);
+/// \endcond
+
+
 /* todo
     diag
 */

@@ -2653,4 +2653,149 @@ Tensor<value_t> exp(const Tensor<value_t> & tensor)
 }
 template Tensor<float> exp<float>(const Tensor<float>&);
 
+template<typename value_t>
+Tensor<value_t> upsample(const Tensor<value_t> & tensor,
+    uint64_t stride,
+    UpsampleMode mode)
+{
+    const std::vector<uint64_t> & input_shape = tensor. get_dimensions();
+    const int64_t rank = tensor.get_rank();
+
+    TEMPER_CHECK(input_shape.empty(),
+        validation_error,
+        R"(upsample: input tensor has no elements.)");
+
+    TEMPER_CHECK(rank < 3,
+        validation_error,
+        R"(upsample: input tensor must have rank >= 3
+           (at least channels, height, width).)");
+
+    TEMPER_CHECK(stride == 0,
+        validation_error,
+        R"(upsample: stride must be positive.)");
+
+    const uint64_t in_height = input_shape[rank - 2];
+    const uint64_t in_width = input_shape[rank - 1];
+
+    const uint64_t out_height = in_height * stride - (stride - 1);
+    const uint64_t out_width = in_width * stride - (stride - 1);
+
+    std::vector<uint64_t> out_shape = input_shape;
+    out_shape[rank - 2] = out_height;
+    out_shape[rank - 1] = out_width;
+
+    MemoryLocation res_loc = tensor.get_memory_location();
+    Tensor<value_t> result(out_shape, res_loc);
+
+    std::vector<uint64_t> in_divs = temper::utils::compute_divisors(input_shape);
+    std::vector<uint64_t> out_divs = temper::utils::compute_divisors(out_shape);
+    const std::vector<uint64_t> in_strides = tensor.get_strides();
+    const std::vector<uint64_t> out_strides = result.get_strides();
+
+    sycl_utils::SyclArray<uint64_t> in_divs_arr(g_sycl_queue,
+        in_divs, MemoryLocation::DEVICE);
+    sycl_utils::SyclArray<uint64_t> out_divs_arr(g_sycl_queue,
+        out_divs, MemoryLocation::DEVICE);
+    sycl_utils::SyclArray<uint64_t> in_strides_arr(g_sycl_queue,
+        in_strides, MemoryLocation::DEVICE);
+    sycl_utils::SyclArray<uint64_t> out_strides_arr(g_sycl_queue,
+        out_strides, MemoryLocation:: DEVICE);
+    sycl_utils::SyclArray<uint64_t> in_shape_arr(g_sycl_queue,
+        input_shape, MemoryLocation:: DEVICE);
+    sycl_utils::SyclArray<uint64_t> out_shape_arr(g_sycl_queue,
+        out_shape, MemoryLocation::DEVICE);
+
+    const value_t* p_in_data = tensor.get_data();
+    value_t* p_out_data = result.get_data();
+    const uint64_t* p_in_divs = in_divs_arr;
+    const uint64_t* p_out_divs = out_divs_arr;
+    const uint64_t* p_in_strides = in_strides_arr;
+    const uint64_t* p_out_strides = out_strides_arr;
+    const uint64_t* p_in_shape = in_shape_arr;
+    const uint64_t* p_out_shape = out_shape_arr;
+
+    const uint64_t total_output_elems = result.get_num_elements();
+
+    if (mode == UpsampleMode:: ZEROS)
+    {
+        // ZEROS mode: iterate over input elements
+        // and place them at upsampled positions.
+        const uint64_t total_input_elems = tensor. get_num_elements();
+
+        g_sycl_queue.submit([&](sycl::handler& cgh)
+        {
+            cgh. parallel_for(sycl:: range<1>(static_cast<size_t>(total_input_elems)),
+                [=](sycl::id<1> id)
+            {
+                const uint64_t in_flat = static_cast<uint64_t>(id[0]);
+
+                uint64_t out_flat = 0;
+                for (int64_t d = 0; d < rank; ++d)
+                {
+                    uint64_t idx = (in_flat / p_in_divs[d]) % p_in_shape[d];
+
+                    if (d == rank - 2 || d == rank - 1)
+                    {
+                        idx *= stride;
+                    }
+                    out_flat += idx * p_out_divs[d];
+                }
+
+                // Get actual memory offsets using idx_of
+                const uint64_t in_offset = temper::sycl_utils::idx_of(
+                    in_flat, p_in_divs, p_in_strides, rank);
+                const uint64_t out_offset = temper::sycl_utils::idx_of(
+                    out_flat, p_out_divs, p_out_strides, rank);
+
+                // Copy value to upsampled position
+                // (other positions remain zero from initialization)
+                p_out_data[out_offset] = p_in_data[in_offset];
+            });
+        }).wait();
+    }
+    else if (mode == UpsampleMode:: NEAREST)
+    {
+        // NEAREST mode: iterate over output elements and find nearest input
+        g_sycl_queue.submit([&](sycl::handler& cgh)
+        {
+            cgh.parallel_for(sycl::range<1>(static_cast<size_t>(total_output_elems)),
+                [=](sycl::id<1> id)
+            {
+                const uint64_t out_flat = static_cast<uint64_t>(id[0]);
+
+                uint64_t in_flat = 0;
+                for (int64_t d = 0; d < rank; ++d)
+                {
+                    uint64_t out_idx = (out_flat / p_out_divs[d]) % p_out_shape[d];
+                    uint64_t in_idx = out_idx;
+
+                    if (d == rank - 2 || d == rank - 1)
+                    {
+                        in_idx = out_idx / stride;
+
+                        if (in_idx >= p_in_shape[d])
+                        {
+                            in_idx = p_in_shape[d] - 1;
+                        }
+                    }
+                    in_flat += in_idx * p_in_divs[d];
+                }
+
+                const uint64_t in_offset = temper::sycl_utils:: idx_of(
+                    in_flat, p_in_divs, p_in_strides, rank);
+                const uint64_t out_offset = temper::sycl_utils::idx_of(
+                    out_flat, p_out_divs, p_out_strides, rank);
+
+                p_out_data[out_offset] = p_in_data[in_offset];
+            });
+        }).wait();
+    }
+
+    return result;
+}
+template Tensor<float> upsample<float>
+    (const Tensor<float>&, uint64_t, UpsampleMode);
+template Tensor<uint64_t> upsample<uint64_t>
+    (const Tensor<uint64_t>&, uint64_t, UpsampleMode);
+
 } // namespace temper::math

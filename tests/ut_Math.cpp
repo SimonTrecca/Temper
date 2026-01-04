@@ -7946,4 +7946,51 @@ TEST(EXP, exp_empty_throws)
     EXPECT_THROW(math::exp(t), temper::validation_error);
 }
 
+#include "math/upsample.cpp"
+
+/**
+ * @test TypedUpsample. error_empty_tensor
+ * @brief Upsample should throw validation_error for empty tensor
+ * Corresponds to:  TEMPER_CHECK(input_shape.empty(), ...)
+ */
+TYPED_TEST(TypedUpsample, error_empty_tensor)
+{
+    using value_t = TypeParam;
+    Tensor<value_t> empty;
+    EXPECT_THROW(
+        math::upsample<value_t>(empty, 2, UpsampleMode::ZEROS),
+        temper::validation_error
+    );
+}
+
+/**
+ * @test TypedUpsample.error_rank_too_low
+ * @brief Upsample should throw validation_error for rank < 3
+ * Corresponds to: TEMPER_CHECK(rank < 3, ...)
+ */
+TYPED_TEST(TypedUpsample, error_rank_too_low)
+{
+    using value_t = TypeParam;
+    Tensor<value_t> rank2({4, 4}, MemoryLocation::DEVICE);
+    EXPECT_THROW(
+        math::upsample<value_t>(rank2, 2, UpsampleMode::ZEROS),
+        temper::validation_error
+    );
+}
+
+/**
+ * @test TypedUpsample.error_stride_zero
+ * @brief Upsample should throw validation_error for stride == 0
+ * Corresponds to: TEMPER_CHECK(stride == 0, ...)
+ */
+TYPED_TEST(TypedUpsample, error_stride_zero)
+{
+    using value_t = TypeParam;
+    Tensor<value_t> input({2, 3, 3}, MemoryLocation::DEVICE);
+    EXPECT_THROW(
+        math::upsample<value_t>(input, 0, UpsampleMode::ZEROS),
+        temper::validation_error
+    );
+}
+
 } // namespace Test
