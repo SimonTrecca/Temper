@@ -303,4 +303,283 @@ TEST(CONV2D, conv2d_inf_throws)
     }, temper::nonfinite_error);
 }
 
+#include "nn/conv2d_transpose.cpp"
+
+/**
+ * @test TypedConv2DTranspose.broadcast_high_rank
+ * @brief conv2d_transpose should correctly broadcast kernel over
+ *        higher-rank leading dimensions
+ */
+TYPED_TEST(TypedConv2DTranspose, broadcast_high_rank)
+{
+    using value_t = TypeParam;
+
+    /*
+     * input shape:
+     *   [2, 3, 4, 5, 5]
+     *   leading dims = [2, 3]
+     *   channels     = 4
+     *   H, W         = 5, 5
+     */
+    Tensor<value_t> input(
+        {2, 3, 4, 5, 5},
+        MemoryLocation::DEVICE
+    );
+
+    /*
+     * kernel shape:
+     *   [4, 6, 3, 3]
+     *   no leading dims
+     *   in_ch = 4, out_ch = 6
+     */
+    Tensor<value_t> kernel(
+        {4, 6, 3, 3},
+        MemoryLocation::DEVICE
+    );
+
+    Tensor<value_t> output;
+
+    EXPECT_NO_THROW(
+        output = nn::conv2d_transpose(
+            input,
+            kernel,
+            2,
+            {1, 1},
+            {0, 0}
+        )
+    );
+
+    const auto &out_shape = output.get_dimensions();
+
+    EXPECT_EQ(out_shape.size(), 5u);
+    EXPECT_EQ(out_shape[0], 2u);
+    EXPECT_EQ(out_shape[1], 3u);
+    EXPECT_EQ(out_shape[2], 6u);
+}
+
+/**
+ * @test TypedConv2DTranspose.broadcast_reverse_high_rank
+ * @brief conv2d_transpose should broadcast input over
+ *        higher-rank kernel leading dimensions
+ */
+TYPED_TEST(TypedConv2DTranspose, broadcast_reverse_high_rank)
+{
+    using value_t = TypeParam;
+
+    /*
+     * input shape:
+     *   [4, 5, 5]
+     *   channels = 4
+     */
+    Tensor<value_t> input(
+        {4, 5, 5},
+        MemoryLocation::DEVICE
+    );
+
+    /*
+     * kernel shape:
+     *   [2, 3, 4, 6, 3, 3]
+     *   leading dims = [2, 3]
+     *   in_ch = 4, out_ch = 6
+     */
+    Tensor<value_t> kernel(
+        {2, 3, 4, 6, 3, 3},
+        MemoryLocation::DEVICE
+    );
+
+    Tensor<value_t> output;
+
+    EXPECT_NO_THROW(
+        output = nn::conv2d_transpose(
+            input,
+            kernel,
+            1,
+            {0, 0},
+            {0, 0}
+        )
+    );
+
+    const auto &out_shape = output.get_dimensions();
+
+    EXPECT_EQ(out_shape.size(), 5u);
+    EXPECT_EQ(out_shape[0], 2u);
+    EXPECT_EQ(out_shape[1], 3u);
+    EXPECT_EQ(out_shape[2], 6u);
+}
+
+/**
+ * @test TypedConv2DTranspose.broadcast_intertwined_high_rank
+ * @brief conv2d_transpose should correctly broadcast when
+ *        input and kernel leading dimensions intertwine
+ */
+TYPED_TEST(TypedConv2DTranspose, broadcast_intertwined_high_rank)
+{
+    using value_t = TypeParam;
+
+    /*
+     * input shape:
+     *   [2, 1, 4, 5, 5]
+     *   leading dims = [2, 1]
+     */
+    Tensor<value_t> input(
+        {2, 1, 4, 5, 5},
+        MemoryLocation::DEVICE
+    );
+
+    /*
+     * kernel shape:
+     *   [1, 3, 4, 6, 3, 3]
+     *   leading dims = [1, 3]
+     */
+    Tensor<value_t> kernel(
+        {1, 3, 4, 6, 3, 3},
+        MemoryLocation::DEVICE
+    );
+
+    Tensor<value_t> output;
+
+    EXPECT_NO_THROW(
+        output = nn::conv2d_transpose(
+            input,
+            kernel,
+            2,
+            {1, 1},
+            {0, 0}
+        )
+    );
+
+    const auto &out_shape = output.get_dimensions();
+
+    EXPECT_EQ(out_shape.size(), 5u);
+    EXPECT_EQ(out_shape[0], 2u);
+    EXPECT_EQ(out_shape[1], 3u);
+    EXPECT_EQ(out_shape[2], 6u);
+}
+
+
+/**
+ * @test TypedConv2DTranspose.error_input_rank_too_low
+ * @brief conv2d_transpose should throw validation_error for input
+ *        rank < 3
+ * Corresponds to: TEMPER_CHECK(input_rank < 3, ...)
+ */
+TYPED_TEST(TypedConv2DTranspose, error_input_rank_too_low)
+{
+    using value_t = TypeParam;
+
+    Tensor<value_t> input(
+        {4, 4},
+        MemoryLocation::DEVICE
+    );
+    Tensor<value_t> kernel(
+        {1, 1, 3, 3},
+        MemoryLocation::DEVICE
+    );
+
+    EXPECT_THROW(
+        nn::conv2d_transpose(
+            input,
+            kernel,
+            1,
+            {0, 0},
+            {0, 0}
+        ),
+        temper::validation_error
+    );
+}
+
+/**
+ * @test TypedConv2DTranspose.error_kernel_rank_too_low
+ * @brief conv2d_transpose should throw validation_error for kernel
+ *        rank < 4
+ * Corresponds to: TEMPER_CHECK(kernel_rank < 4, ...)
+ */
+TYPED_TEST(TypedConv2DTranspose, error_kernel_rank_too_low)
+{
+    using value_t = TypeParam;
+
+    Tensor<value_t> input(
+        {1, 4, 4},
+        MemoryLocation::DEVICE
+    );
+    Tensor<value_t> kernel(
+        {3, 3, 3},
+        MemoryLocation::DEVICE
+    );
+
+    EXPECT_THROW(
+        nn::conv2d_transpose(
+            input,
+            kernel,
+            1,
+            {0, 0},
+            {0, 0}
+        ),
+        temper::validation_error
+    );
+}
+
+/**
+ * @test TypedConv2DTranspose.error_stride_zero
+ * @brief conv2d_transpose should throw validation_error for
+ *        stride == 0
+ * Corresponds to: TEMPER_CHECK(stride == 0, ...)
+ */
+TYPED_TEST(TypedConv2DTranspose, error_stride_zero)
+{
+    using value_t = TypeParam;
+
+    Tensor<value_t> input(
+        {1, 4, 4},
+        MemoryLocation::DEVICE
+    );
+    Tensor<value_t> kernel(
+        {1, 1, 3, 3},
+        MemoryLocation::DEVICE
+    );
+
+    EXPECT_THROW(
+        nn::conv2d_transpose(
+            input,
+            kernel,
+            0,
+            {0, 0},
+            {0, 0}
+        ),
+        temper::validation_error
+    );
+}
+
+/**
+ * @test TypedConv2DTranspose.error_channel_mismatch
+ * @brief conv2d_transpose should throw validation_error when
+ *        input channels != kernel input channels
+ * Corresponds to:
+ *   TEMPER_CHECK(in_channels_input != ker_in_channels, ...)
+ */
+TYPED_TEST(TypedConv2DTranspose, error_channel_mismatch)
+{
+    using value_t = TypeParam;
+
+    Tensor<value_t> input(
+        {2, 4, 4},
+        MemoryLocation::DEVICE
+    );
+    Tensor<value_t> kernel(
+        {3, 1, 3, 3},
+        MemoryLocation::DEVICE
+    );
+
+    EXPECT_THROW(
+        nn::conv2d_transpose(
+            input,
+            kernel,
+            1,
+            {0, 0},
+            {0, 0}
+        ),
+        temper::validation_error
+    );
+}
+
 } // namespace Test

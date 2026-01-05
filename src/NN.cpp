@@ -4,6 +4,7 @@
  */
 
 #include "temper/NN.hpp"
+#include "temper/Math.hpp"
 #include "temper/Utils.hpp"
 #include "temper/SYCLUtils.hpp"
 #include "temper/Errors.hpp"
@@ -291,5 +292,86 @@ Tensor<value_t> conv2d(const Tensor<value_t>& input,
 template Tensor<float> conv2d<float>
     (const Tensor<float>&, const Tensor<float>&, uint64_t,
      std::pair<uint64_t, uint64_t>);
+
+template <typename value_t>
+Tensor<value_t> conv2d_transpose(
+    const Tensor<value_t>& input,
+    const Tensor<value_t>& kernel,
+    uint64_t stride,
+    std::pair<uint64_t, uint64_t> padding,
+    std::pair<uint64_t, uint64_t> output_padding)
+{
+    const std::vector<uint64_t>& input_shape = input.get_dimensions();
+    const std::vector<uint64_t>& kernel_shape = kernel.get_dimensions();
+
+    const int64_t input_rank  = input.get_rank();
+    const int64_t kernel_rank = kernel.get_rank();
+
+    TEMPER_CHECK(input_rank < 3,
+        validation_error,
+        "conv2d_transpose: input must have rank >= 3");
+
+    TEMPER_CHECK(kernel_rank < 4,
+        validation_error,
+        "conv2d_transpose: kernel must have rank >= 4");
+
+    TEMPER_CHECK(stride == 0,
+        validation_error,
+        "conv2d_transpose: stride must be positive");
+
+    const uint64_t in_channels_input = input_shape[input_rank - 3];
+    const uint64_t ker_in_channels   = kernel_shape[kernel_rank - 4];
+    const uint64_t kernel_h          = kernel_shape[kernel_rank - 2];
+    const uint64_t kernel_w          = kernel_shape[kernel_rank - 1];
+
+    TEMPER_CHECK(in_channels_input != ker_in_channels,
+        validation_error,
+        "conv2d_transpose: input channels must match between input and kernel");
+
+    // Upsample input.
+    Tensor<value_t> upsampled =
+        math::upsample(input, stride, math::UpsampleMode::ZEROS);
+
+    // Apply output_padding before convolution.
+    if (output_padding.first > 0 || output_padding.second > 0)
+    {
+        upsampled = math::pad(
+            upsampled,
+            0, output_padding.first,
+            0, output_padding.second,
+            static_cast<value_t>(0)
+        );
+    }
+
+    // Transpose kernel (in_ch, out_ch, kH, kW) -> (out_ch, in_ch, kH, kW).
+    std::vector<int64_t> transpose_axes;
+    for (int64_t i = 0; i < kernel_rank - 4; ++i)
+        transpose_axes.push_back(i);
+
+    transpose_axes.push_back(kernel_rank - 3);
+    transpose_axes.push_back(kernel_rank - 4);
+    transpose_axes.push_back(kernel_rank - 2);
+    transpose_axes.push_back(kernel_rank - 1);
+
+    Tensor<value_t> kernel_transposed =
+        math::transpose(kernel, transpose_axes);
+
+    // Convert padding for regular conv2d.
+    const uint64_t conv_pad_h =
+        (kernel_h > padding.first) ? (kernel_h - 1 - padding.first) : 0;
+    const uint64_t conv_pad_w =
+        (kernel_w > padding.second) ? (kernel_w - 1 - padding.second) : 0;
+
+    // Regular conv2d with stride = 1.
+    return conv2d(
+        upsampled,
+        kernel_transposed,
+        1,
+        {conv_pad_h, conv_pad_w}
+    );
+}
+template Tensor<float> conv2d_transpose<float>
+    (const Tensor<float>&, const Tensor<float>&, uint64_t,
+     std::pair<uint64_t, uint64_t>, std::pair<uint64_t, uint64_t>);
 
 } // namespace temper::nn
