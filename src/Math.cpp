@@ -269,12 +269,12 @@ Tensor<value_t> matmul(const Tensor<value_t> & first,
                 {
                     value_t av = p_a[t * a_stride_k];
                     value_t bv = p_b[t * b_stride_k];
-                    TEMPER_DEVICE_CHECK(sycl_utils::is_nan(av), p_error_flag, 1);
-                    TEMPER_DEVICE_CHECK(sycl_utils::is_nan(bv), p_error_flag, 1);
+                    TEMPER_DEVICE_ASSERT(sycl_utils::is_nan(av), p_error_flag, 1);
+                    TEMPER_DEVICE_ASSERT(sycl_utils::is_nan(bv), p_error_flag, 1);
 
                     acc += av * bv;
                 }
-                TEMPER_DEVICE_CHECK(!sycl_utils::is_finite(acc), p_error_flag, 2);
+                TEMPER_DEVICE_ASSERT(!sycl_utils::is_finite(acc), p_error_flag, 2);
                 p_r[0] = acc;
                 return;
             }
@@ -307,12 +307,12 @@ Tensor<value_t> matmul(const Tensor<value_t> & first,
             {
                 value_t av = p_a[a_off + t * a_stride_k];
                 value_t bv = p_b[b_off + t * b_stride_k];
-                TEMPER_DEVICE_CHECK(sycl_utils::is_nan(av), p_error_flag, 1);
-                TEMPER_DEVICE_CHECK(sycl_utils::is_nan(bv), p_error_flag, 1);
+                TEMPER_DEVICE_ASSERT(sycl_utils::is_nan(av), p_error_flag, 1);
+                TEMPER_DEVICE_ASSERT(sycl_utils::is_nan(bv), p_error_flag, 1);
 
                 acc += av * bv;
             }
-            TEMPER_DEVICE_CHECK(!sycl_utils::is_finite(acc), p_error_flag, 2);
+            TEMPER_DEVICE_ASSERT(!sycl_utils::is_finite(acc), p_error_flag, 2);
 
             p_r[base_r] = acc;
         });
@@ -644,7 +644,7 @@ Tensor<uint64_t> argmax(const Tensor<value_t> & tensor,
                 uint64_t first_offset = temper::sycl_utils::idx_of(
                     0, p_in_divs, p_in_strides, rank);
                 value_t best_val = p_in_data[first_offset];
-                TEMPER_DEVICE_CHECK(sycl_utils::is_nan(best_val),
+                TEMPER_DEVICE_ASSERT(sycl_utils::is_nan(best_val),
                     p_error_flag, 1);
 
                 for (uint64_t t = 1; t < total_input_elems; ++t)
@@ -652,7 +652,7 @@ Tensor<uint64_t> argmax(const Tensor<value_t> & tensor,
                     uint64_t off = temper::sycl_utils::idx_of(
                         t, p_in_divs, p_in_strides, rank);
                     value_t v = p_in_data[off];
-                    TEMPER_DEVICE_CHECK(sycl_utils::is_nan(v), p_error_flag, 1);
+                    TEMPER_DEVICE_ASSERT(sycl_utils::is_nan(v), p_error_flag, 1);
                     if (v > best_val)
                     {
                         best_val = v;
@@ -668,12 +668,12 @@ Tensor<uint64_t> argmax(const Tensor<value_t> & tensor,
 
             uint64_t best_rel = 0;
             value_t best_val = p_in_data[base + 0 * axis_stride];
-            TEMPER_DEVICE_CHECK(sycl_utils::is_nan(best_val), p_error_flag, 1);
+            TEMPER_DEVICE_ASSERT(sycl_utils::is_nan(best_val), p_error_flag, 1);
 
             for (uint64_t t = 1; t < axis_dim; ++t)
             {
                 value_t v = p_in_data[base + t * axis_stride];
-                TEMPER_DEVICE_CHECK(sycl_utils::is_nan(v), p_error_flag, 1);
+                TEMPER_DEVICE_ASSERT(sycl_utils::is_nan(v), p_error_flag, 1);
                 if (v > best_val)
                 {
                     best_val = v;
@@ -1258,7 +1258,7 @@ Tensor<value_t> gather(const Tensor<value_t> & tensor,
                     out_flat, p_idx_divs, p_idx_strides, idx_rank_actual);
                 chosen = p_idx_base[src_off];
 
-                TEMPER_DEVICE_CHECK(chosen >= total_elems, p_error_flag, 1);
+                TEMPER_DEVICE_ASSERT(chosen >= total_elems, p_error_flag, 1);
                 p_out[out_flat] = p_in[chosen];
                 return;
             }
@@ -1276,7 +1276,7 @@ Tensor<value_t> gather(const Tensor<value_t> & tensor,
                     out_flat, p_in_divs, p_in_strides, in_rank);
                 base -= coord_axis * p_in_strides[static_cast<size_t>(axis)];
 
-                TEMPER_DEVICE_CHECK(chosen >= axis_dim, p_error_flag, 1);
+                TEMPER_DEVICE_ASSERT(chosen >= axis_dim, p_error_flag, 1);
 
                 uint64_t src_offset = base +
                     chosen * p_in_strides[static_cast<size_t>(axis)];
@@ -1480,8 +1480,8 @@ Tensor<value_t> linspace(const Tensor<value_t>& start,
 
             value_t a_val = p_a_data[a_idx];
             value_t b_val = p_b_data[b_idx];
-            TEMPER_DEVICE_CHECK(sycl_utils::is_nan(a_val), p_error_flag, 1);
-            TEMPER_DEVICE_CHECK(sycl_utils::is_nan(b_val), p_error_flag, 1);
+            TEMPER_DEVICE_ASSERT(sycl_utils::is_nan(a_val), p_error_flag, 1);
+            TEMPER_DEVICE_ASSERT(sycl_utils::is_nan(b_val), p_error_flag, 1);
 
             value_t step;
             if (num == 1)
@@ -1499,7 +1499,7 @@ Tensor<value_t> linspace(const Tensor<value_t>& start,
                     step = (b_val - a_val) / static_cast<value_t>(num);
                 }
             }
-            TEMPER_DEVICE_CHECK(!sycl_utils::is_finite(step), p_error_flag, 2);
+            TEMPER_DEVICE_ASSERT(!sycl_utils::is_finite(step), p_error_flag, 2);
 
             if (pos_axis == 0)
             {
@@ -1515,7 +1515,7 @@ Tensor<value_t> linspace(const Tensor<value_t>& start,
             {
                 val = a_val + step * static_cast<value_t>(pos_axis);
             }
-            TEMPER_DEVICE_CHECK(!sycl_utils::is_finite(val), p_error_flag, 2);
+            TEMPER_DEVICE_ASSERT(!sycl_utils::is_finite(val), p_error_flag, 2);
             p_out[flat] = val;
         });
     }).wait();
@@ -1720,14 +1720,14 @@ Tensor<value_t> factorial(const Tensor<value_t> & tensor)
                 (flat, p_in_divs, p_in_strides, arr_len);
             value_t v = p_in_data[in_idx];
 
-            TEMPER_DEVICE_CHECK(sycl_utils::is_nan(v), p_error_flag, 1);
-            TEMPER_DEVICE_CHECK(!sycl_utils::is_finite(v), p_error_flag, 2);
-            TEMPER_DEVICE_CHECK(v < static_cast<value_t>(0), p_error_flag, 3);
+            TEMPER_DEVICE_ASSERT(sycl_utils::is_nan(v), p_error_flag, 1);
+            TEMPER_DEVICE_ASSERT(!sycl_utils::is_finite(v), p_error_flag, 2);
+            TEMPER_DEVICE_ASSERT(v < static_cast<value_t>(0), p_error_flag, 3);
 
             value_t rounded = sycl_utils::floor(v + static_cast<value_t>(0.5));
             value_t diff = sycl_utils::fabs(v - rounded);
 
-            TEMPER_DEVICE_CHECK(diff > eps, p_error_flag, 3);
+            TEMPER_DEVICE_ASSERT(diff > eps, p_error_flag, 3);
 
             const uint64_t n = static_cast<uint64_t>(rounded);
 
@@ -1736,7 +1736,7 @@ Tensor<value_t> factorial(const Tensor<value_t> & tensor)
             {
                 acc = acc * static_cast<value_t>(t);
             }
-            TEMPER_DEVICE_CHECK(!sycl_utils::is_finite(acc), p_error_flag, 2);
+            TEMPER_DEVICE_ASSERT(!sycl_utils::is_finite(acc), p_error_flag, 2);
             p_out[flat] = acc;
         });
     }).wait();
@@ -1806,10 +1806,10 @@ Tensor<value_t> log(const Tensor<value_t> & tensor)
                                                     arr_len);
             value_t v = p_in_data[in_idx];
 
-            TEMPER_DEVICE_CHECK(sycl_utils::is_nan(v), p_error_flag, 1);
+            TEMPER_DEVICE_ASSERT(sycl_utils::is_nan(v), p_error_flag, 1);
             value_t outv = sycl::log(v);
 
-            TEMPER_DEVICE_CHECK(!sycl_utils::is_finite(outv), p_error_flag, 2);
+            TEMPER_DEVICE_ASSERT(!sycl_utils::is_finite(outv), p_error_flag, 2);
 
             p_out[flat] = outv;
         });
@@ -2214,7 +2214,7 @@ std::pair<Tensor<value_t>, Tensor<value_t>> eig(const Tensor<value_t> & tensor,
                 row * stride_row + col * stride_col;
             value_t v = p_src[src_offset];
 
-            TEMPER_DEVICE_CHECK(sycl_utils::is_nan(v), p_error_flag, 1);
+            TEMPER_DEVICE_ASSERT(sycl_utils::is_nan(v), p_error_flag, 1);
 
             p_A[flat] = v;
         });
@@ -2341,7 +2341,7 @@ std::pair<Tensor<value_t>, Tensor<value_t>> eig(const Tensor<value_t> & tensor,
                         value_t val = sycl_utils::fabs
                             (p_A[b * matrix_size + i * n + j]);
 
-                        TEMPER_DEVICE_CHECK(!sycl_utils::is_finite(val),
+                        TEMPER_DEVICE_ASSERT(!sycl_utils::is_finite(val),
                             p_error_flag, 2);
 
                         sycl::atomic_ref<value_t,
@@ -2381,7 +2381,7 @@ std::pair<Tensor<value_t>, Tensor<value_t>> eig(const Tensor<value_t> & tensor,
             uint64_t b = flat / n;
             uint64_t i = flat % n;
             value_t v = p_A[b * matrix_size + i * n + i];
-            TEMPER_DEVICE_CHECK(!sycl_utils::is_finite(v), p_error_flag, 2);
+            TEMPER_DEVICE_ASSERT(!sycl_utils::is_finite(v), p_error_flag, 2);
             p_eigvals[flat] = v;
         });
     }).wait();
@@ -2393,7 +2393,7 @@ std::pair<Tensor<value_t>, Tensor<value_t>> eig(const Tensor<value_t> & tensor,
         {
             uint64_t flat = static_cast<uint64_t>(idx[0]);
             value_t v = p_Q[flat];
-            TEMPER_DEVICE_CHECK(!sycl_utils::is_finite(v), p_error_flag, 2);
+            TEMPER_DEVICE_ASSERT(!sycl_utils::is_finite(v), p_error_flag, 2);
             p_eigvecs[flat] = v;
         });
     }).wait();
@@ -2461,11 +2461,11 @@ Tensor<value_t> sqrt(const Tensor<value_t>& tensor)
 
             value_t val = p_in[idx];
 
-            TEMPER_DEVICE_CHECK(sycl_utils::is_nan(val), p_error_flag, 1);
+            TEMPER_DEVICE_ASSERT(sycl_utils::is_nan(val), p_error_flag, 1);
 
             value_t outv = sycl::sqrt(val);
 
-            TEMPER_DEVICE_CHECK(!sycl_utils::is_finite(outv), p_error_flag, 2);
+            TEMPER_DEVICE_ASSERT(!sycl_utils::is_finite(outv), p_error_flag, 2);
 
             p_out[flat] = outv;
         });
@@ -2557,12 +2557,12 @@ Tensor<value_t> pow(const Tensor<value_t> & a, const Tensor<value_t> & b)
             value_t av = p_a[a_off];
             value_t bv = p_b[b_off];
 
-            TEMPER_DEVICE_CHECK(sycl_utils::is_nan(av), p_error_flag, 1);
-            TEMPER_DEVICE_CHECK(sycl_utils::is_nan(bv), p_error_flag, 1);
+            TEMPER_DEVICE_ASSERT(sycl_utils::is_nan(av), p_error_flag, 1);
+            TEMPER_DEVICE_ASSERT(sycl_utils::is_nan(bv), p_error_flag, 1);
 
             value_t out = temper::sycl_utils::pow<value_t>(av, bv);
 
-            TEMPER_DEVICE_CHECK(!sycl_utils::is_finite(out), p_error_flag, 2);
+            TEMPER_DEVICE_ASSERT(!sycl_utils::is_finite(out), p_error_flag, 2);
 
             p_out[flat] = out;
         });
@@ -2630,11 +2630,11 @@ Tensor<value_t> exp(const Tensor<value_t> & tensor)
                                                     arr_len);
             value_t v = p_in_data[in_idx];
 
-            TEMPER_DEVICE_CHECK(sycl_utils::is_nan(v), p_error_flag, 1);
+            TEMPER_DEVICE_ASSERT(sycl_utils::is_nan(v), p_error_flag, 1);
 
             value_t outv = sycl::exp(v);
 
-            TEMPER_DEVICE_CHECK(!sycl_utils::is_finite(outv), p_error_flag, 2);
+            TEMPER_DEVICE_ASSERT(!sycl_utils::is_finite(outv), p_error_flag, 2);
             p_out[flat] = outv;
         });
     }).wait();

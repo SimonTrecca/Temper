@@ -856,12 +856,12 @@ Tensor<value_t> Tensor<value_t>::operator+(const Tensor & other) const
             value_t a_val = p_a_data[offset_a];
             value_t b_val = p_b_data[offset_b];
 
-            TEMPER_DEVICE_CHECK(sycl_utils::is_nan(a_val), p_error_flag, 1);
-            TEMPER_DEVICE_CHECK(sycl_utils::is_nan(b_val), p_error_flag, 1);
+            TEMPER_DEVICE_ASSERT(sycl_utils::is_nan(a_val), p_error_flag, 1);
+            TEMPER_DEVICE_ASSERT(sycl_utils::is_nan(b_val), p_error_flag, 1);
 
             value_t res = a_val + b_val;
 
-            TEMPER_DEVICE_CHECK(!sycl_utils::is_finite(res), p_error_flag, 2);
+            TEMPER_DEVICE_ASSERT(!sycl_utils::is_finite(res), p_error_flag, 2);
 
             p_r_data[flat_idx] = res;
         });
@@ -954,12 +954,12 @@ Tensor<value_t> Tensor<value_t>::operator-(const Tensor & other) const
             value_t a_val = p_a_data[offset_a];
             value_t b_val = p_b_data[offset_b];
 
-            TEMPER_DEVICE_CHECK(sycl_utils::is_nan(a_val), p_error_flag, 1);
-            TEMPER_DEVICE_CHECK(sycl_utils::is_nan(b_val), p_error_flag, 1);
+            TEMPER_DEVICE_ASSERT(sycl_utils::is_nan(a_val), p_error_flag, 1);
+            TEMPER_DEVICE_ASSERT(sycl_utils::is_nan(b_val), p_error_flag, 1);
 
             value_t res = a_val - b_val;
 
-            TEMPER_DEVICE_CHECK(!sycl_utils::is_finite(res), p_error_flag, 2);
+            TEMPER_DEVICE_ASSERT(!sycl_utils::is_finite(res), p_error_flag, 2);
 
             p_r_data[flat_idx] = res;
         });
@@ -1052,12 +1052,12 @@ Tensor<value_t> Tensor<value_t>::operator*(const Tensor & other) const
             value_t a_val = p_a_data[offset_a];
             value_t b_val = p_b_data[offset_b];
 
-            TEMPER_DEVICE_CHECK(sycl_utils::is_nan(a_val), p_error_flag, 1);
-            TEMPER_DEVICE_CHECK(sycl_utils::is_nan(b_val), p_error_flag, 1);
+            TEMPER_DEVICE_ASSERT(sycl_utils::is_nan(a_val), p_error_flag, 1);
+            TEMPER_DEVICE_ASSERT(sycl_utils::is_nan(b_val), p_error_flag, 1);
 
             value_t res = a_val * b_val;
 
-            TEMPER_DEVICE_CHECK(!sycl_utils::is_finite(res), p_error_flag, 2);
+            TEMPER_DEVICE_ASSERT(!sycl_utils::is_finite(res), p_error_flag, 2);
 
             p_r_data[flat_idx] = res;
         });
@@ -1149,15 +1149,15 @@ Tensor<value_t> Tensor<value_t>::operator/(const Tensor & other) const
             value_t a_val = p_a_data[offset_a];
             value_t b_val = p_b_data[offset_b];
 
-            TEMPER_DEVICE_CHECK(sycl_utils::is_nan(a_val), p_error_flag, 1);
-            TEMPER_DEVICE_CHECK(sycl_utils::is_nan(b_val), p_error_flag, 1);
+            TEMPER_DEVICE_ASSERT(sycl_utils::is_nan(a_val), p_error_flag, 1);
+            TEMPER_DEVICE_ASSERT(sycl_utils::is_nan(b_val), p_error_flag, 1);
 
-            TEMPER_DEVICE_CHECK(b_val == static_cast<value_t>(0),
+            TEMPER_DEVICE_ASSERT(b_val == static_cast<value_t>(0),
                 p_error_flag, 3);
 
             value_t res = a_val / b_val;
 
-            TEMPER_DEVICE_CHECK(!sycl_utils::is_finite(res), p_error_flag, 2);
+            TEMPER_DEVICE_ASSERT(!sycl_utils::is_finite(res), p_error_flag, 2);
 
             p_r_data[flat_idx] = res;
         });
@@ -1221,7 +1221,7 @@ Tensor<value_t> Tensor<value_t>::operator-() const
             uint64_t off = sycl_utils::idx_of(flat_idx, p_divs, p_strides, rank);
             value_t val = p_src[off];
 
-            TEMPER_DEVICE_CHECK(sycl_utils::is_nan(val), p_error_flag, 1);
+            TEMPER_DEVICE_ASSERT(sycl_utils::is_nan(val), p_error_flag, 1);
 
             p_dst[flat_idx] = -val;
         });
@@ -1289,7 +1289,7 @@ bool Tensor<value_t>::operator==(const Tensor & other) const
             linear, p_divs, p_second_strides, second_rank);
 
         // If mismatch set flag (atomic store).
-        TEMPER_DEVICE_CHECK(!(p_first[first_offset] == p_second[second_offset]),
+        TEMPER_DEVICE_ASSERT(!(p_first[first_offset] == p_second[second_offset]),
             p_flag, 1);
 
     }).wait();
@@ -1978,7 +1978,7 @@ Tensor<value_t> Tensor<value_t>::sum(std::optional<int64_t> axis_opt) const
                         p_divisors_dev, p_strides_dev, rank);
 
                     value_t v = p_src[offset];
-                    TEMPER_DEVICE_CHECK(sycl_utils::is_nan(v), p_error_flag, 1);
+                    TEMPER_DEVICE_EXPECT(sycl_utils::is_nan(v), p_error_flag, 1);
                     local_sum += v;
                 }
             }
@@ -2013,7 +2013,7 @@ Tensor<value_t> Tensor<value_t>::sum(std::optional<int64_t> axis_opt) const
                     uint64_t offs = base_offset + static_cast<uint64_t>(j) *
                         p_strides_dev[axis];
                     value_t v = p_src[offs];
-                    TEMPER_DEVICE_CHECK(sycl_utils:: is_nan(v), p_error_flag, 1);
+                    TEMPER_DEVICE_EXPECT(sycl_utils:: is_nan(v), p_error_flag, 1);
                     local_sum += v;
                 }
             }
@@ -2022,7 +2022,7 @@ Tensor<value_t> Tensor<value_t>::sum(std::optional<int64_t> axis_opt) const
             value_t group_sum = sycl::reduce_over_group
                 (group, local_sum, sycl:: plus<value_t>());
 
-            TEMPER_DEVICE_CHECK(!sycl_utils:: is_finite(group_sum), p_error_flag, 2);
+            TEMPER_DEVICE_ASSERT(!sycl_utils::is_finite(group_sum), p_error_flag, 2);
 
             if (local_id == 0)
             {
@@ -2067,14 +2067,14 @@ Tensor<value_t> Tensor<value_t>::sum(std::optional<int64_t> axis_opt) const
             for (size_t idx = lid; idx < num_groups_per_slice; idx += local_range)
             {
                 value_t pv = p_partials[slice * num_groups_per_slice + idx];
-                TEMPER_DEVICE_CHECK(sycl_utils::is_nan(pv), p_error_flag, 1);
+                TEMPER_DEVICE_ASSERT(sycl_utils::is_nan(pv), p_error_flag, 1);
                 v += pv;
             }
 
             auto group = it.get_group();
             value_t total =
                 sycl::reduce_over_group(group, v, sycl::plus<value_t>());
-            TEMPER_DEVICE_CHECK(!sycl_utils::is_finite(total), p_error_flag, 2);
+            TEMPER_DEVICE_ASSERT(!sycl_utils::is_finite(total), p_error_flag, 2);
 
             if (lid == 0)
             {
@@ -2330,7 +2330,7 @@ Tensor<value_t> Tensor<value_t>::cumsum(std::optional<int64_t> axis_opt) const
             if (active)
             {
                 x = p_src[src_off];
-                TEMPER_DEVICE_CHECK(sycl_utils::is_nan(x), p_error_flag, 1);
+                TEMPER_DEVICE_ASSERT(sycl_utils::is_nan(x), p_error_flag, 1);
             }
 
             value_t prefix = sycl:: inclusive_scan_over_group
@@ -2339,7 +2339,7 @@ Tensor<value_t> Tensor<value_t>::cumsum(std::optional<int64_t> axis_opt) const
             if (active)
             {
                 p_out[dst_off] = prefix;
-                TEMPER_DEVICE_CHECK(! sycl_utils::is_finite(prefix),
+                TEMPER_DEVICE_ASSERT(! sycl_utils::is_finite(prefix),
                     p_error_flag, 2);
             }
 
@@ -2413,7 +2413,7 @@ Tensor<value_t> Tensor<value_t>::cumsum(std::optional<int64_t> axis_opt) const
             value_t add = p_block_partials
                 [slice * num_groups_per_slice + (group_in_slice - 1)];
             p_out[dst_off] += add;
-            TEMPER_DEVICE_CHECK(!sycl_utils::is_finite(p_out[dst_off]),
+            TEMPER_DEVICE_ASSERT(!sycl_utils::is_finite(p_out[dst_off]),
                 p_error_flag, 2);
         });
     }).wait();

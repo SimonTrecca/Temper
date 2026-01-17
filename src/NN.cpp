@@ -257,10 +257,10 @@ Tensor<value_t> conv2d(const Tensor<value_t>& input,
                             value_t in_val = p_input[in_offset];
                             value_t ker_val = p_kernel[ker_offset];
 
-                            TEMPER_DEVICE_CHECK(
+                            TEMPER_DEVICE_ASSERT(
                                 sycl_utils::is_nan(in_val),
                                 p_error_flag, 1);
-                            TEMPER_DEVICE_CHECK(
+                            TEMPER_DEVICE_ASSERT(
                                 sycl_utils::is_nan(ker_val),
                                 p_error_flag, 1);
 
@@ -270,7 +270,7 @@ Tensor<value_t> conv2d(const Tensor<value_t>& input,
                 }
             }
 
-            TEMPER_DEVICE_CHECK(!sycl_utils::is_finite(acc),
+            TEMPER_DEVICE_ASSERT(!sycl_utils::is_finite(acc),
                 p_error_flag, 2);
 
             p_output[flat] = acc;

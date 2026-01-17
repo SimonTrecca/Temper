@@ -122,11 +122,11 @@ public:
  * @param code Error code to atomically set when condition is true
  *
  * Usage inside a SYCL kernel:
- *   TEMPER_DEVICE_CHECK(is_nan(av), p_error, 1);
- *   TEMPER_DEVICE_CHECK(!is_finite(out), p_error, 2);
+ *   TEMPER_DEVICE_ASSERT(is_nan(av), p_error, 1);
+ *   TEMPER_DEVICE_ASSERT(!is_finite(out), p_error, 2);
  */
 #ifndef TEMPER_DISABLE_ERROR_CHECKS
-  #define TEMPER_DEVICE_CHECK(condition, p_err, code) \
+  #define TEMPER_DEVICE_ASSERT(condition, p_err, code) \
     do \
     { \
         if (condition) \
@@ -141,7 +141,43 @@ public:
         } \
     } while (0)
 #else
-  #define TEMPER_DEVICE_CHECK(condition, p_err, code) ((void)0)
+  #define TEMPER_DEVICE_ASSERT(condition, p_err, code) ((void)0)
+#endif
+
+/**
+ * @brief Device-side error checking macro (non-fatal).
+ *
+ * Evaluates a condition inside a SYCL kernel and, if true:
+ * - atomically sets an error flag to the specified error code
+ * - CONTINUES execution of the current work-item
+ *
+ * When TEMPER_DISABLE_ERROR_CHECKS is defined, the macro does nothing.
+ *
+ * @param condition The condition to evaluate
+ * @param p_err Pointer to an int32_t error flag in global/shared memory
+ * @param code Error code to atomically set when condition is true
+ *
+ * Usage inside a SYCL kernel:
+ * TEMPER_DEVICE_EXPECT(is_nan(av), p_error, 1);
+ * // Execution continues here even if NaN is found
+ */
+#ifndef TEMPER_DISABLE_ERROR_CHECKS
+  #define TEMPER_DEVICE_EXPECT(condition, p_err, code) \
+    do \
+    { \
+        if (condition) \
+        { \
+            auto atomic_err = sycl::atomic_ref<int32_t, \
+                sycl::memory_order::relaxed, \
+                sycl::memory_scope::device, \
+                sycl::access::address_space::global_space>(*p_err); \
+            int32_t expected = 0; \
+            atomic_err.compare_exchange_strong(expected, code); \
+            /* No return here: execution continues */ \
+        } \
+    } while (0)
+#else
+  #define TEMPER_DEVICE_EXPECT(condition, p_err, code) ((void)0)
 #endif
 
 #endif // TEMPER_ERRORS_HPP

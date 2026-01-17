@@ -51,23 +51,24 @@ Specification (Must)
         macro must resolve to a no-op (such as ``((void)0)``), ensuring
         the check and the branch are removed during compilation.
 
-2. Device-Side Error Reporting: Kernel Safety
----------------------------------------------
+2. Device-Side Error Reporting: Kernel Safety & Diagnostics
+--------------------------------------------------------------
 
 Description
 ^^^^^^^^^^^
-Standard C++ exceptions cannot be thrown from within SYCL kernels or other
-device-side code. A dedicated protocol **must** be used to detect errors
-during asynchronous execution and propagate them back to the host.
+Standard C++ exceptions cannot be thrown from within SYCL kernels. A
+dedicated protocol **must** be used to detect errors during asynchronous
+execution and propagate them back to the host. This protocol supports
+two modes: **Fatal Abort** (Assert) and **Non-Fatal Reporting** (Expect).
 
 Rationale
 ^^^^^^^^^
 Device code executes in parallel across many work-items. When an invalid
-state is reached (for example, NaN detection), the specific work-item must
-cease execution immediately to prevent undefined behavior. Since the host
-executes asynchronously, it requires a persistent, thread-safe signal to
-determine if the kernel completed successfully or if an exception should be
-raised.
+state is reached (e.g., NaN detection), a work-item may need to stop
+immediately to prevent undefined behavior, or simply flag the issue
+while allowing the kernel to finish for diagnostic purposes. Since the
+host executes asynchronously, it requires a thread-safe, persistent
+signal to determine the kernel's health status.
 
 Specification (Must)
 ^^^^^^^^^^^^^^^^^^^^
@@ -76,32 +77,35 @@ Specification (Must)
    :class: primary
 
    * **Atomic Flag:** Functions dispatching kernels with runtime checks
-     **must** allocate a shared or global memory integer flag (accessible by
-     both device and host) and initialize it to zero before dispatch.
+     **must** allocate a shared or global memory integer flag and
+     initialize it to zero before dispatch.
 
-   * **Macro Requirement:** All device-side checks **must** be implemented
-     via a dedicated macro (for example, ``TEMPER_DEVICE_CHECK``). This
-     macro must accept a boolean condition, the pointer to the error flag,
-     and a unique error code.
+   * **Macro Requirement:** All device-side checks **must** be
+     implemented via dedicated macros: ``TEMPER_DEVICE_ASSERT`` or
+     ``TEMPER_DEVICE_EXPECT``.
 
    * **Kernel Behavior:**
 
-     1. **Evaluation:** The macro must evaluate the condition.
+     1. **Evaluation:** The macro must evaluate the boolean condition.
 
-     2. **Atomic Set:** If the condition is true, the macro **must**
-        atomically set the error flag to the provided code (for example,
-        using ``atomic_ref``).
+     2. **Atomic Set:** If the condition is true, the macro **must** attempt to
+        atomically set the error flag to the provided code
+        using a compare-and-swap operation. This ensures only the
+        **first** error encountered is recorded.
 
-     3. **Abort:** The macro **must** immediately force a return from the
-        current work-item to stop further execution.
+     3. **Control Flow:**
+        - **ASSERT:** The macro **must** immediately force a ``return``
+          from the current work-item.
+        - **EXPECT:** The macro **must** allow the work-item to continue
+          execution after setting the flag.
 
    * **Host Translation:** After waiting for kernel completion, the host
-     **must** inspect the value of the error flag. If the flag is non-zero,
-     the host **must** use the standard ``TEMPER_CHECK`` macro to throw the
-     specific C++ exception corresponding to that error code.
+     **must** inspect the value of the error flag. If non-zero, the host
+     **must** use the standard ``TEMPER_CHECK`` macro to throw the C++
+     exception corresponding to that error code.
 
    * **Disable Switch:** If ``TEMPER_DISABLE_ERROR_CHECKS`` is defined,
-     the device macro **must** resolve to a no-op, removing all atomic
+     both macros **must** resolve to a no-op, removing all atomic
      operations and branching from the compiled kernel.
 
 3. NaN Behaviour: Error Prevention
