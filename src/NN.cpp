@@ -109,7 +109,7 @@ Tensor<value_t> conv2d(const Tensor<value_t>& input,
 
     MemoryLocation res_loc = MemoryLocation::HOST;
     if (input.get_memory_location() == MemoryLocation:: DEVICE ||
-        kernel.get_memory_location() == MemoryLocation:: DEVICE)
+        kernel.get_memory_location() == MemoryLocation::DEVICE)
     {
         res_loc = MemoryLocation::DEVICE;
     }
@@ -117,7 +117,7 @@ Tensor<value_t> conv2d(const Tensor<value_t>& input,
     Tensor<value_t> result(out_shape, res_loc);
 
     uint64_t leading_count = 1;
-    for (uint64_t dim :  leading_shape)
+    for (uint64_t dim : leading_shape)
     {
         leading_count *= dim;
     }
@@ -129,7 +129,7 @@ Tensor<value_t> conv2d(const Tensor<value_t>& input,
         temper::utils::compute_divisors(out_shape);
 
     sycl_utils::SyclArray<uint64_t> out_divs_arr(g_sycl_queue,
-        out_divs, MemoryLocation:: DEVICE);
+        out_divs, MemoryLocation::DEVICE);
     sycl_utils::SyclArray<int32_t> error_flag_arr(g_sycl_queue,
         1, MemoryLocation::HOST);
 
@@ -155,27 +155,30 @@ Tensor<value_t> conv2d(const Tensor<value_t>& input,
     std::optional<sycl_utils::SyclArray<uint64_t>>
         ker_leading_strides_arr_opt;
     std:: optional<sycl_utils:: SyclArray<uint64_t>>
-        leading_shape_arr_opt;
+        leading_divs_arr_opt;
 
     const uint64_t* p_in_leading_strides = nullptr;
     const uint64_t* p_ker_leading_strides = nullptr;
-    const uint64_t* p_leading_shape = nullptr;
+    const uint64_t* p_leading_divs = nullptr;
 
     const int64_t leading_rank =
         static_cast<int64_t>(leading_shape.size());
 
     if (leading_rank > 0)
     {
-        in_leading_strides_arr_opt. emplace(g_sycl_queue,
+        std::vector<uint64_t> leading_divs =
+            temper::utils::compute_divisors(leading_shape);
+
+        in_leading_strides_arr_opt.emplace(g_sycl_queue,
             in_leading_strides, MemoryLocation::DEVICE);
         ker_leading_strides_arr_opt.emplace(g_sycl_queue,
-            ker_leading_strides, MemoryLocation::DEVICE);
-        leading_shape_arr_opt. emplace(g_sycl_queue,
-            leading_shape, MemoryLocation::DEVICE);
+            ker_leading_strides, MemoryLocation:: DEVICE);
+        leading_divs_arr_opt.emplace(g_sycl_queue,
+            leading_divs, MemoryLocation::DEVICE);
 
         p_in_leading_strides = in_leading_strides_arr_opt->data();
         p_ker_leading_strides = ker_leading_strides_arr_opt->data();
-        p_leading_shape = leading_shape_arr_opt->data();
+        p_leading_divs = leading_divs_arr_opt->data();
     }
 
     const value_t* p_input = input.get_data();
@@ -191,29 +194,22 @@ Tensor<value_t> conv2d(const Tensor<value_t>& input,
             const uint64_t flat = static_cast<uint64_t>(id[0]);
 
             uint64_t out_col_idx = (flat / p_out_divs[out_rank - 1]) %
-            	out_width;
-			uint64_t out_row_idx = (flat / p_out_divs[out_rank - 2]) %
-				out_height;
-			uint64_t out_ch_idx = (flat / p_out_divs[out_rank - 3]) %
-				out_channels;
-			uint64_t temp = flat / (out_channels * out_height * out_width);
+                out_width;
+            uint64_t out_row_idx = (flat / p_out_divs[out_rank - 2]) %
+                out_height;
+            uint64_t out_ch_idx = (flat / p_out_divs[out_rank - 3]) %
+                out_channels;
+            uint64_t leading_flat = flat / (out_channels * out_height * out_width);
 
             uint64_t in_leading_offset = 0;
             uint64_t ker_leading_offset = 0;
 
             if (leading_rank > 0)
             {
-                uint64_t leading_flat = temp;
-                for (int64_t d = leading_rank - 1; d >= 0; --d)
-                {
-                    uint64_t idx = 0;
-                    idx = leading_flat % p_leading_shape[d];
-                    leading_flat /= p_leading_shape[d];
-                    in_leading_offset += idx *
-                        p_in_leading_strides[d];
-                    ker_leading_offset += idx *
-                        p_ker_leading_strides[d];
-                }
+                in_leading_offset = temper::sycl_utils::idx_of(leading_flat,
+                    p_leading_divs, p_in_leading_strides, leading_rank);
+                ker_leading_offset = temper:: sycl_utils::idx_of(leading_flat,
+                    p_leading_divs, p_ker_leading_strides, leading_rank);
             }
 
             value_t acc = value_t{0};
@@ -373,5 +369,77 @@ Tensor<value_t> conv2d_transpose(
 template Tensor<float> conv2d_transpose<float>
     (const Tensor<float>&, const Tensor<float>&, uint64_t,
      std::pair<uint64_t, uint64_t>, std::pair<uint64_t, uint64_t>);
+
+template<typename value_t>
+Tensor<value_t> relu(const Tensor<value_t>& tensor)
+{
+    const int64_t rank = tensor.get_rank();
+    TEMPER_CHECK(rank == 0,
+        validation_error,
+        R"(relu: input tensor has no elements.)");
+
+    const std::vector<uint64_t>& shape = tensor.get_dimensions();
+    const uint64_t num_elements = tensor.get_num_elements();
+
+    MemoryLocation res_loc = tensor.get_memory_location();
+    Tensor<value_t> result(shape, res_loc);
+
+    const std::vector<uint64_t>& in_strides = tensor.get_strides();
+    std::vector<uint64_t> divs = temper::utils::compute_divisors(shape);
+
+    sycl_utils::SyclArray<uint64_t> divs_arr(g_sycl_queue,
+        divs, MemoryLocation::DEVICE);
+    sycl_utils::SyclArray<uint64_t> strides_arr(g_sycl_queue,
+        in_strides, MemoryLocation:: DEVICE);
+    sycl_utils::SyclArray<int32_t> error_flag_arr(g_sycl_queue,
+        1, MemoryLocation::HOST);
+
+    const uint64_t* p_divs = divs_arr;
+    const uint64_t* p_strides = strides_arr;
+    int32_t* p_error_flag = error_flag_arr;
+
+    *p_error_flag = 0;
+
+    const value_t* p_input = tensor.get_data();
+    value_t* p_output = result.get_data();
+
+    g_sycl_queue.submit([&](sycl::handler& cgh)
+    {
+        cgh.parallel_for(sycl:: range<1>(
+            static_cast<size_t>(num_elements)),
+            [=](sycl::id<1> id)
+        {
+            const uint64_t flat = static_cast<uint64_t>(id[0]);
+
+            uint64_t in_idx = temper::sycl_utils:: idx_of(
+                flat, p_divs, p_strides, rank);
+
+            value_t val = p_input[in_idx];
+
+            TEMPER_DEVICE_ASSERT(sycl_utils::is_nan(val),
+                p_error_flag, 1);
+
+            value_t out_val = val > value_t{0} ? val : value_t{0};
+
+            TEMPER_DEVICE_ASSERT(!sycl_utils::is_finite(out_val),
+                p_error_flag, 2);
+
+            p_output[flat] = out_val;
+        });
+    }).wait();
+
+    int32_t err = *p_error_flag;
+
+    TEMPER_CHECK(err == 1,
+        nan_error,
+        R"(relu: NaN detected in input.)");
+
+    TEMPER_CHECK(err == 2,
+        nonfinite_error,
+        R"(relu: non-finite result produced.)");
+
+    return result;
+}
+template Tensor<float> relu<float>(const Tensor<float>&);
 
 } // namespace temper::nn

@@ -90,6 +90,22 @@ extern template Tensor<float> conv2d_transpose<float>
      std::pair<uint64_t, uint64_t>, std::pair<uint64_t, uint64_t>);
 /// \endcond
 
+/**
+ * @brief Rectified Linear Unit (ReLU) activation function.
+ *
+ * Applies the element-wise function ReLU(x) = max(0, x).
+ * Values below zero are clamped to zero, positive values pass through unchanged.
+ *
+ * @param tensor Input tensor of any shape.
+ * @return Tensor<value_t> A new tensor with the same shape as @p tensor
+ * containing the ReLU-transformed values.
+ */
+template <typename value_t>
+Tensor<value_t> relu(const Tensor<value_t>& tensor);
+/// \cond
+extern template Tensor<float> relu<float>(const Tensor<float>&);
+/// \endcond
+
  /* todo
     all activation functions
     all initialization functions

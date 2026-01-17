@@ -582,4 +582,206 @@ TYPED_TEST(TypedConv2DTranspose, error_channel_mismatch)
     );
 }
 
+template<typename T>
+class TypedRelu : public :: testing::Test {};
+
+using ReluTestTypes = ::testing::Types<float>;
+TYPED_TEST_SUITE(TypedRelu, ReluTestTypes);
+
+/**
+ * @test TypedRelu.relu_basic_positive
+ * @brief ReLU should pass positive values through unchanged.
+ */
+TYPED_TEST(TypedRelu, relu_basic_positive)
+{
+    using value_t = TypeParam;
+
+    Tensor<value_t> input({4}, MemoryLocation:: DEVICE);
+    input = std::vector<value_t>{
+        static_cast<value_t>(1.0),
+        static_cast<value_t>(2.0),
+        static_cast<value_t>(3.0),
+        static_cast<value_t>(4.0)
+    };
+
+    Tensor<value_t> result = nn::relu(input);
+
+    EXPECT_EQ(result.get_dimensions(), input.get_dimensions());
+    EXPECT_NEAR(static_cast<double>(result[0]), 1.0, 1e-6);
+    EXPECT_NEAR(static_cast<double>(result[1]), 2.0, 1e-6);
+    EXPECT_NEAR(static_cast<double>(result[2]), 3.0, 1e-6);
+    EXPECT_NEAR(static_cast<double>(result[3]), 4.0, 1e-6);
+}
+
+/**
+ * @test TypedRelu.relu_basic_negative
+ * @brief ReLU should clamp negative values to zero.
+ */
+TYPED_TEST(TypedRelu, relu_basic_negative)
+{
+    using value_t = TypeParam;
+
+    Tensor<value_t> input({4}, MemoryLocation::DEVICE);
+    input = std::vector<value_t>{
+        static_cast<value_t>(-1.0),
+        static_cast<value_t>(-2.0),
+        static_cast<value_t>(-3.0),
+        static_cast<value_t>(-4.0)
+    };
+
+    Tensor<value_t> result = nn::relu(input);
+
+    EXPECT_EQ(result.get_dimensions(), input.get_dimensions());
+    EXPECT_NEAR(static_cast<double>(result[0]), 0.0, 1e-6);
+    EXPECT_NEAR(static_cast<double>(result[1]), 0.0, 1e-6);
+    EXPECT_NEAR(static_cast<double>(result[2]), 0.0, 1e-6);
+    EXPECT_NEAR(static_cast<double>(result[3]), 0.0, 1e-6);
+}
+
+/**
+ * @test TypedRelu.relu_mixed_values
+ * @brief ReLU should handle mixed positive and negative values.
+ */
+TYPED_TEST(TypedRelu, relu_mixed_values)
+{
+    using value_t = TypeParam;
+
+    Tensor<value_t> input({2, 3}, MemoryLocation::DEVICE);
+    input = std::vector<value_t>{
+        static_cast<value_t>(-1.0), static_cast<value_t>(0.0),
+        static_cast<value_t>(1.0), static_cast<value_t>(-2.0),
+        static_cast<value_t>(2.0), static_cast<value_t>(-0.5)
+    };
+
+    Tensor<value_t> result = nn:: relu(input);
+
+    EXPECT_EQ(result.get_dimensions(), std::vector<uint64_t>({2, 3}));
+    EXPECT_NEAR(static_cast<double>(result[0][0]), 0.0, 1e-6);
+    EXPECT_NEAR(static_cast<double>(result[0][1]), 0.0, 1e-6);
+    EXPECT_NEAR(static_cast<double>(result[0][2]), 1.0, 1e-6);
+    EXPECT_NEAR(static_cast<double>(result[1][0]), 0.0, 1e-6);
+    EXPECT_NEAR(static_cast<double>(result[1][1]), 2.0, 1e-6);
+    EXPECT_NEAR(static_cast<double>(result[1][2]), 0.0, 1e-6);
+}
+
+/**
+ * @test TypedRelu.relu_zero_input
+ * @brief ReLU of zero should be zero.
+ */
+TYPED_TEST(TypedRelu, relu_zero_input)
+{
+    using value_t = TypeParam;
+
+    Tensor<value_t> input({3}, MemoryLocation::DEVICE);
+    input = std::vector<value_t>{
+        static_cast<value_t>(0.0),
+        static_cast<value_t>(0.0),
+        static_cast<value_t>(0.0)
+    };
+
+    Tensor<value_t> result = nn::relu(input);
+
+    EXPECT_NEAR(static_cast<double>(result[0]), 0.0, 1e-6);
+    EXPECT_NEAR(static_cast<double>(result[1]), 0.0, 1e-6);
+    EXPECT_NEAR(static_cast<double>(result[2]), 0.0, 1e-6);
+}
+
+/**
+ * @test TypedRelu.relu_empty_tensor_throws
+ * @brief ReLU on an empty/default tensor should throw validation_error.
+ */
+TYPED_TEST(TypedRelu, relu_empty_tensor_throws)
+{
+    using value_t = TypeParam;
+
+    Tensor<value_t> input;
+
+    EXPECT_THROW({
+        nn::relu(input);
+    }, temper::validation_error);
+}
+
+/**
+ * @test TypedRelu.relu_nan_input_throws
+ * @brief ReLU should throw nan_error if input contains NaN.
+ */
+TYPED_TEST(TypedRelu, relu_nan_input_throws)
+{
+    using value_t = TypeParam;
+
+    if constexpr (! std::is_floating_point_v<value_t>)
+        return;
+
+    Tensor<value_t> input({3}, MemoryLocation::DEVICE);
+    input = std::vector<value_t>{
+        static_cast<value_t>(1.0),
+        std::numeric_limits<value_t>::quiet_NaN(),
+        static_cast<value_t>(3.0)
+    };
+
+    EXPECT_THROW({
+        nn::relu(input);
+    }, temper::nan_error);
+}
+
+/**
+ * @test TypedRelu.relu_alias_view_strided
+ * @brief ReLU on a non-contiguous strided alias view.
+ */
+TYPED_TEST(TypedRelu, relu_alias_view_strided)
+{
+    using value_t = TypeParam;
+
+    Tensor<value_t> owner({2, 4}, MemoryLocation::DEVICE);
+    owner = std::vector<value_t>{
+        static_cast<value_t>(-1.0), static_cast<value_t>(2.0),
+        static_cast<value_t>(-3.0), static_cast<value_t>(4.0),
+        static_cast<value_t>(-5.0), static_cast<value_t>(6.0),
+        static_cast<value_t>(-7.0), static_cast<value_t>(8.0)
+    };
+
+    // Create a view with stride 2 along last axis:  selects columns 0, 2
+    std::vector<uint64_t> start = {0, 0};
+    std::vector<uint64_t> dims = {2, 2};
+    std::vector<uint64_t> strides = {4, 2};
+    Tensor<value_t> view(owner, start, dims, strides);
+
+    Tensor<value_t> result = nn::relu(view);
+
+    EXPECT_EQ(result.get_dimensions(), std::vector<uint64_t>({2, 2}));
+    EXPECT_NEAR(static_cast<double>(result[0][0]), 0.0, 1e-6);  // relu(-1) = 0
+    EXPECT_NEAR(static_cast<double>(result[0][1]), 0.0, 1e-6);  // relu(-3) = 0
+    EXPECT_NEAR(static_cast<double>(result[1][0]), 0.0, 1e-6);  // relu(-5) = 0
+    EXPECT_NEAR(static_cast<double>(result[1][1]), 0.0, 1e-6);  // relu(-7) = 0
+}
+
+/**
+ * @test TypedRelu.relu_3d_tensor
+ * @brief ReLU on a 3D tensor.
+ */
+TYPED_TEST(TypedRelu, relu_3d_tensor)
+{
+    using value_t = TypeParam;
+
+    Tensor<value_t> input({2, 2, 2}, MemoryLocation::DEVICE);
+    input = std::vector<value_t>{
+        static_cast<value_t>(-1.0), static_cast<value_t>(2.0),
+        static_cast<value_t>(3.0), static_cast<value_t>(-4.0),
+        static_cast<value_t>(5.0), static_cast<value_t>(-6.0),
+        static_cast<value_t>(-7.0), static_cast<value_t>(8.0)
+    };
+
+    Tensor<value_t> result = nn::relu(input);
+
+    EXPECT_EQ(result.get_dimensions(), std::vector<uint64_t>({2, 2, 2}));
+    EXPECT_NEAR(static_cast<double>(result[0][0][0]), 0.0, 1e-6);
+    EXPECT_NEAR(static_cast<double>(result[0][0][1]), 2.0, 1e-6);
+    EXPECT_NEAR(static_cast<double>(result[0][1][0]), 3.0, 1e-6);
+    EXPECT_NEAR(static_cast<double>(result[0][1][1]), 0.0, 1e-6);
+    EXPECT_NEAR(static_cast<double>(result[1][0][0]), 5.0, 1e-6);
+    EXPECT_NEAR(static_cast<double>(result[1][0][1]), 0.0, 1e-6);
+    EXPECT_NEAR(static_cast<double>(result[1][1][0]), 0.0, 1e-6);
+    EXPECT_NEAR(static_cast<double>(result[1][1][1]), 8.0, 1e-6);
+}
+
 } // namespace Test
