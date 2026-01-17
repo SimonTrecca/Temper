@@ -44,7 +44,7 @@ Specification (Must)
    * **Macro Behavior:**
 
      1. **Default:** If the disable flag is **not** set, the macro must
-        evaluate the condition. If the condition is true, it must throw
+        evaluate the condition. If the condition is false, it must throw
         the specified exception with the provided message.
 
      2. **Disabled:** If ``TEMPER_DISABLE_ERROR_CHECKS`` **is** set, the
@@ -88,7 +88,7 @@ Specification (Must)
 
      1. **Evaluation:** The macro must evaluate the boolean condition.
 
-     2. **Atomic Set:** If the condition is true, the macro **must** attempt to
+     2. **Atomic Set:** If the condition is false, the macro **must** attempt to
         atomically set the error flag to the provided code
         using a compare-and-swap operation. This ensures only the
         **first** error encountered is recorded.

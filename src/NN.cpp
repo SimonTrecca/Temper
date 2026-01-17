@@ -23,17 +23,17 @@ Tensor<value_t> conv2d(const Tensor<value_t>& input,
     const int64_t in_rank = input.get_rank();
     const int64_t ker_rank = kernel.get_rank();
 
-    TEMPER_CHECK(in_rank < 3,
+    TEMPER_CHECK(in_rank >= 3,
         validation_error,
         R"(conv2d: input tensor must have rank >= 3
            (at least in_channels, height, width).)");
 
-    TEMPER_CHECK(ker_rank < 4,
+    TEMPER_CHECK(ker_rank >= 4,
         validation_error,
         R"(conv2d: kernel tensor must have rank >= 4
            (at least out_channels, in_channels, kernel_h, kernel_w).)");
 
-    TEMPER_CHECK(stride == 0,
+    TEMPER_CHECK(stride > 0,
         validation_error,
         R"(conv2d: stride must be positive.)");
 
@@ -49,15 +49,15 @@ Tensor<value_t> conv2d(const Tensor<value_t>& input,
     const uint64_t pad_h = padding.first;
     const uint64_t pad_w = padding.second;
 
-    TEMPER_CHECK(in_channels != ker_in_channels,
+    TEMPER_CHECK(in_channels == ker_in_channels,
         validation_error,
         R"(conv2d: input channels must match kernel input channels.)");
 
-    TEMPER_CHECK(in_height + 2 * pad_h < ker_height,
+    TEMPER_CHECK(in_height + 2 * pad_h >= ker_height,
         validation_error,
         R"(conv2d: kernel height larger than padded input height.)");
 
-    TEMPER_CHECK(in_width + 2 * pad_w < ker_width,
+    TEMPER_CHECK(in_width + 2 * pad_w >= ker_width,
         validation_error,
         R"(conv2d: kernel width larger than padded input width.)");
 
@@ -254,10 +254,10 @@ Tensor<value_t> conv2d(const Tensor<value_t>& input,
                             value_t ker_val = p_kernel[ker_offset];
 
                             TEMPER_DEVICE_ASSERT(
-                                sycl_utils::is_nan(in_val),
+                                !sycl_utils::is_nan(in_val),
                                 p_error_flag, 1);
                             TEMPER_DEVICE_ASSERT(
-                                sycl_utils::is_nan(ker_val),
+                                !sycl_utils::is_nan(ker_val),
                                 p_error_flag, 1);
 
                             acc += in_val * ker_val;
@@ -266,7 +266,7 @@ Tensor<value_t> conv2d(const Tensor<value_t>& input,
                 }
             }
 
-            TEMPER_DEVICE_ASSERT(!sycl_utils::is_finite(acc),
+            TEMPER_DEVICE_ASSERT(sycl_utils::is_finite(acc),
                 p_error_flag, 2);
 
             p_output[flat] = acc;
@@ -275,11 +275,11 @@ Tensor<value_t> conv2d(const Tensor<value_t>& input,
 
     int32_t err = *p_error_flag;
 
-    TEMPER_CHECK(err == 1,
+    TEMPER_CHECK(err != 1,
         nan_error,
         R"(conv2d: NaN detected in inputs.)");
 
-    TEMPER_CHECK(err == 2,
+    TEMPER_CHECK(err != 2,
         nonfinite_error,
         R"(conv2d: non-finite result (overflow or Inf) produced.)");
 
@@ -303,15 +303,15 @@ Tensor<value_t> conv2d_transpose(
     const int64_t input_rank  = input.get_rank();
     const int64_t kernel_rank = kernel.get_rank();
 
-    TEMPER_CHECK(input_rank < 3,
+    TEMPER_CHECK(input_rank >= 3,
         validation_error,
         "conv2d_transpose: input must have rank >= 3");
 
-    TEMPER_CHECK(kernel_rank < 4,
+    TEMPER_CHECK(kernel_rank >= 4,
         validation_error,
         "conv2d_transpose: kernel must have rank >= 4");
 
-    TEMPER_CHECK(stride == 0,
+    TEMPER_CHECK(stride > 0,
         validation_error,
         "conv2d_transpose: stride must be positive");
 
@@ -320,7 +320,7 @@ Tensor<value_t> conv2d_transpose(
     const uint64_t kernel_h          = kernel_shape[kernel_rank - 2];
     const uint64_t kernel_w          = kernel_shape[kernel_rank - 1];
 
-    TEMPER_CHECK(in_channels_input != ker_in_channels,
+    TEMPER_CHECK(in_channels_input == ker_in_channels,
         validation_error,
         "conv2d_transpose: input channels must match between input and kernel");
 
@@ -374,7 +374,7 @@ template<typename value_t>
 Tensor<value_t> relu(const Tensor<value_t>& tensor)
 {
     const int64_t rank = tensor.get_rank();
-    TEMPER_CHECK(rank == 0,
+    TEMPER_CHECK(rank > 0,
         validation_error,
         R"(relu: input tensor has no elements.)");
 
@@ -416,12 +416,12 @@ Tensor<value_t> relu(const Tensor<value_t>& tensor)
 
             value_t val = p_input[in_idx];
 
-            TEMPER_DEVICE_ASSERT(sycl_utils::is_nan(val),
+            TEMPER_DEVICE_ASSERT(!sycl_utils::is_nan(val),
                 p_error_flag, 1);
 
             value_t out_val = val > value_t{0} ? val : value_t{0};
 
-            TEMPER_DEVICE_ASSERT(!sycl_utils::is_finite(out_val),
+            TEMPER_DEVICE_ASSERT(sycl_utils::is_finite(out_val),
                 p_error_flag, 2);
 
             p_output[flat] = out_val;
@@ -430,11 +430,11 @@ Tensor<value_t> relu(const Tensor<value_t>& tensor)
 
     int32_t err = *p_error_flag;
 
-    TEMPER_CHECK(err == 1,
+    TEMPER_CHECK(err != 1,
         nan_error,
         R"(relu: NaN detected in input.)");
 
-    TEMPER_CHECK(err == 2,
+    TEMPER_CHECK(err != 2,
         nonfinite_error,
         R"(relu: non-finite result produced.)");
 

@@ -19,12 +19,12 @@ Tensor<value_t> one_hot_expand_at(const Tensor<value_t>& tensor,
 	value_t on_value,
 	value_t off_value)
 {
-    TEMPER_CHECK(depth == 0,
+    TEMPER_CHECK(depth > 0,
         validation_error,
         "one_hot_expand_at: depth must be > 0.");
 
     const int64_t rank = tensor.get_rank();
-    TEMPER_CHECK(rank == 0,
+    TEMPER_CHECK(rank > 0,
         validation_error,
         R"(one_hot_expand_at: input tensor has no elements.)");
 
@@ -32,12 +32,12 @@ Tensor<value_t> one_hot_expand_at(const Tensor<value_t>& tensor,
     {
         axis += rank;
     }
-     TEMPER_CHECK(axis < 0 || axis >= rank,
+     TEMPER_CHECK(axis >= 0 && axis < rank,
         bounds_error,
         "one_hot_expand_at:  axis out of range.");
 
     const std::vector<uint64_t> & in_shape = tensor.get_dimensions();
-    TEMPER_CHECK(axis_index >= in_shape[axis],
+    TEMPER_CHECK(axis_index < in_shape[axis],
         bounds_error,
         "one_hot_expand_at: axis_index out of range.");
 
@@ -105,7 +105,7 @@ Tensor<value_t> one_hot_expand_at(const Tensor<value_t>& tensor,
             	temper::sycl_utils::idx_of(flat, p_in_divs, p_in_strides, rank);
             value_t in_val = p_in_data[in_idx];
 
-            TEMPER_DEVICE_ASSERT(sycl_utils::is_nan(in_val), p_error_flag, 1);
+            TEMPER_DEVICE_ASSERT(!sycl_utils::is_nan(in_val), p_error_flag, 1);
 
             uint64_t coord_a = (flat / p_in_divs[axis]) % p_in_shape[axis];
 
@@ -141,12 +141,12 @@ Tensor<value_t> one_hot_expand_at(const Tensor<value_t>& tensor,
                 value_t rounded = sycl_utils::round(in_val);
                 value_t diff = sycl_utils::fabs(in_val - rounded);
 
-                TEMPER_DEVICE_ASSERT(diff > integer_eps, p_error_flag, 3);
+                TEMPER_DEVICE_ASSERT(diff <= integer_eps, p_error_flag, 3);
 
                 int64_t lbl_ll = static_cast<int64_t>(rounded);
 
-                TEMPER_DEVICE_ASSERT(lbl_ll < 0 ||
-                    static_cast<uint64_t>(lbl_ll) >= depth, p_error_flag, 3);
+                TEMPER_DEVICE_ASSERT(lbl_ll >= 0 &&
+                    static_cast<uint64_t>(lbl_ll) < depth, p_error_flag, 3);
 
                 const uint64_t lbl = static_cast<uint64_t>(lbl_ll);
 
@@ -173,11 +173,11 @@ Tensor<value_t> one_hot_expand_at(const Tensor<value_t>& tensor,
 
     int32_t err = *p_error_flag;
 
-    TEMPER_CHECK(err == 1,
+    TEMPER_CHECK(err != 1,
         nan_error,
         R"(one_hot_expand_at: NaN detected in inputs.)");
 
-    TEMPER_CHECK(err == 3,
+    TEMPER_CHECK(err != 3,
         validation_error,
         R"(one_hot_expand_at: label non-integer or out of range.)");
 
@@ -193,7 +193,7 @@ Tensor<value_t> softmax(const Tensor<value_t> & tensor,
     std::optional<int64_t> axis_opt)
 {
     const int64_t rank = tensor.get_rank();
-    TEMPER_CHECK(rank == 0,
+    TEMPER_CHECK(rank > 0,
         validation_error,
         R"(softmax: input tensor has no elements.)");
 
@@ -205,7 +205,7 @@ Tensor<value_t> softmax(const Tensor<value_t> & tensor,
         {
             axis += rank;
         }
-        TEMPER_CHECK(axis < 0 || axis >= rank,
+        TEMPER_CHECK(axis >= 0 && axis < rank,
             bounds_error,
             R"(softmax: axis out of range.)");
     }
@@ -227,12 +227,12 @@ Tensor<value_t> cross_entropy(const Tensor<value_t> & logits,
     bool reduction_mean)
 {
     const int64_t rank_logits = logits.get_rank();
-    TEMPER_CHECK(rank_logits == 0,
+    TEMPER_CHECK(rank_logits > 0,
         validation_error,
         R"(cross_entropy: input logits tensor has no elements.)");
 
     const int64_t rank_labels = labels.get_rank();
-    TEMPER_CHECK(rank_labels == 0,
+    TEMPER_CHECK(rank_labels > 0,
         validation_error,
         R"(cross_entropy: labels tensor has no elements.)");
 
@@ -254,7 +254,7 @@ Tensor<value_t> cross_entropy(const Tensor<value_t> & logits,
         {
             axis += max_rank;
         }
-        TEMPER_CHECK(axis < 0 || axis >= max_rank,
+        TEMPER_CHECK(axis >= 0 && axis < max_rank,
             bounds_error,
             R"(cross_entropy: axis out of bounds (aligned shape))");
         axis_aligned = axis;
@@ -262,7 +262,7 @@ Tensor<value_t> cross_entropy(const Tensor<value_t> & logits,
         int64_t axis_for_logits = axis - (max_rank - rank_logits);
         if (from_logits)
         {
-            TEMPER_CHECK(axis_for_logits < 0 || axis_for_logits >= rank_logits,
+            TEMPER_CHECK(axis_for_logits >= 0 && axis_for_logits < rank_logits,
                 bounds_error,
                 R"(cross_entropy:
                     axis does not exist on logits (required for softmax))");
@@ -310,11 +310,11 @@ Tensor<value_t> mean_squared_error(const Tensor<value_t>& predictions,
 {
     const int64_t rank_pred = predictions.get_rank();
     const int64_t rank_tgt = targets.get_rank();
-    TEMPER_CHECK(rank_pred == 0,
+    TEMPER_CHECK(rank_pred > 0,
         validation_error,
         R"(mean_squared_error: predictions tensor has no elements.)");
 
-    TEMPER_CHECK(rank_tgt == 0,
+    TEMPER_CHECK(rank_tgt > 0,
         validation_error,
         R"(mean_squared_error: targets tensor has no elements.)");
 
@@ -333,7 +333,7 @@ Tensor<value_t> mean_squared_error(const Tensor<value_t>& predictions,
         {
             axis += max_rank;
         }
-        TEMPER_CHECK(axis < 0 || axis >= max_rank,
+        TEMPER_CHECK(axis >= 0 && axis < max_rank,
             bounds_error,
             R"(mean_squared_error: axis out of bounds (aligned shape))");
         axis_aligned = axis;
@@ -363,7 +363,7 @@ PCAResult<value_t> pca(const Tensor<value_t> & data,
 {
     const int64_t rank = data.get_rank();
 
-    TEMPER_CHECK(rank < 2,
+    TEMPER_CHECK(rank >= 2,
         validation_error,
         R"(pca: rank must be >= 2.)");
 
@@ -372,7 +372,7 @@ PCAResult<value_t> pca(const Tensor<value_t> & data,
     {
         uint64_t value = n_components.value();
         // Check whether the number of components given is valid.
-        TEMPER_CHECK(value > k || value == 0,
+        TEMPER_CHECK(value >= 1 && value <= k,
             validation_error,
             R"(pca: invalid number of components.)");
         k = value;

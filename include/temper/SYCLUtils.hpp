@@ -108,7 +108,7 @@ private:
                 break;
         }
 
-        TEMPER_CHECK(!m_p_data,
+        TEMPER_CHECK(m_p_data,
             device_error,
             "SYCLArray: error allocating buffer on device.");
     }

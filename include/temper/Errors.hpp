@@ -84,10 +84,10 @@ public:
  * @brief Error checking macro.
  *
  * Evaluates a condition and throws the specified exception type
- * with the given message if the condition is true.
+ * with the given message if the condition is false.
  * Can be disabled at compile-time with TEMPER_DISABLE_ERROR_CHECKS.
  *
- * @param condition The condition to check (throws if true)
+ * @param condition The condition to check (throws if false)
  * @param exception_type The exception type to throw
  * @param message The error message
  *
@@ -99,7 +99,7 @@ public:
   #define TEMPER_CHECK(condition, exception_type, message) \
    do \
    { \
-      if (condition) \
+      if (!(condition)) \
       { \
          throw exception_type(message); \
       } \
@@ -111,7 +111,7 @@ public:
 /**
  * @brief Device-side error checking macro.
  *
- * Evaluates a condition inside a SYCL kernel and, if true:
+ * Evaluates a condition inside a SYCL kernel and, if false:
  *   - atomically sets an error flag to the specified error code
  *   - immediately returns from the current work-item
  *
@@ -119,7 +119,7 @@ public:
  *
  * @param condition The condition to evaluate
  * @param p_err Pointer to an int32_t error flag in global/shared memory
- * @param code Error code to atomically set when condition is true
+ * @param code Error code to atomically set when condition is false
  *
  * Usage inside a SYCL kernel:
  *   TEMPER_DEVICE_ASSERT(is_nan(av), p_error, 1);
@@ -129,7 +129,7 @@ public:
   #define TEMPER_DEVICE_ASSERT(condition, p_err, code) \
     do \
     { \
-        if (condition) \
+        if (!(condition)) \
         { \
             auto atomic_err = sycl::atomic_ref<int32_t, \
                 sycl::memory_order::relaxed, \
@@ -147,7 +147,7 @@ public:
 /**
  * @brief Device-side error checking macro (non-fatal).
  *
- * Evaluates a condition inside a SYCL kernel and, if true:
+ * Evaluates a condition inside a SYCL kernel and, if false:
  * - atomically sets an error flag to the specified error code
  * - CONTINUES execution of the current work-item
  *
@@ -155,7 +155,7 @@ public:
  *
  * @param condition The condition to evaluate
  * @param p_err Pointer to an int32_t error flag in global/shared memory
- * @param code Error code to atomically set when condition is true
+ * @param code Error code to atomically set when condition is false
  *
  * Usage inside a SYCL kernel:
  * TEMPER_DEVICE_EXPECT(is_nan(av), p_error, 1);
@@ -165,7 +165,7 @@ public:
   #define TEMPER_DEVICE_EXPECT(condition, p_err, code) \
     do \
     { \
-        if (condition) \
+        if (!(condition)) \
         { \
             auto atomic_err = sycl::atomic_ref<int32_t, \
                 sycl::memory_order::relaxed, \

@@ -87,7 +87,7 @@ compute_divisors(const std::vector<uint64_t>& shape)
  */
 inline BroadcastResult compute_broadcast(const std::vector<TensorDesc>& inputs)
 {
-    TEMPER_CHECK(inputs.empty(),
+    TEMPER_CHECK(!inputs.empty(),
         validation_error,
         "compute_broadcast: no inputs provided");
 
@@ -139,7 +139,7 @@ inline BroadcastResult compute_broadcast(const std::vector<TensorDesc>& inputs)
             }
             else
             {
-                TEMPER_CHECK(true,
+                TEMPER_CHECK(false,
                     validation_error,
                     R"(compute_broadcast:
                         incompatible shapes for broadcasting)");

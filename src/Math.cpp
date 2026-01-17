@@ -15,13 +15,12 @@ template <typename value_t>
 Tensor<value_t> matmul(const Tensor<value_t> & first,
     const Tensor<value_t> & second)
 {
-    TEMPER_CHECK(first.get_dimensions().empty() ||
-        second.get_dimensions().empty(),
-        validation_error,
-        "matmul: either tensor has no elements.");
-
     const int64_t a_rank_orig = first.get_rank();
     const int64_t b_rank_orig = second.get_rank();
+
+    TEMPER_CHECK(a_rank_orig > 0 && b_rank_orig > 0,
+        validation_error,
+        "matmul: either tensor has no elements.");
 
     temper::utils::TensorDesc a_desc;
     temper::utils::TensorDesc b_desc;
@@ -60,7 +59,7 @@ Tensor<value_t> matmul(const Tensor<value_t> & first,
     const uint64_t k_b = b_desc.shape[b_rank - 2];
     const uint64_t n = b_desc.shape[b_rank - 1];
 
-    TEMPER_CHECK(k_a != k_b,
+    TEMPER_CHECK(k_a == k_b,
         validation_error,
         R"(matmul: inner dimensions must match.)");
 
@@ -269,12 +268,12 @@ Tensor<value_t> matmul(const Tensor<value_t> & first,
                 {
                     value_t av = p_a[t * a_stride_k];
                     value_t bv = p_b[t * b_stride_k];
-                    TEMPER_DEVICE_ASSERT(sycl_utils::is_nan(av), p_error_flag, 1);
-                    TEMPER_DEVICE_ASSERT(sycl_utils::is_nan(bv), p_error_flag, 1);
+                    TEMPER_DEVICE_ASSERT(!sycl_utils::is_nan(av), p_error_flag, 1);
+                    TEMPER_DEVICE_ASSERT(!sycl_utils::is_nan(bv), p_error_flag, 1);
 
                     acc += av * bv;
                 }
-                TEMPER_DEVICE_ASSERT(!sycl_utils::is_finite(acc), p_error_flag, 2);
+                TEMPER_DEVICE_ASSERT(sycl_utils::is_finite(acc), p_error_flag, 2);
                 p_r[0] = acc;
                 return;
             }
@@ -307,12 +306,12 @@ Tensor<value_t> matmul(const Tensor<value_t> & first,
             {
                 value_t av = p_a[a_off + t * a_stride_k];
                 value_t bv = p_b[b_off + t * b_stride_k];
-                TEMPER_DEVICE_ASSERT(sycl_utils::is_nan(av), p_error_flag, 1);
-                TEMPER_DEVICE_ASSERT(sycl_utils::is_nan(bv), p_error_flag, 1);
+                TEMPER_DEVICE_ASSERT(!sycl_utils::is_nan(av), p_error_flag, 1);
+                TEMPER_DEVICE_ASSERT(!sycl_utils::is_nan(bv), p_error_flag, 1);
 
                 acc += av * bv;
             }
-            TEMPER_DEVICE_ASSERT(!sycl_utils::is_finite(acc), p_error_flag, 2);
+            TEMPER_DEVICE_ASSERT(sycl_utils::is_finite(acc), p_error_flag, 2);
 
             p_r[base_r] = acc;
         });
@@ -320,11 +319,11 @@ Tensor<value_t> matmul(const Tensor<value_t> & first,
 
     int32_t err = *p_error_flag;
 
-    TEMPER_CHECK(err == 1,
+    TEMPER_CHECK(err != 1,
         nan_error,
         R"(matmul: NaN detected in inputs.)");
 
-    TEMPER_CHECK(err == 2,
+    TEMPER_CHECK(err != 2,
         nonfinite_error,
         R"(matmul: non-finite result (overflow or Inf).)");
 
@@ -417,10 +416,10 @@ Tensor<value_t> pad(const Tensor<value_t> & tensor,
     const std::vector<uint64_t> & input_shape = tensor.get_dimensions();
     const int64_t rank = tensor.get_rank();
 
-    TEMPER_CHECK(input_shape.empty(),
+    TEMPER_CHECK(!input_shape.empty(),
         validation_error,
         R"(pad: input tensor has no elements.)");
-    TEMPER_CHECK(rank < 2,
+    TEMPER_CHECK(rank >= 2,
         validation_error,
         R"(pad: input tensor has less than 2 dimensions.)");
 
@@ -428,25 +427,25 @@ Tensor<value_t> pad(const Tensor<value_t> & tensor,
 
     std::vector<uint64_t> res_shape = input_shape;
 
-    TEMPER_CHECK(pad_left > U64_MAX - pad_right,
+    TEMPER_CHECK(pad_left <= U64_MAX - pad_right,
         bounds_error,
         R"(pad: pad_left + pad_right overflows uint64_t)");
 
     uint64_t add_width = pad_left + pad_right;
 
-    TEMPER_CHECK(res_shape[rank - 1] > U64_MAX - add_width,
+    TEMPER_CHECK(res_shape[rank - 1] <= U64_MAX - add_width,
         bounds_error,
         "pad: result width overflows uint64_t");
 
     res_shape[rank - 1] += add_width;
 
-    TEMPER_CHECK(pad_top > U64_MAX - pad_bottom,
+    TEMPER_CHECK(pad_top <= U64_MAX - pad_bottom,
         bounds_error,
         R"(pad: pad_top + pad_bottom overflows uint64_t)");
 
     uint64_t add_height = pad_top + pad_bottom;
 
-    TEMPER_CHECK(res_shape[rank - 2] > U64_MAX - add_height,
+    TEMPER_CHECK(res_shape[rank - 2] <= U64_MAX - add_height,
         bounds_error,
         R"(pad: result height overflows uint64_t)");
 
@@ -546,7 +545,7 @@ Tensor<uint64_t> argmax(const Tensor<value_t> & tensor,
     const std::vector<uint64_t> & in_shape = tensor.get_dimensions();
     const int64_t rank = tensor.get_rank();
 
-    TEMPER_CHECK(rank == 0,
+    TEMPER_CHECK(rank > 0,
         validation_error,
         R"(argmax: input tensor has no elements.)");
 
@@ -562,7 +561,7 @@ Tensor<uint64_t> argmax(const Tensor<value_t> & tensor,
             axis += rank;
         }
 
-        TEMPER_CHECK(axis < 0 || axis >= rank,
+        TEMPER_CHECK(axis >= 0 && axis < rank,
             bounds_error,
             "argmax: axis out of bounds");
     }
@@ -644,7 +643,7 @@ Tensor<uint64_t> argmax(const Tensor<value_t> & tensor,
                 uint64_t first_offset = temper::sycl_utils::idx_of(
                     0, p_in_divs, p_in_strides, rank);
                 value_t best_val = p_in_data[first_offset];
-                TEMPER_DEVICE_ASSERT(sycl_utils::is_nan(best_val),
+                TEMPER_DEVICE_ASSERT(!sycl_utils::is_nan(best_val),
                     p_error_flag, 1);
 
                 for (uint64_t t = 1; t < total_input_elems; ++t)
@@ -652,7 +651,7 @@ Tensor<uint64_t> argmax(const Tensor<value_t> & tensor,
                     uint64_t off = temper::sycl_utils::idx_of(
                         t, p_in_divs, p_in_strides, rank);
                     value_t v = p_in_data[off];
-                    TEMPER_DEVICE_ASSERT(sycl_utils::is_nan(v), p_error_flag, 1);
+                    TEMPER_DEVICE_ASSERT(!sycl_utils::is_nan(v), p_error_flag, 1);
                     if (v > best_val)
                     {
                         best_val = v;
@@ -668,12 +667,12 @@ Tensor<uint64_t> argmax(const Tensor<value_t> & tensor,
 
             uint64_t best_rel = 0;
             value_t best_val = p_in_data[base + 0 * axis_stride];
-            TEMPER_DEVICE_ASSERT(sycl_utils::is_nan(best_val), p_error_flag, 1);
+            TEMPER_DEVICE_ASSERT(!sycl_utils::is_nan(best_val), p_error_flag, 1);
 
             for (uint64_t t = 1; t < axis_dim; ++t)
             {
                 value_t v = p_in_data[base + t * axis_stride];
-                TEMPER_DEVICE_ASSERT(sycl_utils::is_nan(v), p_error_flag, 1);
+                TEMPER_DEVICE_ASSERT(!sycl_utils::is_nan(v), p_error_flag, 1);
                 if (v > best_val)
                 {
                     best_val = v;
@@ -687,7 +686,7 @@ Tensor<uint64_t> argmax(const Tensor<value_t> & tensor,
 
     int32_t err = *p_error_flag;
 
-    TEMPER_CHECK(err == 1,
+    TEMPER_CHECK(err != 1,
         nan_error,
         R"(argmax: NaN detected in inputs.)");
 
@@ -706,7 +705,7 @@ Tensor<uint64_t> argsort(const Tensor<value_t> & tensor,
     const std::vector<uint64_t> & in_shape = tensor.get_dimensions();
     const int64_t rank = tensor.get_rank();
 
-    TEMPER_CHECK(rank == 0,
+    TEMPER_CHECK(rank > 0,
         validation_error,
         R"(argsort: input tensor has no elements.)");
 
@@ -720,7 +719,7 @@ Tensor<uint64_t> argsort(const Tensor<value_t> & tensor,
         {
             axis += rank;
         }
-        TEMPER_CHECK(axis < 0 || axis >= rank,
+        TEMPER_CHECK(axis >= 0 && axis < rank,
             bounds_error,
             "argsort: axis out of bounds");
     }
@@ -1122,7 +1121,7 @@ Tensor<value_t> gather(const Tensor<value_t> & tensor,
     const std::vector<uint64_t> & in_shape = tensor.get_dimensions();
     const int64_t in_rank = tensor.get_rank();
 
-    TEMPER_CHECK(in_rank == 0,
+    TEMPER_CHECK(in_rank > 0,
         validation_error,
         R"(gather: input tensor has no elements.)");
 
@@ -1135,7 +1134,7 @@ Tensor<value_t> gather(const Tensor<value_t> & tensor,
         {
             axis += in_rank;
         }
-        TEMPER_CHECK(axis < 0 || axis >= in_rank,
+        TEMPER_CHECK(axis >= 0 && axis < in_rank,
             bounds_error,
             "gather: axis out of bounds");
     }
@@ -1146,18 +1145,18 @@ Tensor<value_t> gather(const Tensor<value_t> & tensor,
     const int64_t idx_rank = indexes.get_rank();
     if (flatten)
     {
-        TEMPER_CHECK(idx_rank != 1,
+        TEMPER_CHECK(idx_rank == 1,
             validation_error,
             R"(gather:  for flattened gather, indexes must be 1-D.)");
 
-        TEMPER_CHECK(idx_elems != total_elems,
+        TEMPER_CHECK(idx_elems == total_elems,
             validation_error,
             R"(gather: for flattened gather, indexes length must equal
                 total input elements.)");
     }
     else
     {
-        TEMPER_CHECK(idx_rank > in_rank,
+        TEMPER_CHECK(idx_rank <= in_rank,
             validation_error,
             R"(gather: indexes tensor has higher rank than input tensor.)");
     }
@@ -1258,7 +1257,7 @@ Tensor<value_t> gather(const Tensor<value_t> & tensor,
                     out_flat, p_idx_divs, p_idx_strides, idx_rank_actual);
                 chosen = p_idx_base[src_off];
 
-                TEMPER_DEVICE_ASSERT(chosen >= total_elems, p_error_flag, 1);
+                TEMPER_DEVICE_ASSERT(chosen < total_elems, p_error_flag, 1);
                 p_out[out_flat] = p_in[chosen];
                 return;
             }
@@ -1276,7 +1275,7 @@ Tensor<value_t> gather(const Tensor<value_t> & tensor,
                     out_flat, p_in_divs, p_in_strides, in_rank);
                 base -= coord_axis * p_in_strides[static_cast<size_t>(axis)];
 
-                TEMPER_DEVICE_ASSERT(chosen >= axis_dim, p_error_flag, 1);
+                TEMPER_DEVICE_ASSERT(chosen < axis_dim, p_error_flag, 1);
 
                 uint64_t src_offset = base +
                     chosen * p_in_strides[static_cast<size_t>(axis)];
@@ -1288,7 +1287,7 @@ Tensor<value_t> gather(const Tensor<value_t> & tensor,
 
     int32_t err = *p_error_flag;
 
-    TEMPER_CHECK(err == 1,
+    TEMPER_CHECK(err != 1,
         bounds_error,
         R"(gather: index value out of range for the selected axis
             / flattened input.)");
@@ -1312,11 +1311,11 @@ Tensor<value_t> linspace(const Tensor<value_t>& start,
     const std::vector<uint64_t> & start_shape = start.get_dimensions();
     const std::vector<uint64_t> & stop_shape = stop.get_dimensions();
 
-    TEMPER_CHECK(start_shape.empty(),
+    TEMPER_CHECK(!start_shape.empty(),
         validation_error,
         R"(linspace: start tensor has no elements.)");
 
-    TEMPER_CHECK(stop_shape.empty(),
+    TEMPER_CHECK(!stop_shape.empty(),
         validation_error,
         R"(linspace: stop tensor has no elements.)");
 
@@ -1363,7 +1362,7 @@ Tensor<value_t> linspace(const Tensor<value_t>& start,
         {
             axis += out_rank;
         }
-        TEMPER_CHECK(axis < 0 || axis >= out_rank,
+        TEMPER_CHECK(axis >= 0 && axis < out_rank,
             bounds_error,
             R"(linspace: axis out of range)");
     }
@@ -1374,7 +1373,7 @@ Tensor<value_t> linspace(const Tensor<value_t>& start,
         {
             axis += out_rank;
         }
-        TEMPER_CHECK(axis < 0 || axis >= out_rank,
+        TEMPER_CHECK(axis >= 0 && axis < out_rank,
             bounds_error,
             R"(linspace: axis out of range)");
 
@@ -1480,8 +1479,8 @@ Tensor<value_t> linspace(const Tensor<value_t>& start,
 
             value_t a_val = p_a_data[a_idx];
             value_t b_val = p_b_data[b_idx];
-            TEMPER_DEVICE_ASSERT(sycl_utils::is_nan(a_val), p_error_flag, 1);
-            TEMPER_DEVICE_ASSERT(sycl_utils::is_nan(b_val), p_error_flag, 1);
+            TEMPER_DEVICE_ASSERT(!sycl_utils::is_nan(a_val), p_error_flag, 1);
+            TEMPER_DEVICE_ASSERT(!sycl_utils::is_nan(b_val), p_error_flag, 1);
 
             value_t step;
             if (num == 1)
@@ -1499,7 +1498,7 @@ Tensor<value_t> linspace(const Tensor<value_t>& start,
                     step = (b_val - a_val) / static_cast<value_t>(num);
                 }
             }
-            TEMPER_DEVICE_ASSERT(!sycl_utils::is_finite(step), p_error_flag, 2);
+            TEMPER_DEVICE_ASSERT(sycl_utils::is_finite(step), p_error_flag, 2);
 
             if (pos_axis == 0)
             {
@@ -1515,7 +1514,7 @@ Tensor<value_t> linspace(const Tensor<value_t>& start,
             {
                 val = a_val + step * static_cast<value_t>(pos_axis);
             }
-            TEMPER_DEVICE_ASSERT(!sycl_utils::is_finite(val), p_error_flag, 2);
+            TEMPER_DEVICE_ASSERT(sycl_utils::is_finite(val), p_error_flag, 2);
             p_out[flat] = val;
         });
     }).wait();
@@ -1523,11 +1522,11 @@ Tensor<value_t> linspace(const Tensor<value_t>& start,
 
     int32_t err = *p_error_flag;
 
-    TEMPER_CHECK(err == 1,
+    TEMPER_CHECK(err != 1,
         nan_error,
         R"(linspace: NaN detected in inputs.)");
 
-    TEMPER_CHECK(err == 2,
+    TEMPER_CHECK(err != 2,
         nonfinite_error,
         R"(linspace: non-finite result (overflow or Inf) produced.)");
 
@@ -1564,13 +1563,13 @@ Tensor<value_t> arange(value_t start,
     value_t step,
     MemoryLocation res_loc)
 {
-    TEMPER_CHECK(step == static_cast<value_t>(0),
+    TEMPER_CHECK(step != static_cast<value_t>(0),
         validation_error,
         R"(arange:  step must be non-zero.)");
 
-    TEMPER_CHECK(! std::isfinite(static_cast<double>(start)) ||
-        !std::isfinite(static_cast<double>(stop))  ||
-        !std::isfinite(static_cast<double>(step)),
+    TEMPER_CHECK(std::isfinite(static_cast<double>(start)) &&
+        std::isfinite(static_cast<double>(stop)) &&
+        std::isfinite(static_cast<double>(step)),
         nonfinite_error,
         R"(arange:  non-finite start/stop/step provided.)");
 
@@ -1650,7 +1649,7 @@ value_t integral(std::function<value_t(value_t)> f,
     value_t b,
     uint64_t n_bins)
 {
-    TEMPER_CHECK(n_bins < 1,
+    TEMPER_CHECK(n_bins >= 1,
         validation_error,
         R"(integral: there need to be at least 1 interval)");
 
@@ -1680,7 +1679,7 @@ Tensor<value_t> factorial(const Tensor<value_t> & tensor)
     const std::vector<uint64_t> & in_shape = tensor.get_dimensions();
     const uint64_t arr_len = static_cast<uint64_t>(in_shape.size());
 
-    TEMPER_CHECK(in_shape.empty(),
+    TEMPER_CHECK(!in_shape.empty(),
         validation_error,
         R"(factorial: input tensor has no elements.)");
 
@@ -1720,14 +1719,14 @@ Tensor<value_t> factorial(const Tensor<value_t> & tensor)
                 (flat, p_in_divs, p_in_strides, arr_len);
             value_t v = p_in_data[in_idx];
 
-            TEMPER_DEVICE_ASSERT(sycl_utils::is_nan(v), p_error_flag, 1);
-            TEMPER_DEVICE_ASSERT(!sycl_utils::is_finite(v), p_error_flag, 2);
-            TEMPER_DEVICE_ASSERT(v < static_cast<value_t>(0), p_error_flag, 3);
+            TEMPER_DEVICE_ASSERT(!sycl_utils::is_nan(v), p_error_flag, 1);
+            TEMPER_DEVICE_ASSERT(sycl_utils::is_finite(v), p_error_flag, 2);
+            TEMPER_DEVICE_ASSERT(v >= static_cast<value_t>(0), p_error_flag, 3);
 
             value_t rounded = sycl_utils::floor(v + static_cast<value_t>(0.5));
             value_t diff = sycl_utils::fabs(v - rounded);
 
-            TEMPER_DEVICE_ASSERT(diff > eps, p_error_flag, 3);
+            TEMPER_DEVICE_ASSERT(diff <= eps, p_error_flag, 3);
 
             const uint64_t n = static_cast<uint64_t>(rounded);
 
@@ -1736,22 +1735,22 @@ Tensor<value_t> factorial(const Tensor<value_t> & tensor)
             {
                 acc = acc * static_cast<value_t>(t);
             }
-            TEMPER_DEVICE_ASSERT(!sycl_utils::is_finite(acc), p_error_flag, 2);
+            TEMPER_DEVICE_ASSERT(sycl_utils::is_finite(acc), p_error_flag, 2);
             p_out[flat] = acc;
         });
     }).wait();
 
     int32_t err = *p_error_flag;
 
-    TEMPER_CHECK(err == 1,
+    TEMPER_CHECK(err != 1,
         nan_error,
         R"(factorial: NaN detected in inputs.)");
 
-    TEMPER_CHECK(err == 2,
+    TEMPER_CHECK(err != 2,
         nonfinite_error,
         R"(factorial: non-finite result (overflow or Inf) produced.)");
 
-    TEMPER_CHECK(err == 3,
+    TEMPER_CHECK(err != 3,
         validation_error,
         R"(factorial: input contains negative or non-integer values.)");
 
@@ -1765,7 +1764,7 @@ Tensor<value_t> log(const Tensor<value_t> & tensor)
 {
     const std::vector<uint64_t> & in_shape = tensor.get_dimensions();
 
-    TEMPER_CHECK(in_shape.empty(),
+    TEMPER_CHECK(!in_shape.empty(),
         validation_error,
         R"(log: input tensor has no elements.)");
 
@@ -1806,10 +1805,10 @@ Tensor<value_t> log(const Tensor<value_t> & tensor)
                                                     arr_len);
             value_t v = p_in_data[in_idx];
 
-            TEMPER_DEVICE_ASSERT(sycl_utils::is_nan(v), p_error_flag, 1);
+            TEMPER_DEVICE_ASSERT(!sycl_utils::is_nan(v), p_error_flag, 1);
             value_t outv = sycl::log(v);
 
-            TEMPER_DEVICE_ASSERT(!sycl_utils::is_finite(outv), p_error_flag, 2);
+            TEMPER_DEVICE_ASSERT(sycl_utils::is_finite(outv), p_error_flag, 2);
 
             p_out[flat] = outv;
         });
@@ -1817,11 +1816,11 @@ Tensor<value_t> log(const Tensor<value_t> & tensor)
 
     int32_t err = *p_error_flag;
 
-    TEMPER_CHECK(err == 1,
+    TEMPER_CHECK(err != 1,
         nan_error,
         R"(log: NaN detected in inputs.)");
 
-    TEMPER_CHECK(err == 2,
+    TEMPER_CHECK(err != 2,
         nonfinite_error,
         R"(log: non-finite result (Inf/overflow/NaN) produced.)");
 
@@ -1834,7 +1833,7 @@ Tensor<value_t> mean(const Tensor<value_t> & tensor,
     std::optional<int64_t> axis_opt)
 {
     const int64_t rank = tensor.get_rank();
-    TEMPER_CHECK(rank == 0,
+    TEMPER_CHECK(rank > 0,
         validation_error,
         R"(mean: input tensor has no elements.)");
 
@@ -1852,7 +1851,7 @@ Tensor<value_t> mean(const Tensor<value_t> & tensor,
         {
             axis += rank;
         }
-        TEMPER_CHECK(axis < 0 || axis >= rank,
+        TEMPER_CHECK(axis >= 0 && axis < rank,
             bounds_error,
             "mean: axis out of bounds");
         denom_u = tensor.get_dimensions()[axis];
@@ -1876,11 +1875,11 @@ Tensor<value_t> var(const Tensor<value_t> & tensor,
     int64_t ddof)
 {
     const uint64_t total_elems = tensor.get_num_elements();
-    TEMPER_CHECK(total_elems == 0,
+    TEMPER_CHECK(total_elems > 0,
         validation_error,
         R"(var: input tensor has no elements.)");
 
-    TEMPER_CHECK(ddof < 0,
+    TEMPER_CHECK(ddof >= 0,
         validation_error,
         R"(var: ddof must be non-negative.)");
 
@@ -1889,7 +1888,7 @@ Tensor<value_t> var(const Tensor<value_t> & tensor,
     uint64_t N = 0;
     if (flatten)
     {
-        TEMPER_CHECK(static_cast<uint64_t>(ddof) >= total_elems,
+        TEMPER_CHECK(static_cast<uint64_t>(ddof) < total_elems,
             validation_error,
             R"(var: ddof >= number of elements.)");
         N = total_elems;
@@ -1902,13 +1901,13 @@ Tensor<value_t> var(const Tensor<value_t> & tensor,
         {
             axis += rank;
         }
-        TEMPER_CHECK(axis < 0 || axis >= rank,
+        TEMPER_CHECK(axis >= 0 && axis < rank,
             bounds_error,
             "var: axis out of bounds");
 
         const uint64_t axis_len = tensor.get_dimensions()[axis];
 
-        TEMPER_CHECK(static_cast<uint64_t>(ddof) >= axis_len,
+        TEMPER_CHECK(static_cast<uint64_t>(ddof) < axis_len,
             validation_error,
             R"(var: ddof >= axis length.)");
         N = axis_len;
@@ -1941,19 +1940,19 @@ Tensor<value_t> cov(const Tensor<value_t> & tensor,
     const uint64_t total_elems = tensor.get_num_elements();
     const std::vector<uint64_t> & original_shape = tensor.get_dimensions();
     const int64_t rank = tensor.get_rank();
-    TEMPER_CHECK(total_elems == 0,
+    TEMPER_CHECK(total_elems > 0,
         validation_error,
         R"(cov: input tensor has no elements.)");
 
-    TEMPER_CHECK(sample_axes.empty() || event_axes.empty(),
+    TEMPER_CHECK(!sample_axes.empty() && !event_axes.empty(),
         validation_error,
         R"(cov: axes arguments cannot be empty.)");
 
-    TEMPER_CHECK(ddof < 0,
+    TEMPER_CHECK(ddof >= 0,
         validation_error,
         R"(cov: ddof must be non-negative.)");
 
-    TEMPER_CHECK(rank < 2,
+    TEMPER_CHECK(rank >= 2,
         validation_error,
         R"(cov: rank must be >= 2.)");
 
@@ -1969,11 +1968,11 @@ Tensor<value_t> cov(const Tensor<value_t> & tensor,
         {
             axis += rank;
         }
-        TEMPER_CHECK(axis < 0 || axis >= rank,
+        TEMPER_CHECK(axis >= 0 && axis < rank,
             bounds_error,
             "cov: axis out of bounds");
 
-        TEMPER_CHECK(seen[axis],
+        TEMPER_CHECK(!seen[axis],
             validation_error,
             R"(cov: the same axis cannot be used twice)");
         seen[axis] = true;
@@ -1988,11 +1987,11 @@ Tensor<value_t> cov(const Tensor<value_t> & tensor,
         {
             axis += rank;
         }
-        TEMPER_CHECK(axis < 0 || axis >= rank,
+        TEMPER_CHECK(axis >= 0 && axis < rank,
             bounds_error,
             "cov: axis out of bounds");
 
-        TEMPER_CHECK(seen[axis],
+        TEMPER_CHECK(!seen[axis],
             validation_error,
             R"(cov: the same axis cannot be used twice)");
         seen[axis] = true;
@@ -2025,7 +2024,7 @@ Tensor<value_t> cov(const Tensor<value_t> & tensor,
         sample_total *= original_shape[axis];
     }
 
-    TEMPER_CHECK(static_cast<uint64_t>(ddof) >= sample_total,
+    TEMPER_CHECK(static_cast<uint64_t>(ddof) < sample_total,
         validation_error,
         R"(cov: not enough samples for ddof.)");
 
@@ -2078,7 +2077,7 @@ template <typename value_t>
 Tensor<value_t> cov(const Tensor<value_t> & tensor, int64_t ddof)
 {
     const int64_t rank = tensor.get_rank();
-    TEMPER_CHECK(rank < 2,
+    TEMPER_CHECK(rank >= 2,
         validation_error,
         R"(cov: rank must be >= 2.)");
 
@@ -2092,7 +2091,7 @@ Tensor<value_t> stddev(const Tensor<value_t> & tensor,
     int64_t ddof)
 {
     const int64_t rank = tensor.get_rank();
-    TEMPER_CHECK(rank == 0,
+    TEMPER_CHECK(rank > 0,
         validation_error,
         R"(std: input tensor has no elements.)");
 
@@ -2108,14 +2107,14 @@ std::pair<Tensor<value_t>, Tensor<value_t>> eig(const Tensor<value_t> & tensor,
     value_t tol)
 {
     const int64_t rank = tensor.get_rank();
-    TEMPER_CHECK(rank < 2,
+    TEMPER_CHECK(rank >= 2,
         validation_error,
         "eig: rank must be >= 2.");
 
     const std::vector<uint64_t> tensor_dims = tensor.get_dimensions();
     const std::vector<uint64_t> tensor_strides = tensor.get_strides();
 
-    TEMPER_CHECK(tensor_dims[rank - 1] != tensor_dims[rank - 2],
+    TEMPER_CHECK(tensor_dims[rank - 1] == tensor_dims[rank - 2],
         validation_error,
         R"(eig: last two dims must be square.)");
 
@@ -2214,7 +2213,7 @@ std::pair<Tensor<value_t>, Tensor<value_t>> eig(const Tensor<value_t> & tensor,
                 row * stride_row + col * stride_col;
             value_t v = p_src[src_offset];
 
-            TEMPER_DEVICE_ASSERT(sycl_utils::is_nan(v), p_error_flag, 1);
+            TEMPER_DEVICE_ASSERT(!sycl_utils::is_nan(v), p_error_flag, 1);
 
             p_A[flat] = v;
         });
@@ -2341,7 +2340,7 @@ std::pair<Tensor<value_t>, Tensor<value_t>> eig(const Tensor<value_t> & tensor,
                         value_t val = sycl_utils::fabs
                             (p_A[b * matrix_size + i * n + j]);
 
-                        TEMPER_DEVICE_ASSERT(!sycl_utils::is_finite(val),
+                        TEMPER_DEVICE_ASSERT(sycl_utils::is_finite(val),
                             p_error_flag, 2);
 
                         sycl::atomic_ref<value_t,
@@ -2381,7 +2380,7 @@ std::pair<Tensor<value_t>, Tensor<value_t>> eig(const Tensor<value_t> & tensor,
             uint64_t b = flat / n;
             uint64_t i = flat % n;
             value_t v = p_A[b * matrix_size + i * n + i];
-            TEMPER_DEVICE_ASSERT(!sycl_utils::is_finite(v), p_error_flag, 2);
+            TEMPER_DEVICE_ASSERT(sycl_utils::is_finite(v), p_error_flag, 2);
             p_eigvals[flat] = v;
         });
     }).wait();
@@ -2393,22 +2392,22 @@ std::pair<Tensor<value_t>, Tensor<value_t>> eig(const Tensor<value_t> & tensor,
         {
             uint64_t flat = static_cast<uint64_t>(idx[0]);
             value_t v = p_Q[flat];
-            TEMPER_DEVICE_ASSERT(!sycl_utils::is_finite(v), p_error_flag, 2);
+            TEMPER_DEVICE_ASSERT(sycl_utils::is_finite(v), p_error_flag, 2);
             p_eigvecs[flat] = v;
         });
     }).wait();
 
     int32_t err = *p_error_flag;
 
-    TEMPER_CHECK(err == 1,
+    TEMPER_CHECK(err != 1,
         nan_error,
         R"(eig: NaN detected in inputs.)");
 
-    TEMPER_CHECK(err == 2,
+    TEMPER_CHECK(err != 2,
         nonfinite_error,
         R"(eig: non-finite result (overflow or Inf) during computation.)");
 
-    TEMPER_CHECK(err == 3,
+    TEMPER_CHECK(err != 3,
         computation_error,
         R"(eig: division by zero detected during computation.)");
 
@@ -2421,7 +2420,7 @@ template <typename value_t>
 Tensor<value_t> sqrt(const Tensor<value_t>& tensor)
 {
     const int64_t rank = tensor.get_rank();
-    TEMPER_CHECK(rank == 0,
+    TEMPER_CHECK(rank > 0,
         validation_error,
         "sqrt: input tensor has no elements.");
 
@@ -2461,11 +2460,11 @@ Tensor<value_t> sqrt(const Tensor<value_t>& tensor)
 
             value_t val = p_in[idx];
 
-            TEMPER_DEVICE_ASSERT(sycl_utils::is_nan(val), p_error_flag, 1);
+            TEMPER_DEVICE_ASSERT(!sycl_utils::is_nan(val), p_error_flag, 1);
 
             value_t outv = sycl::sqrt(val);
 
-            TEMPER_DEVICE_ASSERT(!sycl_utils::is_finite(outv), p_error_flag, 2);
+            TEMPER_DEVICE_ASSERT(sycl_utils::is_finite(outv), p_error_flag, 2);
 
             p_out[flat] = outv;
         });
@@ -2473,11 +2472,11 @@ Tensor<value_t> sqrt(const Tensor<value_t>& tensor)
 
     int32_t err = *p_error_flag;
 
-    TEMPER_CHECK(err == 1,
+    TEMPER_CHECK(err != 1,
         nan_error,
         "sqrt: NaN detected in inputs.");
 
-    TEMPER_CHECK(err == 2,
+    TEMPER_CHECK(err != 2,
         nonfinite_error,
         "sqrt: non-finite result produced.");
 
@@ -2491,7 +2490,7 @@ Tensor<value_t> pow(const Tensor<value_t> & a, const Tensor<value_t> & b)
     const std::vector<uint64_t> & a_shape = a.get_dimensions();
     const std::vector<uint64_t> & b_shape = b.get_dimensions();
 
-    TEMPER_CHECK(a_shape.empty() || b_shape.empty(),
+    TEMPER_CHECK(!a_shape.empty() && !b_shape.empty(),
         validation_error,
         R"(pow: either input tensor has no elements.)");
 
@@ -2557,12 +2556,12 @@ Tensor<value_t> pow(const Tensor<value_t> & a, const Tensor<value_t> & b)
             value_t av = p_a[a_off];
             value_t bv = p_b[b_off];
 
-            TEMPER_DEVICE_ASSERT(sycl_utils::is_nan(av), p_error_flag, 1);
-            TEMPER_DEVICE_ASSERT(sycl_utils::is_nan(bv), p_error_flag, 1);
+            TEMPER_DEVICE_ASSERT(!sycl_utils::is_nan(av), p_error_flag, 1);
+            TEMPER_DEVICE_ASSERT(!sycl_utils::is_nan(bv), p_error_flag, 1);
 
             value_t out = temper::sycl_utils::pow<value_t>(av, bv);
 
-            TEMPER_DEVICE_ASSERT(!sycl_utils::is_finite(out), p_error_flag, 2);
+            TEMPER_DEVICE_ASSERT(sycl_utils::is_finite(out), p_error_flag, 2);
 
             p_out[flat] = out;
         });
@@ -2570,11 +2569,11 @@ Tensor<value_t> pow(const Tensor<value_t> & a, const Tensor<value_t> & b)
 
     int32_t err = *p_error_flag;
 
-    TEMPER_CHECK(err == 1,
+    TEMPER_CHECK(err != 1,
         nan_error,
         R"(pow: NaN detected in inputs.)");
 
-    TEMPER_CHECK(err == 2,
+    TEMPER_CHECK(err != 2,
         nonfinite_error,
         R"(pow: non-finite or overflow result detected.)");
 
@@ -2589,7 +2588,7 @@ template<typename value_t>
 Tensor<value_t> exp(const Tensor<value_t> & tensor)
 {
     const std::vector<uint64_t> & in_shape = tensor.get_dimensions();
-    TEMPER_CHECK(in_shape.empty(),
+    TEMPER_CHECK(!in_shape.empty(),
         validation_error,
         R"(exp: input tensor has no elements.)");
 
@@ -2630,22 +2629,22 @@ Tensor<value_t> exp(const Tensor<value_t> & tensor)
                                                     arr_len);
             value_t v = p_in_data[in_idx];
 
-            TEMPER_DEVICE_ASSERT(sycl_utils::is_nan(v), p_error_flag, 1);
+            TEMPER_DEVICE_ASSERT(!sycl_utils::is_nan(v), p_error_flag, 1);
 
             value_t outv = sycl::exp(v);
 
-            TEMPER_DEVICE_ASSERT(!sycl_utils::is_finite(outv), p_error_flag, 2);
+            TEMPER_DEVICE_ASSERT(sycl_utils::is_finite(outv), p_error_flag, 2);
             p_out[flat] = outv;
         });
     }).wait();
 
     int32_t err = *p_error_flag;
 
-    TEMPER_CHECK(err == 1,
+    TEMPER_CHECK(err != 1,
         nan_error,
         R"(exp: NaN detected in inputs.)");
 
-    TEMPER_CHECK(err == 2,
+    TEMPER_CHECK(err != 2,
         nonfinite_error,
         R"(exp: non-finite result (Inf/overflow/NaN) produced.)");
 
@@ -2661,16 +2660,16 @@ Tensor<value_t> upsample(const Tensor<value_t> & tensor,
     const std::vector<uint64_t> & input_shape = tensor. get_dimensions();
     const int64_t rank = tensor.get_rank();
 
-    TEMPER_CHECK(input_shape.empty(),
+    TEMPER_CHECK(!input_shape.empty(),
         validation_error,
         R"(upsample: input tensor has no elements.)");
 
-    TEMPER_CHECK(rank < 3,
+    TEMPER_CHECK(rank >= 3,
         validation_error,
         R"(upsample: input tensor must have rank >= 3
            (at least channels, height, width).)");
 
-    TEMPER_CHECK(stride == 0,
+    TEMPER_CHECK(stride > 0,
         validation_error,
         R"(upsample: stride must be positive.)");
 

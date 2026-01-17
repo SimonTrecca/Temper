@@ -34,7 +34,7 @@ void Tensor<value_t>::compute_strides()
         uint64_t dim = m_dimensions[i];
         uint64_t next_stride = m_strides[i];
 
-        TEMPER_CHECK(next_stride > U64_MAX / dim,
+        TEMPER_CHECK(next_stride <= U64_MAX / dim,
             bounds_error,
             R"(Tensor(compute_strides): stride multiplication overflow.)");
 
@@ -50,7 +50,7 @@ Tensor<value_t>::Tensor(const std::vector<uint64_t> & dimensions,
       m_own_data(true),
       m_mem_loc(loc)
 {
-    TEMPER_CHECK(m_dimensions.empty(),
+    TEMPER_CHECK(!m_dimensions.empty(),
         validation_error,
         R"(Tensor(main constructor):
             dims must not be empty (rank-0 not supported).)");
@@ -59,7 +59,7 @@ Tensor<value_t>::Tensor(const std::vector<uint64_t> & dimensions,
     const size_t max_int64_size =
         static_cast<size_t>(std::numeric_limits<int64_t>::max());
 
-    TEMPER_CHECK(m_dimensions.size() > max_int64_size,
+    TEMPER_CHECK(m_dimensions.size() <= max_int64_size,
         bounds_error,
         R"(Tensor(main constructor):
             number of dimensions doesn't fit in int64_t.)");
@@ -70,12 +70,12 @@ Tensor<value_t>::Tensor(const std::vector<uint64_t> & dimensions,
     uint64_t total_size = 1;
     for (uint64_t d : m_dimensions)
     {
-        TEMPER_CHECK(d == 0,
+        TEMPER_CHECK(d != 0,
             validation_error,
             R"(Tensor(main constructor):
                 zero-sized dimension is not allowed.)");
 
-        TEMPER_CHECK(total_size > U64_MAX / d,
+        TEMPER_CHECK(total_size <= U64_MAX / d,
             bounds_error,
             R"(Tensor(main constructor):
                 total element count overflow (too many elements).)");
@@ -86,7 +86,7 @@ Tensor<value_t>::Tensor(const std::vector<uint64_t> & dimensions,
     // Compute byte count safely and ensure it fits in size_t.
     const uint64_t elem_size_u64 = static_cast<uint64_t>(sizeof(value_t));
 
-    TEMPER_CHECK(total_size > U64_MAX / elem_size_u64,
+    TEMPER_CHECK(total_size <= U64_MAX / elem_size_u64,
         bounds_error,
         R"(Tensor(main constructor):
             allocation size (bytes) overflow (uint64_t).)");
@@ -97,7 +97,7 @@ Tensor<value_t>::Tensor(const std::vector<uint64_t> & dimensions,
     const uint64_t max_size_t_u64 = static_cast<uint64_t>
         (std::numeric_limits<size_t>::max());
 
-    TEMPER_CHECK(alloc_bytes_u64 > max_size_t_u64,
+    TEMPER_CHECK(alloc_bytes_u64 <= max_size_t_u64,
         bounds_error,
         R"(Tensor(main constructor): allocation size
             (bytes) doesn't fit into size_t on this platform.)");
@@ -113,7 +113,7 @@ Tensor<value_t>::Tensor(const std::vector<uint64_t> & dimensions,
     const uint64_t dev_max_alloc = static_cast<uint64_t>(
         dev.get_info<sycl::info::device::max_mem_alloc_size>());
 
-    TEMPER_CHECK(alloc_bytes_u64 > dev_max_alloc,
+    TEMPER_CHECK(alloc_bytes_u64 <= dev_max_alloc,
         device_error,
         R"(Tensor(main constructor):
             requested allocation exceeds device max_mem_alloc_size.)");
@@ -131,7 +131,7 @@ Tensor<value_t>::Tensor(const std::vector<uint64_t> & dimensions,
             sycl::malloc_device(allocation_bytes, g_sycl_queue));
     }
 
-    TEMPER_CHECK(!raw_ptr,
+    TEMPER_CHECK(raw_ptr,
         device_error,
         R"(Tensor(main constructor):
             error allocating tensor memory on device.)");
@@ -192,7 +192,7 @@ Tensor<value_t>::Tensor(const Tensor & other)
                 (sycl::malloc_device(alloc_bytes, g_sycl_queue));
         }
 
-        TEMPER_CHECK(!raw_ptr,
+        TEMPER_CHECK(raw_ptr,
             device_error,
             R"(Tensor(copy constructor):
                 error allocating tensor memory on device.)");
@@ -248,7 +248,7 @@ Tensor<value_t>::Tensor(value_t val, MemoryLocation loc)
             (sycl::malloc_device(alloc_bytes, g_sycl_queue));
     }
 
-    TEMPER_CHECK(!raw_ptr,
+    TEMPER_CHECK(raw_ptr,
         device_error,
         R"(Tensor(scalar constructor):
             error allocating tensor memory on device.)");
@@ -285,24 +285,24 @@ Tensor<value_t>::Tensor(const Tensor & owner,
     const size_t max_int64_size =
         static_cast<size_t>(std::numeric_limits<int64_t>::max());
 
-    TEMPER_CHECK(view_shape.size() > max_int64_size,
+    TEMPER_CHECK(view_shape.size() <= max_int64_size,
         bounds_error,
         R"(Tensor(view constructor):
             number of dimensions doesn't fit in int64_t.)");
 
     const int64_t view_rank = static_cast<int64_t>(view_shape.size());
 
-    TEMPER_CHECK(!owner.m_p_data,
+    TEMPER_CHECK(owner.m_p_data,
         validation_error,
         R"(Tensor(view constructor):
             cannot create view from uninitialized tensor.)");
 
-    TEMPER_CHECK(start_indices.size() != static_cast<size_t>(original_rank),
+    TEMPER_CHECK(start_indices.size() == static_cast<size_t>(original_rank),
         validation_error,
         R"(Tensor(view constructor):
             start_indices must match tensor rank.)");
 
-    TEMPER_CHECK(view_rank == 0 || view_rank > original_rank,
+    TEMPER_CHECK(view_rank != 0 && view_rank <= original_rank,
         validation_error,
         R"(Tensor(view constructor):
             view shape rank must be between 1 and tensor rank.)");
@@ -310,7 +310,7 @@ Tensor<value_t>::Tensor(const Tensor & owner,
     // Check bounds for start indices and view dimensions.
     for (int64_t i = 0; i < original_rank; ++i)
     {
-        TEMPER_CHECK(start_indices[i] >= owner.m_dimensions[i],
+        TEMPER_CHECK(start_indices[i] < owner.m_dimensions[i],
             bounds_error,
             R"(Tensor(view constructor):
                 start index out of bounds.)");
@@ -318,8 +318,8 @@ Tensor<value_t>::Tensor(const Tensor & owner,
     for (int64_t j = 0; j < view_rank; ++j)
     {
         int64_t i = original_rank - view_rank + j;
-        TEMPER_CHECK(view_shape[j] == 0 ||
-            start_indices[i] + view_shape[j] > owner.m_dimensions[i],
+        TEMPER_CHECK(view_shape[j] != 0 &&
+            start_indices[i] + view_shape[j] <= owner.m_dimensions[i],
             bounds_error,
             R"(Tensor(view constructor):
                 view shape out of bounds.)");
@@ -349,7 +349,7 @@ Tensor<value_t>::Tensor(const Tensor & owner,
       m_own_data(false),
       m_mem_loc(owner.m_mem_loc)
 {
-    TEMPER_CHECK(!owner.m_p_data,
+    TEMPER_CHECK(owner.m_p_data,
         validation_error,
         R"(Tensor(alias view constructor):
             cannot create view from uninitialized tensor.)");
@@ -359,31 +359,31 @@ Tensor<value_t>::Tensor(const Tensor & owner,
     const size_t max_int64_size =
         static_cast<size_t>(std::numeric_limits<int64_t>::max());
 
-    TEMPER_CHECK(dims.size() > max_int64_size || strides.size() > max_int64_size,
+    TEMPER_CHECK(dims.size() <= max_int64_size && strides.size() <= max_int64_size,
         bounds_error,
         R"(Tensor(alias view constructor):
             number of dimensions or strides doesn't fit in int64_t.)");
 
     const int64_t view_rank = static_cast<int64_t>(dims.size());
 
-    TEMPER_CHECK(static_cast<int64_t>(start_indices.size()) != owner_rank,
+    TEMPER_CHECK(static_cast<int64_t>(start_indices.size()) == owner_rank,
         validation_error,
         R"(Tensor(alias view constructor):
             start_indices must match owner's rank.)");
 
-    TEMPER_CHECK(static_cast<int64_t>(strides.size()) != view_rank,
+    TEMPER_CHECK(static_cast<int64_t>(strides.size()) == view_rank,
         validation_error,
         R"(Tensor(alias view constructor):
             dims and strides must have the same rank.)");
 
-    TEMPER_CHECK(static_cast<int64_t>(view_rank) == 0,
+    TEMPER_CHECK(static_cast<int64_t>(view_rank) != 0,
         validation_error,
         R"(Tensor(alias view constructor):
             view rank must be >= 1.)");
 
     for (int64_t i = 0; i < owner_rank; ++i)
     {
-        TEMPER_CHECK(start_indices[i] >= owner.m_dimensions[i],
+        TEMPER_CHECK(start_indices[i] < owner.m_dimensions[i],
             bounds_error,
             R"(Tensor(alias view constructor):
                 start index out of bounds.)");
@@ -391,7 +391,7 @@ Tensor<value_t>::Tensor(const Tensor & owner,
 
     for (int64_t j = 0; j < view_rank; ++j)
     {
-        TEMPER_CHECK(dims[j] == 0,
+        TEMPER_CHECK(dims[j] != 0,
             validation_error,
             R"(Tensor(alias view constructor):
                 view dimensions must be non-zero.)");
@@ -407,14 +407,14 @@ Tensor<value_t>::Tensor(const Tensor & owner,
 
         if (si != 0 && ostride != 0)
         {
-            TEMPER_CHECK(ostride > U64_MAX / si,
+            TEMPER_CHECK(ostride <= U64_MAX / si,
                 bounds_error,
                 R"(Tensor(alias view constructor):
                     stride * start_index overflow while computing offset.)");
 
             uint64_t add = ostride * si;
 
-            TEMPER_CHECK(offset > U64_MAX - add,
+            TEMPER_CHECK(offset <= U64_MAX - add,
                 bounds_error,
                 R"(Tensor(alias view constructor):
                     offset computation overflow.)");
@@ -433,14 +433,14 @@ Tensor<value_t>::Tensor(const Tensor & owner,
 
         if (vstride != 0 && dimm1 > 0)
         {
-            TEMPER_CHECK(vstride > U64_MAX / dimm1,
+            TEMPER_CHECK(vstride <= U64_MAX / dimm1,
                 bounds_error,
                 R"(Tensor(alias view constructor):
                     stride * (dim-1) overflow.)");
 
             uint64_t add = vstride * dimm1;
 
-            TEMPER_CHECK(max_index > U64_MAX - add,
+            TEMPER_CHECK(max_index <= U64_MAX - add,
                 bounds_error,
                 R"(Tensor(alias view constructor):
                     max index computation overflow.)");
@@ -459,14 +459,14 @@ Tensor<value_t>::Tensor(const Tensor & owner,
 
         if (ostride != 0 && odimm1 > 0)
         {
-            TEMPER_CHECK(ostride > U64_MAX / odimm1,
+            TEMPER_CHECK(ostride <= U64_MAX / odimm1,
                 bounds_error,
                 R"(Tensor(alias view constructor):
                     stride * (dim-1) overflow while computing owner bounds.)");
 
             uint64_t add = ostride * odimm1;
 
-            TEMPER_CHECK(owner_max_index > U64_MAX - add,
+            TEMPER_CHECK(owner_max_index <= U64_MAX - add,
                 bounds_error,
                 R"(Tensor(alias view constructor):
                     owner max index computation overflow.)");
@@ -476,7 +476,7 @@ Tensor<value_t>::Tensor(const Tensor & owner,
     }
 
     // The view's maximum index must be within the owner's reachable range.
-    TEMPER_CHECK(max_index > owner_max_index,
+    TEMPER_CHECK(max_index <= owner_max_index,
         bounds_error,
         R"(Tensor(alias view constructor):
             view exceeds owner's bounds.)");
@@ -520,7 +520,7 @@ Tensor<value_t> & Tensor<value_t>::operator=(const Tensor & other)
                     (alloc_bytes, g_sycl_queue));
             }
 
-            TEMPER_CHECK(!raw_ptr,
+            TEMPER_CHECK(raw_ptr,
                 device_error,
                 R"(Tensor(operator=):
                     error allocating tensor memory on device.)");
@@ -568,7 +568,7 @@ Tensor<value_t>& Tensor<value_t>::operator=(Tensor && other) noexcept
 template<typename value_t>
 Tensor<value_t> & Tensor<value_t>::operator=(const std::vector<value_t> & values)
 {
-    TEMPER_CHECK(m_dimensions.empty(),
+    TEMPER_CHECK(!m_dimensions.empty(),
         validation_error,
         R"(Tensor(values assignment):
             target tensor has no elements.)");
@@ -577,7 +577,7 @@ Tensor<value_t> & Tensor<value_t>::operator=(const std::vector<value_t> & values
 
     uint64_t values_size = static_cast<uint64_t>(values.size());
 
-    TEMPER_CHECK(values_size != total_size,
+    TEMPER_CHECK(values_size == total_size,
         validation_error,
         R"(Tensor(values assignment):
             size mismatch in 1D vector assignment.)");
@@ -664,7 +664,7 @@ Tensor<value_t> & Tensor<value_t>::operator=(value_t val)
                 sycl::malloc_device(sizeof(value_t), g_sycl_queue));
         }
 
-        TEMPER_CHECK(!raw_ptr,
+        TEMPER_CHECK(raw_ptr,
             device_error,
             R"(Tensor(operator= scalar):
                 error allocating tensor memory on device.)");
@@ -681,7 +681,7 @@ Tensor<value_t> & Tensor<value_t>::operator=(value_t val)
 
     uint64_t total_size = this->get_num_elements();
 
-    TEMPER_CHECK(total_size != 1,
+    TEMPER_CHECK(total_size == 1,
         validation_error,
         R"(Tensor(single value assignment):
             scalar assignment only allowed for tensors with single element.)");
@@ -702,11 +702,11 @@ Tensor<value_t> Tensor<value_t>::operator[](uint64_t idx)
 {
     const int64_t rank = this->get_rank();
 
-    TEMPER_CHECK(rank == 0,
+    TEMPER_CHECK(rank > 0,
         validation_error,
         R"(Tensor(operator[]): tensor has no elements.)");
 
-    TEMPER_CHECK(idx >= m_dimensions[0],
+    TEMPER_CHECK(idx < m_dimensions[0],
         bounds_error,
         R"(Tensor(operator[]): Index out of bounds.)");
 
@@ -731,11 +731,11 @@ const Tensor<value_t> Tensor<value_t>::operator[](uint64_t idx) const
 {
     const int64_t rank = this->get_rank();
 
-    TEMPER_CHECK(rank == 0,
+    TEMPER_CHECK(rank > 0,
         validation_error,
         R"(Tensor(operator[]): tensor has no elements.)");
 
-    TEMPER_CHECK(idx >= m_dimensions[0],
+    TEMPER_CHECK(idx < m_dimensions[0],
         bounds_error,
         R"(Tensor(operator[]): Index out of bounds.)");
 
@@ -758,11 +758,11 @@ const Tensor<value_t> Tensor<value_t>::operator[](uint64_t idx) const
 template<typename value_t>
 Tensor<value_t>::operator value_t() const
 {
-    TEMPER_CHECK(m_dimensions.empty(),
+    TEMPER_CHECK(!m_dimensions.empty(),
         validation_error,
         R"(Tensor(implicit type conversion): tensor has no elements.)");
 
-    TEMPER_CHECK(this->get_num_elements() != 1,
+    TEMPER_CHECK(this->get_num_elements() == 1,
         validation_error,
         R"(Tensor(implicit type conversion):
             scalar read only allowed for tensors with single element.)");
@@ -785,7 +785,7 @@ Tensor<value_t>::operator value_t() const
 template<typename value_t>
 Tensor<value_t> Tensor<value_t>::operator+(const Tensor & other) const
 {
-    TEMPER_CHECK(m_dimensions.empty() || other.m_dimensions.empty(),
+    TEMPER_CHECK(!m_dimensions.empty() && !other.m_dimensions.empty(),
         validation_error,
         R"(Tensor(operator+): either tensor has no elements.)");
 
@@ -856,12 +856,12 @@ Tensor<value_t> Tensor<value_t>::operator+(const Tensor & other) const
             value_t a_val = p_a_data[offset_a];
             value_t b_val = p_b_data[offset_b];
 
-            TEMPER_DEVICE_ASSERT(sycl_utils::is_nan(a_val), p_error_flag, 1);
-            TEMPER_DEVICE_ASSERT(sycl_utils::is_nan(b_val), p_error_flag, 1);
+            TEMPER_DEVICE_ASSERT(!sycl_utils::is_nan(a_val), p_error_flag, 1);
+            TEMPER_DEVICE_ASSERT(!sycl_utils::is_nan(b_val), p_error_flag, 1);
 
             value_t res = a_val + b_val;
 
-            TEMPER_DEVICE_ASSERT(!sycl_utils::is_finite(res), p_error_flag, 2);
+            TEMPER_DEVICE_ASSERT(sycl_utils::is_finite(res), p_error_flag, 2);
 
             p_r_data[flat_idx] = res;
         });
@@ -869,11 +869,11 @@ Tensor<value_t> Tensor<value_t>::operator+(const Tensor & other) const
 
     int32_t err = *p_error_flag;
 
-    TEMPER_CHECK(err == 1,
+    TEMPER_CHECK(err != 1,
         nan_error,
         R"(Tensor(operator+): NaN detected in inputs.)");
 
-    TEMPER_CHECK(err == 2,
+    TEMPER_CHECK(err != 2,
         nonfinite_error,
         R"(Tensor(operator+): non-finite result (overflow or Inf).)");
 
@@ -883,7 +883,7 @@ Tensor<value_t> Tensor<value_t>::operator+(const Tensor & other) const
 template<typename value_t>
 Tensor<value_t> Tensor<value_t>::operator-(const Tensor & other) const
 {
-    TEMPER_CHECK(m_dimensions.empty() || other.m_dimensions.empty(),
+    TEMPER_CHECK(!m_dimensions.empty() && !other.m_dimensions.empty(),
         validation_error,
         R"(Tensor(operator-): either tensor has no elements.)");
 
@@ -954,12 +954,12 @@ Tensor<value_t> Tensor<value_t>::operator-(const Tensor & other) const
             value_t a_val = p_a_data[offset_a];
             value_t b_val = p_b_data[offset_b];
 
-            TEMPER_DEVICE_ASSERT(sycl_utils::is_nan(a_val), p_error_flag, 1);
-            TEMPER_DEVICE_ASSERT(sycl_utils::is_nan(b_val), p_error_flag, 1);
+            TEMPER_DEVICE_ASSERT(!sycl_utils::is_nan(a_val), p_error_flag, 1);
+            TEMPER_DEVICE_ASSERT(!sycl_utils::is_nan(b_val), p_error_flag, 1);
 
             value_t res = a_val - b_val;
 
-            TEMPER_DEVICE_ASSERT(!sycl_utils::is_finite(res), p_error_flag, 2);
+            TEMPER_DEVICE_ASSERT(sycl_utils::is_finite(res), p_error_flag, 2);
 
             p_r_data[flat_idx] = res;
         });
@@ -967,11 +967,11 @@ Tensor<value_t> Tensor<value_t>::operator-(const Tensor & other) const
 
     int32_t err = *p_error_flag;
 
-    TEMPER_CHECK(err == 1,
+    TEMPER_CHECK(err != 1,
         nan_error,
         R"(Tensor(operator-): NaN detected in inputs.)");
 
-    TEMPER_CHECK(err == 2,
+    TEMPER_CHECK(err != 2,
         nonfinite_error,
         R"(Tensor(operator-): non-finite result (overflow or Inf).)");
 
@@ -981,7 +981,7 @@ Tensor<value_t> Tensor<value_t>::operator-(const Tensor & other) const
 template<typename value_t>
 Tensor<value_t> Tensor<value_t>::operator*(const Tensor & other) const
 {
-    TEMPER_CHECK(m_dimensions.empty() || other.m_dimensions.empty(),
+    TEMPER_CHECK(!m_dimensions.empty() && !other.m_dimensions.empty(),
         validation_error,
         R"(Tensor(operator*): either tensor has no elements.)");
 
@@ -1052,12 +1052,12 @@ Tensor<value_t> Tensor<value_t>::operator*(const Tensor & other) const
             value_t a_val = p_a_data[offset_a];
             value_t b_val = p_b_data[offset_b];
 
-            TEMPER_DEVICE_ASSERT(sycl_utils::is_nan(a_val), p_error_flag, 1);
-            TEMPER_DEVICE_ASSERT(sycl_utils::is_nan(b_val), p_error_flag, 1);
+            TEMPER_DEVICE_ASSERT(!sycl_utils::is_nan(a_val), p_error_flag, 1);
+            TEMPER_DEVICE_ASSERT(!sycl_utils::is_nan(b_val), p_error_flag, 1);
 
             value_t res = a_val * b_val;
 
-            TEMPER_DEVICE_ASSERT(!sycl_utils::is_finite(res), p_error_flag, 2);
+            TEMPER_DEVICE_ASSERT(sycl_utils::is_finite(res), p_error_flag, 2);
 
             p_r_data[flat_idx] = res;
         });
@@ -1065,11 +1065,11 @@ Tensor<value_t> Tensor<value_t>::operator*(const Tensor & other) const
 
     int32_t err = *p_error_flag;
 
-    TEMPER_CHECK(err == 1,
+    TEMPER_CHECK(err != 1,
         nan_error,
         R"(Tensor(operator*): NaN detected in inputs.)");
 
-    TEMPER_CHECK(err == 2,
+    TEMPER_CHECK(err != 2,
         nonfinite_error,
         R"(Tensor(operator*): non-finite result (overflow or Inf).)");
 
@@ -1079,7 +1079,7 @@ Tensor<value_t> Tensor<value_t>::operator*(const Tensor & other) const
 template<typename value_t>
 Tensor<value_t> Tensor<value_t>::operator/(const Tensor & other) const
 {
-    TEMPER_CHECK(m_dimensions.empty() || other.m_dimensions.empty(),
+    TEMPER_CHECK(!m_dimensions.empty() && !other.m_dimensions.empty(),
         validation_error,
         R"(Tensor(operator/): either tensor has no elements.)");
 
@@ -1149,15 +1149,15 @@ Tensor<value_t> Tensor<value_t>::operator/(const Tensor & other) const
             value_t a_val = p_a_data[offset_a];
             value_t b_val = p_b_data[offset_b];
 
-            TEMPER_DEVICE_ASSERT(sycl_utils::is_nan(a_val), p_error_flag, 1);
-            TEMPER_DEVICE_ASSERT(sycl_utils::is_nan(b_val), p_error_flag, 1);
+            TEMPER_DEVICE_ASSERT(!sycl_utils::is_nan(a_val), p_error_flag, 1);
+            TEMPER_DEVICE_ASSERT(!sycl_utils::is_nan(b_val), p_error_flag, 1);
 
-            TEMPER_DEVICE_ASSERT(b_val == static_cast<value_t>(0),
+            TEMPER_DEVICE_ASSERT(b_val != static_cast<value_t>(0),
                 p_error_flag, 3);
 
             value_t res = a_val / b_val;
 
-            TEMPER_DEVICE_ASSERT(!sycl_utils::is_finite(res), p_error_flag, 2);
+            TEMPER_DEVICE_ASSERT(sycl_utils::is_finite(res), p_error_flag, 2);
 
             p_r_data[flat_idx] = res;
         });
@@ -1165,15 +1165,15 @@ Tensor<value_t> Tensor<value_t>::operator/(const Tensor & other) const
 
     int32_t err = *p_error_flag;
 
-    TEMPER_CHECK(err == 1,
+    TEMPER_CHECK(err != 1,
         nan_error,
         R"(Tensor(operator/): NaN detected in inputs.)");
 
-    TEMPER_CHECK(err == 2,
+    TEMPER_CHECK(err != 2,
         nonfinite_error,
         R"(Tensor(operator/): non-finite result (overflow or Inf).)");
 
-    TEMPER_CHECK(err == 3,
+    TEMPER_CHECK(err != 3,
         computation_error,
         R"(Tensor(operator/): division by zero detected.)");
 
@@ -1184,7 +1184,7 @@ template<typename value_t>
 Tensor<value_t> Tensor<value_t>::operator-() const
 {
     const int64_t rank = this->get_rank();
-    TEMPER_CHECK(rank == 0,
+    TEMPER_CHECK(rank > 0,
         validation_error,
         R"(Tensor(operator-): tensor has no elements.)");
 
@@ -1221,7 +1221,7 @@ Tensor<value_t> Tensor<value_t>::operator-() const
             uint64_t off = sycl_utils::idx_of(flat_idx, p_divs, p_strides, rank);
             value_t val = p_src[off];
 
-            TEMPER_DEVICE_ASSERT(sycl_utils::is_nan(val), p_error_flag, 1);
+            TEMPER_DEVICE_ASSERT(!sycl_utils::is_nan(val), p_error_flag, 1);
 
             p_dst[flat_idx] = -val;
         });
@@ -1229,7 +1229,7 @@ Tensor<value_t> Tensor<value_t>::operator-() const
 
     int32_t err = *p_error_flag;
 
-    TEMPER_CHECK(err == 1,
+    TEMPER_CHECK(err != 1,
         nan_error,
         R"(Tensor(operator-): NaN detected in inputs.)");
 
@@ -1289,7 +1289,7 @@ bool Tensor<value_t>::operator==(const Tensor & other) const
             linear, p_divs, p_second_strides, second_rank);
 
         // If mismatch set flag (atomic store).
-        TEMPER_DEVICE_ASSERT(!(p_first[first_offset] == p_second[second_offset]),
+        TEMPER_DEVICE_ASSERT(p_first[first_offset] == p_second[second_offset],
             p_flag, 1);
 
     }).wait();
@@ -1302,7 +1302,7 @@ template <typename value_t>
 Tensor<value_t> Tensor<value_t>::clone() const
 {
     const int64_t rank = this->get_rank();
-    TEMPER_CHECK(rank == 0,
+    TEMPER_CHECK(rank > 0,
         validation_error,
         R"(Tensor(clone): tensor has no elements.)");
 
@@ -1347,17 +1347,17 @@ void Tensor<value_t>::copy_from(const Tensor & src)
     const int64_t rank_dst = this->get_rank();
     const int64_t rank_src = src.get_rank();
 
-    TEMPER_CHECK(rank_dst == 0,
+    TEMPER_CHECK(rank_dst > 0,
         validation_error,
         R"(Tensor(copy_from): target tensor has no elements.)");
 
-    TEMPER_CHECK(rank_src == 0,
+    TEMPER_CHECK(rank_src > 0,
         validation_error,
         R"(Tensor(copy_from): source tensor has no elements.)");
 
     const uint64_t total_dst = this->get_num_elements();
 
-    TEMPER_CHECK(rank_src > rank_dst,
+    TEMPER_CHECK(rank_src <= rank_dst,
         validation_error,
         R"(Tensor(copy_from): source rank > destination rank.)");
 
@@ -1396,7 +1396,7 @@ void Tensor<value_t>::copy_from(const Tensor & src)
 
     utils::BroadcastResult br = utils::compute_broadcast({a_desc, b_desc});
 
-    TEMPER_CHECK(br.shape != dst_shape,
+    TEMPER_CHECK(br.shape == dst_shape,
         validation_error,
         R"(Tensor(copy_from):
             source cannot be broadcast to destination shape.)");
@@ -1437,11 +1437,11 @@ void Tensor<value_t>::copy_from(const Tensor & src)
 template<typename value_t>
 void Tensor<value_t>::to(MemoryLocation target_loc)
 {
-    TEMPER_CHECK(m_dimensions.empty(),
+    TEMPER_CHECK(!m_dimensions.empty(),
         validation_error,
         R"(Tensor(to): tensor has no elements.)");
 
-    TEMPER_CHECK(!m_own_data,
+    TEMPER_CHECK(m_own_data,
         validation_error,
         R"(Tensor(to): cannot move memory of a Tensor view (non-owning).)");
 
@@ -1464,7 +1464,7 @@ void Tensor<value_t>::to(MemoryLocation target_loc)
             sycl::malloc_device(total_size * sizeof(value_t), g_sycl_queue));
     }
 
-    TEMPER_CHECK(!raw_ptr,
+    TEMPER_CHECK(raw_ptr,
         device_error,
         R"(Tensor(to):
             error allocating tensor memory on device.)");
@@ -1489,11 +1489,11 @@ void Tensor<value_t>::to(MemoryLocation target_loc)
 template<typename value_t>
 void Tensor<value_t>::reshape(const std::vector<uint64_t>& new_dimensions)
 {
-    TEMPER_CHECK(new_dimensions.empty(),
+    TEMPER_CHECK(!new_dimensions.empty(),
         validation_error,
         R"(Tensor(reshape): new_dimensions cannot be empty.)");
 
-    TEMPER_CHECK(!m_own_data,
+    TEMPER_CHECK(m_own_data,
         validation_error,
         R"(Tensor(reshape): cannot reshape an alias/view tensor.)");
 
@@ -1508,18 +1508,18 @@ void Tensor<value_t>::reshape(const std::vector<uint64_t>& new_dimensions)
     uint64_t new_total_size = 1;
     for (uint64_t dim : new_dimensions)
     {
-        TEMPER_CHECK(dim == 0,
+        TEMPER_CHECK(dim != 0,
             validation_error,
             R"(Tensor(reshape): new_dimensions cannot contain zero.)");
 
-        TEMPER_CHECK(new_total_size > U64_MAX / dim,
+        TEMPER_CHECK(new_total_size <= U64_MAX / dim,
             bounds_error,
             R"(Tensor(reshape): dimension product overflow.)");
 
         new_total_size *= dim;
     }
 
-    TEMPER_CHECK(new_total_size != og_total_size,
+    TEMPER_CHECK(new_total_size == og_total_size,
         validation_error,
         R"(Tensor(reshape): total number of elements must remain the same.)");
 
@@ -1548,7 +1548,7 @@ void Tensor<value_t>::sort(std::optional<int64_t> axis_opt)
             axis += rank;
         }
 
-        TEMPER_CHECK(axis < 0 || axis >= rank,
+        TEMPER_CHECK(axis >= 0 && axis < rank,
             bounds_error,
             "Tensor(sort): axis out of bounds");
     }
@@ -1836,7 +1836,7 @@ Tensor<value_t> Tensor<value_t>::sum(std::optional<int64_t> axis_opt) const
             axis += rank;
         }
 
-        TEMPER_CHECK(axis < 0 || axis >= rank,
+        TEMPER_CHECK(axis >= 0 && axis < rank,
             bounds_error,
             "Tensor(sum): axis out of bounds");
     }
@@ -1978,7 +1978,7 @@ Tensor<value_t> Tensor<value_t>::sum(std::optional<int64_t> axis_opt) const
                         p_divisors_dev, p_strides_dev, rank);
 
                     value_t v = p_src[offset];
-                    TEMPER_DEVICE_EXPECT(sycl_utils::is_nan(v), p_error_flag, 1);
+                    TEMPER_DEVICE_EXPECT(!sycl_utils::is_nan(v), p_error_flag, 1);
                     local_sum += v;
                 }
             }
@@ -2013,7 +2013,7 @@ Tensor<value_t> Tensor<value_t>::sum(std::optional<int64_t> axis_opt) const
                     uint64_t offs = base_offset + static_cast<uint64_t>(j) *
                         p_strides_dev[axis];
                     value_t v = p_src[offs];
-                    TEMPER_DEVICE_EXPECT(sycl_utils:: is_nan(v), p_error_flag, 1);
+                    TEMPER_DEVICE_EXPECT(!sycl_utils:: is_nan(v), p_error_flag, 1);
                     local_sum += v;
                 }
             }
@@ -2022,7 +2022,8 @@ Tensor<value_t> Tensor<value_t>::sum(std::optional<int64_t> axis_opt) const
             value_t group_sum = sycl::reduce_over_group
                 (group, local_sum, sycl:: plus<value_t>());
 
-            TEMPER_DEVICE_ASSERT(!sycl_utils::is_finite(group_sum), p_error_flag, 2);
+            TEMPER_DEVICE_ASSERT(sycl_utils::is_finite(group_sum),
+                p_error_flag, 2);
 
             if (local_id == 0)
             {
@@ -2067,14 +2068,14 @@ Tensor<value_t> Tensor<value_t>::sum(std::optional<int64_t> axis_opt) const
             for (size_t idx = lid; idx < num_groups_per_slice; idx += local_range)
             {
                 value_t pv = p_partials[slice * num_groups_per_slice + idx];
-                TEMPER_DEVICE_ASSERT(sycl_utils::is_nan(pv), p_error_flag, 1);
+                TEMPER_DEVICE_EXPECT(!sycl_utils::is_nan(pv), p_error_flag, 1);
                 v += pv;
             }
 
             auto group = it.get_group();
             value_t total =
                 sycl::reduce_over_group(group, v, sycl::plus<value_t>());
-            TEMPER_DEVICE_ASSERT(!sycl_utils::is_finite(total), p_error_flag, 2);
+            TEMPER_DEVICE_ASSERT(sycl_utils::is_finite(total), p_error_flag, 2);
 
             if (lid == 0)
             {
@@ -2085,11 +2086,11 @@ Tensor<value_t> Tensor<value_t>::sum(std::optional<int64_t> axis_opt) const
 
     int32_t err = *p_error_flag;
 
-    TEMPER_CHECK(err == 1,
+    TEMPER_CHECK(err != 1,
         nan_error,
         R"(Tensor(sum): NaN detected in inputs.)");
 
-    TEMPER_CHECK(err == 2,
+    TEMPER_CHECK(err != 2,
         nonfinite_error,
         R"(Tensor(sum): non-finite result detected.)");
 
@@ -2110,7 +2111,7 @@ Tensor<value_t> Tensor<value_t>::cumsum(std::optional<int64_t> axis_opt) const
     const bool flatten = ! axis_opt.has_value();
     int64_t axis;
 
-    if (! flatten)
+    if (!flatten)
     {
         axis = axis_opt.value();
         if (axis < 0)
@@ -2118,7 +2119,7 @@ Tensor<value_t> Tensor<value_t>::cumsum(std::optional<int64_t> axis_opt) const
             axis += rank;
         }
 
-        TEMPER_CHECK(axis < 0 || axis >= rank,
+        TEMPER_CHECK(axis >= 0 && axis < rank,
             bounds_error,
             "Tensor(cumsum): axis out of bounds");
     }
@@ -2330,16 +2331,16 @@ Tensor<value_t> Tensor<value_t>::cumsum(std::optional<int64_t> axis_opt) const
             if (active)
             {
                 x = p_src[src_off];
-                TEMPER_DEVICE_ASSERT(sycl_utils::is_nan(x), p_error_flag, 1);
+                TEMPER_DEVICE_EXPECT(!sycl_utils::is_nan(x), p_error_flag, 1);
             }
 
-            value_t prefix = sycl:: inclusive_scan_over_group
+            value_t prefix = sycl::inclusive_scan_over_group
                 (it.get_group(), x, sycl::plus<value_t>());
 
             if (active)
             {
                 p_out[dst_off] = prefix;
-                TEMPER_DEVICE_ASSERT(! sycl_utils::is_finite(prefix),
+                TEMPER_DEVICE_ASSERT(sycl_utils::is_finite(prefix),
                     p_error_flag, 2);
             }
 
@@ -2413,18 +2414,18 @@ Tensor<value_t> Tensor<value_t>::cumsum(std::optional<int64_t> axis_opt) const
             value_t add = p_block_partials
                 [slice * num_groups_per_slice + (group_in_slice - 1)];
             p_out[dst_off] += add;
-            TEMPER_DEVICE_ASSERT(!sycl_utils::is_finite(p_out[dst_off]),
+            TEMPER_DEVICE_ASSERT(sycl_utils::is_finite(p_out[dst_off]),
                 p_error_flag, 2);
         });
     }).wait();
 
     int32_t err = *p_error_flag;
 
-    TEMPER_CHECK(err == 1,
+    TEMPER_CHECK(err != 1,
         nan_error,
         R"(Tensor(cumsum): NaN detected in inputs.)");
 
-    TEMPER_CHECK(err == 2,
+    TEMPER_CHECK(err != 2,
         nonfinite_error,
         R"(Tensor(cumsum): non-finite result detected.)");
 
@@ -2436,7 +2437,7 @@ Tensor<value_t> Tensor<value_t>::transpose() const
 {
     const int64_t rank = this->get_rank();
 
-    TEMPER_CHECK(rank == 0,
+    TEMPER_CHECK(rank > 0,
         validation_error,
         R"(Tensor(transpose): cannot transpose an empty tensor.)");
 
@@ -2454,7 +2455,7 @@ Tensor<value_t> Tensor<value_t>::transpose(const std::vector<int64_t> & axes) co
 {
     const int64_t rank = this->get_rank();
 
-    TEMPER_CHECK(axes.size() != static_cast<uint64_t>(rank),
+    TEMPER_CHECK(axes.size() == static_cast<uint64_t>(rank),
         validation_error,
         R"(Tensor(transpose):
             axes vector must have same length as tensor rank.)");
@@ -2470,7 +2471,7 @@ Tensor<value_t> Tensor<value_t>::transpose(const std::vector<int64_t> & axes) co
             axis += rank;
         }
 
-        TEMPER_CHECK(axis < 0 || axis >= rank || seen[axis],
+        TEMPER_CHECK(axis >= 0 && axis < rank && !seen[axis],
             bounds_error,
             R"(Tensor(transpose):
                 axes must be a permutation of [-rank..rank-1].)");
@@ -2647,7 +2648,7 @@ std::vector<uint64_t> Tensor<value_t>::index_to_coords(uint64_t flat) const
 
     const uint64_t total = this->get_num_elements();
 
-    TEMPER_CHECK(flat >= total,
+    TEMPER_CHECK(flat < total,
         bounds_error,
         "Tensor::index_to_coords: flat out of range");
 
@@ -2675,7 +2676,7 @@ uint64_t Tensor<value_t>::coords_to_index
 {
     const int64_t rank = this->get_rank();
 
-    TEMPER_CHECK(coords.size() != static_cast<uint64_t>(rank),
+    TEMPER_CHECK(coords.size() == static_cast<uint64_t>(rank),
         validation_error,
         R"(Tensor(coords_to_index): size mismatch)");
 
@@ -2691,7 +2692,7 @@ uint64_t Tensor<value_t>::coords_to_index
 
     for (int64_t d = 0; d < rank; ++d)
     {
-        TEMPER_CHECK(coords[d] >= dimensions[d],
+        TEMPER_CHECK(coords[d] < dimensions[d],
             bounds_error,
             R"(Tensor(coords_to_index): coord out of range)");
 
@@ -2706,13 +2707,13 @@ Tensor<value_t> Tensor<value_t>::at(uint64_t flat)
 {
     const int64_t rank = this->get_rank();
 
-    TEMPER_CHECK(rank == 0,
+    TEMPER_CHECK(rank > 0,
         validation_error,
         "Tensor(at): tensor has no elements.");
 
     const uint64_t total = this->get_num_elements();
 
-    TEMPER_CHECK(flat >= total,
+    TEMPER_CHECK(flat < total,
         bounds_error,
         "Tensor(at): flat index out of range.");
 
@@ -2725,13 +2726,13 @@ const Tensor<value_t> Tensor<value_t>::at(uint64_t flat) const
 {
     const int64_t rank = this->get_rank();
 
-    TEMPER_CHECK(rank == 0,
+    TEMPER_CHECK(rank > 0,
         validation_error,
         "Tensor(at): tensor has no elements.");
 
     const uint64_t total = this->get_num_elements();
 
-    TEMPER_CHECK(flat >= total,
+    TEMPER_CHECK(flat < total,
         bounds_error,
         "Tensor(at): flat index out of range.");
 
