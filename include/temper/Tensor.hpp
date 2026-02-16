@@ -14,6 +14,7 @@
 #include <limits>
 #include <optional>
 #include "SYCLQueue.hpp"
+#include "Autograd.hpp"
 
 namespace temper
 {
@@ -44,6 +45,9 @@ private:
 
     /// Member enumeration to indicate if data is on host or device.
     MemoryLocation           m_mem_loc {MemoryLocation::DEVICE};
+
+    /// Metadata for automatic differentiation and graph replay.
+    AutogradMeta<value_t>    m_meta;
 
     /**
      * @brief Computes strides using dimensions.

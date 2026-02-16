@@ -98,6 +98,8 @@ void copy_tensor_data(Tensor<value_t>& dest, const Tensor<value_t>& src)
     sycl::free(shape_str,    g_sycl_queue);
 }
 
+
+
 template<typename T>
 class TypedTensor : public ::testing::Test {};
 
@@ -710,6 +712,25 @@ TYPED_TEST(TypedTensor, main_constructor_zero_initializes_data)
 }
 
 /**
+ * @test TypedTensor.main_constructor_autograd_defaults
+ * @brief Default-constructed and main-constructed owning tensors must have
+ * cleared Autograd meta (fn==nullptr, grad==nullptr, requires_grad==false).
+ */
+TYPED_TEST(TypedTensor, main_constructor_autograd_defaults)
+{
+    using value_t = TypeParam;
+    Tensor<value_t> def;
+    EXPECT_FALSE(def.m_meta.requires_grad);
+    EXPECT_EQ(def.m_meta.grad, nullptr);
+    EXPECT_EQ(def.m_meta.fn, nullptr);
+
+    Tensor<value_t> own({2,2}, MemoryLocation::HOST);
+    EXPECT_FALSE(own.m_meta.requires_grad);
+    EXPECT_EQ(own.m_meta.grad, nullptr);
+    EXPECT_EQ(own.m_meta.fn, nullptr);
+}
+
+/**
  * @test TypedTensor.main_constructor_memory_location_and_access
  * @brief Tests correct memory location assignment.
  */
@@ -898,6 +919,73 @@ TYPED_TEST(TypedTensor, copy_constructor_on_default_constructed)
 }
 
 /**
+ * @test TypedTensor.copy_constructor_autograd_clears_meta
+ * @brief Copying an owning tensor should clear autograd metadata on the copy.
+ */
+TYPED_TEST(TypedTensor, copy_constructor_autograd_clears_meta)
+{
+    using value_t = TypeParam;
+    Tensor<value_t> t({2,2}, MemoryLocation::HOST);
+    t = std::vector<value_t>{ static_cast<value_t>(1), static_cast<value_t>(2),
+                              static_cast<value_t>(3), static_cast<value_t>(4) };
+
+    t.m_meta.requires_grad = true;
+    t.m_meta.grad = t.m_p_data;
+
+    Tensor<value_t> cp(t);
+
+    // Original should still indicate gradients required and have grad ptr.
+    EXPECT_TRUE(t.m_meta.requires_grad);
+    ASSERT_NE(t.m_meta.grad, nullptr);
+
+    // Copy constructed owning tensor must have fresh (cleared) autograd meta.
+    EXPECT_FALSE(cp.m_meta.requires_grad);
+    EXPECT_EQ(cp.m_meta.grad, nullptr);
+}
+
+/**
+ * @test TypedTensor.copy_constructor_autograd_from_view_preserves_meta
+ * @brief Copy-constructing from a non-owning view should preserve the
+ * Autograd meta (fn, requires_grad and aliased grad pointer with offset).
+ */
+TYPED_TEST(TypedTensor, copy_constructor_autograd_from_view_preserves_meta)
+{
+    using value_t = TypeParam;
+    // Prepare owner with grad and a dummy FunctionEdge
+    Tensor<value_t> owner({2,3}, MemoryLocation::HOST);
+    owner = std::vector<value_t>{1,2,3,4,5,6};
+
+    struct DummyEdge : public temper::FunctionEdge<value_t>
+    {
+        DummyEdge() : FunctionEdge<value_t>("dummy") {}
+        void forward() override {}
+        void backward(const Tensor<value_t>&) override {}
+        std::vector<std::shared_ptr<Tensor<value_t>>> inputs() const override
+        { return {}; }
+        std::shared_ptr<Tensor<value_t>> output() const override
+        { return nullptr; }
+    };
+
+    owner.m_meta.requires_grad = true;
+    owner.m_meta.grad = owner.m_p_data;
+    owner.m_meta.fn = std::make_shared<DummyEdge>();
+
+    // Create a view and then copy-construct from the view
+    Tensor<value_t> view(owner,
+        std::vector<uint64_t>{1,1},
+        std::vector<uint64_t>{1,2});
+    Tensor<value_t> cp(view);
+
+    EXPECT_TRUE(cp.m_meta.requires_grad);
+    ASSERT_NE(cp.m_meta.grad, nullptr);
+    // grad should be an alias into same control block (no offset here is 1*stride0+1*stride1)
+    uint64_t offset = 1 * owner.m_strides[0] + 1 * owner.m_strides[1];
+    EXPECT_EQ(cp.m_meta.grad.get(), owner.m_meta.grad.get() + offset);
+    ASSERT_NE(cp.m_meta.fn, nullptr);
+    EXPECT_EQ(cp.m_meta.fn.get(), owner.m_meta.fn.get());
+}
+
+/**
  * @test TypedTensor.copy_constructor_host
  * @brief Tests copy constructor with a tensor allocated in HOST memory.
  * Ensures contents are copied correctly.
@@ -990,6 +1078,49 @@ TYPED_TEST(TypedTensor, move_constructor)
 }
 
 /**
+ * @test TypedTensor.move_constructor_autograd_transfers_meta
+ * @brief Move-construction should transfer Autograd meta and clear the source.
+ */
+TYPED_TEST(TypedTensor, move_constructor_autograd_transfers_meta)
+{
+    using value_t = TypeParam;
+    Tensor<value_t> src({2,2}, MemoryLocation::HOST);
+    src = std::vector<value_t>{1,2,3,4};
+
+    struct DummyEdge : public temper::FunctionEdge<value_t>
+    {
+        DummyEdge() : FunctionEdge<value_t>("move") {}
+        void forward() override {}
+        void backward(const Tensor<value_t>&) override {}
+        std::vector<std::shared_ptr<Tensor<value_t>>> inputs() const override
+        { return {}; }
+        std::shared_ptr<Tensor<value_t>> output() const override
+        { return nullptr; }
+    };
+
+    src.m_meta.requires_grad = true;
+    src.m_meta.grad = src.m_p_data;
+    src.m_meta.fn = std::make_shared<DummyEdge>();
+
+    value_t* raw_grad_ptr = src.m_meta.grad.get();
+    auto fn_ptr = src.m_meta.fn.get();
+
+    Tensor<value_t> moved(std::move(src));
+
+    // moved should have the metadata
+    EXPECT_TRUE(moved.m_meta.requires_grad);
+    ASSERT_NE(moved.m_meta.grad, nullptr);
+    EXPECT_EQ(moved.m_meta.grad.get(), raw_grad_ptr);
+    ASSERT_NE(moved.m_meta.fn, nullptr);
+    EXPECT_EQ(moved.m_meta.fn.get(), fn_ptr);
+
+    // source must be cleared
+    EXPECT_FALSE(src.m_meta.requires_grad);
+    EXPECT_EQ(src.m_meta.grad, nullptr);
+    EXPECT_EQ(src.m_meta.fn, nullptr);
+}
+
+/**
  * @test TypedTensor.scalar_constructor_host
  * @brief Construction from a scalar (default HOST).
  */
@@ -1038,6 +1169,19 @@ TYPED_TEST(TypedTensor, scalar_constructor_device)
     } else {
         EXPECT_EQ(host_val, static_cast<value_t>(2));
     }
+}
+
+/**
+ * @test TypedTensor.scalar_constructor_autograd_defaults
+ * @brief Scalar constructor must initialize autograd meta to defaults.
+ */
+TYPED_TEST(TypedTensor, scalar_constructor_autograd_defaults)
+{
+    using value_t = TypeParam;
+    Tensor<value_t> s(static_cast<value_t>(3.14), MemoryLocation::HOST);
+    EXPECT_FALSE(s.m_meta.requires_grad);
+    EXPECT_EQ(s.m_meta.grad, nullptr);
+    EXPECT_EQ(s.m_meta.fn, nullptr);
 }
 
 /**
@@ -1166,6 +1310,37 @@ TYPED_TEST(TypedTensor, view_constructor_identity_preserves_layout)
             EXPECT_EQ(out[i], v[i]);
         }
     }
+}
+
+/**
+ * @test TypedTensor.view_constructor_autograd
+ * @brief Ensure a view aliases the owner's autograd gradient buffer with offset.
+ */
+TYPED_TEST(TypedTensor, view_constructor_autograd)
+{
+    using value_t = TypeParam;
+    Tensor<value_t> owner({2,3}, MemoryLocation::HOST);
+    std::vector<value_t> vals = {
+        static_cast<value_t>(1), static_cast<value_t>(2), static_cast<value_t>(3),
+        static_cast<value_t>(4), static_cast<value_t>(5), static_cast<value_t>(6)
+    };
+    owner = vals;
+
+    // Simulate gradient buffer owned by the tensor by reusing the data control
+    // block as a gradient buffer for test purposes.
+    owner.m_meta.requires_grad = true;
+    owner.m_meta.grad = owner.m_p_data;
+
+    std::vector<uint64_t> start = {1, 1};
+    std::vector<uint64_t> shape = {1, 2};
+    Tensor<value_t> view(owner, start, shape);
+
+    uint64_t offset = start[0] * owner.m_strides[0]
+                    + start[1] * owner.m_strides[1];
+
+    EXPECT_TRUE(view.m_meta.requires_grad);
+    ASSERT_NE(view.m_meta.grad, nullptr);
+    EXPECT_EQ(view.m_meta.grad.get(), owner.m_meta.grad.get() + offset);
 }
 
 /**
@@ -1728,6 +1903,53 @@ TYPED_TEST(TypedTensor, alias_view_constructor_extracts_row)
 }
 
 /**
+ * @test TypedTensor.alias_view_constructor_autograd
+ * @brief Alias (strided) view constructor must preserve/alias Autograd meta.
+ */
+TYPED_TEST(TypedTensor, alias_view_constructor_autograd)
+{
+    using value_t = TypeParam;
+    Tensor<value_t> owner({3,4}, MemoryLocation::HOST);
+    std::vector<value_t> vals(12);
+    for (uint64_t i = 0; i < 12; ++i) vals[i] = static_cast<value_t>(i + 1);
+    owner = vals;
+
+    struct DummyEdge : public temper::FunctionEdge<value_t>
+    {
+        DummyEdge() : FunctionEdge<value_t>("alias") {}
+        void forward() override {}
+        void backward(const Tensor<value_t>&) override {}
+        std::vector<std::shared_ptr<Tensor<value_t>>> inputs() const override
+        { return {}; }
+        std::shared_ptr<Tensor<value_t>> output() const override
+        { return nullptr; }
+    };
+
+    owner.m_meta.requires_grad = true;
+    owner.m_meta.grad = owner.m_p_data;
+    owner.m_meta.fn = std::make_shared<DummyEdge>();
+
+    std::vector<uint64_t> start = {1, 2};
+    std::vector<uint64_t> dims = {2, 2};
+    std::vector<uint64_t> strides = { owner.m_strides[0], owner.m_strides[1] };
+
+    Tensor<value_t> aview(owner, start, dims, strides);
+
+    uint64_t offset = start[0] * owner.m_strides[0] + start[1] * owner.m_strides[1];
+
+    EXPECT_TRUE(aview.m_meta.requires_grad);
+    ASSERT_NE(aview.m_meta.fn, nullptr);
+    EXPECT_EQ(aview.m_meta.fn.get(), owner.m_meta.fn.get());
+    ASSERT_NE(aview.m_meta.grad, nullptr);
+    EXPECT_EQ(aview.m_meta.grad.get(), owner.m_meta.grad.get() + offset);
+
+    // If owner has no grad buffer, alias view should also have nullptr grad.
+    owner.m_meta.grad = nullptr;
+    Tensor<value_t> aview2(owner, start, dims, strides);
+    EXPECT_EQ(aview2.m_meta.grad, nullptr);
+}
+
+/**
  * @test TypedTensor.alias_view_constructor_extracts_patch
  * @brief Extracts a 2x2 patch from a 4x4 tensor.
  */
@@ -2230,6 +2452,38 @@ TYPED_TEST(TypedTensor, operator_equals_copy_from_view)
 }
 
 /**
+ * @test TypedTensor.operator_equals_copy_autograd
+ * @brief Copy-assignment should clear meta when assigning from an owning
+ * tensor, and copy meta when assigning from a view.
+ */
+TYPED_TEST(TypedTensor, operator_equals_copy_autograd)
+{
+    using value_t = TypeParam;
+    // Source owning tensor with autograd meta
+    Tensor<value_t> src({2,2}, MemoryLocation::HOST);
+    src = std::vector<value_t>{1,2,3,4};
+    src.m_meta.requires_grad = true;
+    src.m_meta.grad = src.m_p_data;
+
+    Tensor<value_t> dst;
+    dst = src; // dst should be owning and have cleared meta
+
+    EXPECT_FALSE(dst.m_meta.requires_grad);
+    EXPECT_EQ(dst.m_meta.grad, nullptr);
+
+    // Now assignment from a view should copy meta
+    src.m_meta.requires_grad = true;
+    src.m_meta.grad = src.m_p_data;
+
+    Tensor<value_t> view(src, std::vector<uint64_t>{0,0}, std::vector<uint64_t>{2,1});
+    Tensor<value_t> dst2;
+    dst2 = view;
+
+    EXPECT_TRUE(dst2.m_meta.requires_grad);
+    ASSERT_NE(dst2.m_meta.grad, nullptr);
+}
+
+/**
  * @test TypedTensor.operator_equals_move
  * @brief Basic move-assignment: resources transferred, source emptied.
  */
@@ -2382,6 +2636,27 @@ TYPED_TEST(TypedTensor, operator_equals_move_from_view)
         EXPECT_EQ(out[0], vals[4]);
         EXPECT_EQ(out[1], vals[5]);
     }
+}
+
+/**
+ * @test TypedTensor.operator_equals_move_autograd
+ * @brief Move-assignment should transfer Autograd meta and clear the source.
+ */
+TYPED_TEST(TypedTensor, operator_equals_move_autograd)
+{
+    using value_t = TypeParam;
+    Tensor<value_t> src({2,2}, MemoryLocation::HOST);
+    src = std::vector<value_t>{1,2,3,4};
+    src.m_meta.requires_grad = true;
+    src.m_meta.grad = src.m_p_data;
+
+    Tensor<value_t> dst;
+    dst = std::move(src);
+
+    EXPECT_TRUE(dst.m_meta.requires_grad);
+    ASSERT_NE(dst.m_meta.grad, nullptr);
+    EXPECT_FALSE(src.m_meta.requires_grad);
+    EXPECT_EQ(src.m_meta.grad, nullptr);
 }
 
 /**
@@ -2731,6 +3006,45 @@ TYPED_TEST(TypedTensor, operator_brackets_index_chain_const_access)
     } else {
         EXPECT_EQ(a, vals[1 * 4 + 1 * 2 + 1]);
     }
+}
+
+/**
+ * @test TypedTensor.operator_brackets_autograd
+ * @brief operator[] must create a view that inherits fn and requires_grad
+ * and aliases the grad buffer at the correct offset.
+ */
+TYPED_TEST(TypedTensor, operator_brackets_autograd)
+{
+    using value_t = TypeParam;
+    Tensor<value_t> owner({3,2}, MemoryLocation::HOST);
+    std::vector<value_t> vals(6);
+    for (uint64_t i = 0; i < 6; ++i) vals[i] = static_cast<value_t>(i+1);
+    owner = vals;
+
+    struct DummyEdge : public temper::FunctionEdge<value_t>
+    {
+        DummyEdge() : FunctionEdge<value_t>("idx") {}
+        void forward() override {}
+        void backward(const Tensor<value_t>&) override {}
+        std::vector<std::shared_ptr<Tensor<value_t>>> inputs() const override
+        { return {}; }
+        std::shared_ptr<Tensor<value_t>> output() const override
+        { return nullptr; }
+    };
+
+    owner.m_meta.requires_grad = true;
+    owner.m_meta.grad = owner.m_p_data;
+    owner.m_meta.fn = std::make_shared<DummyEdge>();
+
+    Tensor<value_t> row = owner[1];
+    EXPECT_TRUE(row.m_meta.requires_grad);
+    ASSERT_NE(row.m_meta.fn, nullptr);
+    EXPECT_EQ(row.m_meta.fn.get(), owner.m_meta.fn.get());
+
+    // offset should be index * stride0
+    uint64_t offset = 1 * owner.m_strides[0];
+    ASSERT_NE(row.m_meta.grad, nullptr);
+    EXPECT_EQ(row.m_meta.grad.get(), owner.m_meta.grad.get() + offset);
 }
 
 /**

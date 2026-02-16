@@ -87,6 +87,26 @@ protected:
     std::string m_op_name; ///< Unique identifier for serialization.
 };
 
+/**
+ * @brief Struct to hold autograd metadata for a tensor.
+ *
+ * This struct encapsulates the information needed for automatic
+ * differentiation, including the function edge that produced the
+ * tensor, the gradient tensor, and whether gradients are required.
+ */
+template <typename value_t>
+struct AutogradMeta
+{
+    /// Pointer to the function edge that produced this tensor.
+    std::shared_ptr<FunctionEdge<value_t>> fn{nullptr};
+
+    /// Pointer to the gradient tensor data.
+    std::shared_ptr<value_t> grad{nullptr};
+
+    /// Flag indicating whether this tensor requires gradient.
+    bool requires_grad{false};
+};
+
 } // namespace temper
 
 #endif // TEMPER_AUTOGRAD_HPP

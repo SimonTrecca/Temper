@@ -48,7 +48,8 @@ Tensor<value_t>::Tensor(const std::vector<uint64_t> & dimensions,
     : m_dimensions(dimensions),
       m_strides(dimensions.size()),
       m_own_data(true),
-      m_mem_loc(loc)
+      m_mem_loc(loc),
+      m_meta{nullptr, nullptr, false}
 {
     TEMPER_CHECK(!m_dimensions.empty(),
         validation_error,
@@ -163,7 +164,8 @@ Tensor<value_t>::Tensor(const Tensor & other)
     : m_dimensions(other.m_dimensions),
       m_strides(other.m_strides),
       m_own_data(other.m_own_data),
-      m_mem_loc(other.m_mem_loc)
+      m_mem_loc(other.m_mem_loc),
+      m_meta(other.m_own_data ? AutogradMeta<value_t>{} : other.m_meta)
 {
     if (m_own_data)
     {
@@ -217,12 +219,14 @@ Tensor<value_t>::Tensor(Tensor && other) noexcept
       m_dimensions(std::move(other.m_dimensions)),
       m_strides(std::move(other.m_strides)),
       m_own_data(other.m_own_data),
-      m_mem_loc(other.m_mem_loc)
+      m_mem_loc(other.m_mem_loc),
+      m_meta(std::move(other.m_meta))
 {
     other.m_dimensions.clear();
     other.m_strides.clear();
     other.m_p_data.reset();
     other.m_own_data = true;
+    other.m_meta = AutogradMeta<value_t>{};
 }
 
 template<typename value_t>
@@ -230,7 +234,8 @@ Tensor<value_t>::Tensor(value_t val, MemoryLocation loc)
     : m_dimensions({1}),
       m_strides(1),
       m_own_data(true),
-      m_mem_loc(loc)
+      m_mem_loc(loc),
+      m_meta{}
 {
     compute_strides();
 
@@ -278,10 +283,10 @@ Tensor<value_t>::Tensor(const Tensor & owner,
     const std::vector<uint64_t> & start_indices,
     const std::vector<uint64_t> & view_shape)
     : m_own_data(false),
-      m_mem_loc(owner.m_mem_loc)
+      m_mem_loc(owner.m_mem_loc),
+      m_meta{owner.m_meta.fn, nullptr, owner.m_meta.requires_grad}
 {
     const int64_t original_rank = owner.get_rank();
-
     const size_t max_int64_size =
         static_cast<size_t>(std::numeric_limits<int64_t>::max());
 
@@ -312,8 +317,7 @@ Tensor<value_t>::Tensor(const Tensor & owner,
     {
         TEMPER_CHECK(start_indices[i] < owner.m_dimensions[i],
             bounds_error,
-            R"(Tensor(view constructor):
-                start index out of bounds.)");
+            R"(Tensor(view constructor): start index out of bounds.)");
     }
     for (int64_t j = 0; j < view_rank; ++j)
     {
@@ -321,8 +325,7 @@ Tensor<value_t>::Tensor(const Tensor & owner,
         TEMPER_CHECK(view_shape[j] != 0 &&
             start_indices[i] + view_shape[j] <= owner.m_dimensions[i],
             bounds_error,
-            R"(Tensor(view constructor):
-                view shape out of bounds.)");
+            R"(Tensor(view constructor): view shape out of bounds.)");
     }
 
     uint64_t offset = 0;
@@ -331,8 +334,12 @@ Tensor<value_t>::Tensor(const Tensor & owner,
         offset += start_indices[i] * owner.m_strides[i];
     }
 
-    m_p_data = std::shared_ptr<value_t>
-        (owner.m_p_data, owner.m_p_data.get() + offset);
+    // Aliasing constructors: Shared control block, shifted raw pointer.
+    m_p_data =
+        std::shared_ptr<value_t>(owner.m_p_data, owner.m_p_data.get() + offset);
+
+    m_meta.grad = owner.m_meta.grad ? std::shared_ptr<value_t>(owner.m_meta.grad,
+        owner.m_meta.grad.get() + offset) : nullptr;
 
     // Set dimensions and strides for the view.
     m_dimensions.assign(view_shape.begin(), view_shape.end());
@@ -347,7 +354,8 @@ Tensor<value_t>::Tensor(const Tensor & owner,
     : m_dimensions(dims),
       m_strides(strides),
       m_own_data(false),
-      m_mem_loc(owner.m_mem_loc)
+      m_mem_loc(owner.m_mem_loc),
+      m_meta{owner.m_meta.fn, nullptr, owner.m_meta.requires_grad}
 {
     TEMPER_CHECK(owner.m_p_data,
         validation_error,
@@ -483,6 +491,9 @@ Tensor<value_t>::Tensor(const Tensor & owner,
 
     m_p_data =
         std::shared_ptr<value_t>(owner.m_p_data, owner.m_p_data.get() + offset);
+
+    m_meta.grad = owner.m_meta.grad ? std::shared_ptr<value_t>(owner.m_meta.grad,
+        owner.m_meta.grad.get() + offset) : nullptr;
 }
 
 template<typename value_t>
@@ -494,6 +505,7 @@ Tensor<value_t> & Tensor<value_t>::operator=(const Tensor & other)
         m_strides = other.m_strides;
         m_own_data = other.m_own_data;
         m_mem_loc = other.m_mem_loc;
+        m_meta = other.m_own_data ? AutogradMeta<value_t>{} : other.m_meta;
 
         if (m_own_data)
         {
@@ -556,11 +568,13 @@ Tensor<value_t>& Tensor<value_t>::operator=(Tensor && other) noexcept
         m_strides = std::move(other.m_strides);
         m_own_data = other.m_own_data;
         m_mem_loc = other.m_mem_loc;
+        m_meta = std::move(other.m_meta);
 
         other.m_p_data.reset();
         other.m_dimensions.clear();
         other.m_strides.clear();
         other.m_own_data = true;
+        other.m_meta = AutogradMeta<value_t>{};
     }
     return *this;
 }
