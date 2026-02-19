@@ -9144,6 +9144,107 @@ TYPED_TEST(TypedTensor, get_owns_data)
 }
 
 /**
+ * @test TypedTensor.get_source_function
+ * @brief Verifies get_source_function() returns the producing FunctionEdge.
+ */
+TYPED_TEST(TypedTensor, get_source_function)
+{
+    using value_t = TypeParam;
+
+    Tensor<value_t> t({2,2}, MemoryLocation::HOST);
+    // Default-constructed owning tensor should have no source function.
+    EXPECT_EQ(t.get_source_function(), nullptr);
+
+    struct DummyEdge : public temper::FunctionEdge<value_t>
+    {
+        DummyEdge() : FunctionEdge<value_t>("dummy") {}
+        void forward() override {}
+        void backward(const Tensor<value_t>&) override {}
+        std::vector<std::shared_ptr<Tensor<value_t>>> inputs() const override
+        { return {}; }
+        std::shared_ptr<Tensor<value_t>> output() const override
+        { return nullptr; }
+    };
+
+    auto fn = std::make_shared<DummyEdge>();
+    t.m_meta.fn = fn;
+
+    EXPECT_EQ(t.get_source_function(), fn);
+
+    // Views should inherit the owner's source function.
+    Tensor<value_t> base({4,4}, MemoryLocation::HOST);
+    base.m_meta.fn = fn;
+    Tensor<value_t> view(base, std::vector<uint64_t>{1,1}, std::vector<uint64_t>{2,2});
+    EXPECT_EQ(view.get_source_function(), fn);
+
+    static_assert(std::is_same_v<
+        decltype(std::declval<const Tensor<value_t>&>().get_source_function()),
+        std::shared_ptr<FunctionEdge<value_t>>
+    >, "get_source_function() must return shared_ptr<FunctionEdge<T>>");
+}
+
+/**
+ * @test TypedTensor.get_gradient_default_and_const
+ * @brief Verifies `get_gradient()` returns nullptr by default and the const overload.
+ */
+TYPED_TEST(TypedTensor, get_gradient_default_and_const)
+{
+    using value_t = TypeParam;
+    Tensor<value_t> t({2,2}, MemoryLocation::HOST);
+
+    EXPECT_EQ(t.get_gradient(), nullptr);
+    // Simulate allocation of gradient control block by aliasing the data
+    // control block (tests expose private members via preprocessor).
+    t.m_meta.grad = t.m_p_data;
+    value_t* grad_ptr = t.get_gradient();
+    ASSERT_NE(grad_ptr, nullptr);
+
+    // Create a view into `t` (views share autograd metadata).
+    Tensor<value_t> v(t, std::vector<uint64_t>{0,0}, std::vector<uint64_t>{2,2});
+    const Tensor<value_t>& cv = v;
+    EXPECT_EQ(cv.get_gradient(), grad_ptr);
+}
+
+/**
+ * @test TypedTensor.requires_grad_default_and_flag
+ * @brief Verifies `requires_grad()` default and when manually set.
+ */
+TYPED_TEST(TypedTensor, requires_grad_default_and_flag)
+{
+    using value_t = TypeParam;
+    Tensor<value_t> t({2,2}, MemoryLocation::HOST);
+
+    EXPECT_FALSE(t.requires_grad());
+
+    t.set_requires_grad(true);
+    EXPECT_TRUE(t.requires_grad());
+
+    // A view should inherit the flag
+    Tensor<value_t> v(t, std::vector<uint64_t>{0,0}, std::vector<uint64_t>{2,2});
+    EXPECT_TRUE(v.requires_grad());
+
+    // A deep copy (owner) should be a fresh start (false)
+    Tensor<value_t> deep_copy = t;
+    EXPECT_FALSE(deep_copy.requires_grad());
+}
+
+/**
+ * @test TypedTensor.set_requires_grad_effect
+ * @brief Tests `set_requires_grad()` toggles the requires_grad flag.
+ */
+TYPED_TEST(TypedTensor, set_requires_grad_effect)
+{
+    using value_t = TypeParam;
+    Tensor<value_t> t({1,1}, MemoryLocation::HOST);
+
+    t.set_requires_grad(true);
+    EXPECT_TRUE(t.requires_grad());
+
+    t.set_requires_grad(false);
+    EXPECT_FALSE(t.requires_grad());
+}
+
+/**
  * @test TypedTensor.is_view
  * @brief Verifies that is_view() correctly identifies tensor views.
  */

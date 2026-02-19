@@ -2633,6 +2633,37 @@ bool Tensor<value_t>::get_owns_data() const noexcept
 }
 
 template<typename value_t>
+std::shared_ptr<FunctionEdge<value_t>>
+Tensor<value_t>::get_source_function() const noexcept
+{
+    return m_meta.fn;
+}
+
+template<typename value_t>
+value_t* Tensor<value_t>::get_gradient() noexcept
+{
+    return m_meta.grad.get();
+}
+
+template<typename value_t>
+const value_t* Tensor<value_t>::get_gradient() const noexcept
+{
+    return m_meta.grad.get();
+}
+
+template<typename value_t>
+bool Tensor<value_t>::requires_grad() const noexcept
+{
+    return m_meta.requires_grad;
+}
+
+template<typename value_t>
+void Tensor<value_t>::set_requires_grad(bool require) noexcept
+{
+    m_meta.requires_grad = require;
+}
+
+template<typename value_t>
 bool Tensor<value_t>::is_view() const noexcept
 {
     return !m_own_data;

@@ -1102,6 +1102,67 @@ public:
     bool get_owns_data() const noexcept;
 
     /**
+    * @brief Returns a shared pointer to the function edge that produces
+    * this tensor.
+    *
+    * If this tensor is an output of a function, returns a shared pointer to the
+    * FunctionEdge representing that operation. If this tensor is an input or
+    * has no producing function, returns nullptr.
+    *
+    * @return std::shared_ptr<FunctionEdge<value_t>> Shared pointer to source
+    * function or nullptr.
+    */
+    std::shared_ptr<FunctionEdge<value_t>> get_source_function() const noexcept;
+
+    /**
+     * @brief Returns a pointer to the gradient tensor associated with this tensor.
+     *
+     * If this tensor is an output of a function and requires gradients, returns
+     * a pointer to the gradient tensor that will hold the computed gradients
+     * during backpropagation. If no gradients are required or if this tensor is
+     * an input, returns nullptr.
+     *
+     * @return value_t* Pointer to the gradient tensor or nullptr.
+     */
+    value_t* get_gradient() noexcept;
+
+    /**
+    * @brief Returns a const pointer to the gradient tensor associated with this tensor.
+    *
+    * If this tensor is an output of a function and requires gradients, returns
+    * a const pointer to the gradient tensor that will hold the computed gradients
+    * during backpropagation. If no gradients are required or if this tensor is
+    * an input, returns nullptr.
+    *
+    * @return const value_t* Const pointer to the gradient tensor or nullptr.
+    */
+    const value_t* get_gradient() const noexcept;
+
+    /**
+     * @brief Checks if this tensor requires gradients for backpropagation.
+     *
+     * A tensor requires gradients if it is an output of a function that has
+     * been marked to require gradients. This typically indicates that the
+     * tensor participates in a computation graph where gradients will be
+     * computed during backpropagation.
+     *
+     * @return bool True if this tensor requires gradients, false otherwise.
+     */
+    bool requires_grad() const noexcept;
+
+    /**
+     * @brief Sets whether this tensor requires gradients for backpropagation.
+     *
+     * If set to true, this tensor will be marked as requiring gradients, which
+     * means that if it is an output of a function, the library will compute
+     * gradients with respect to this tensor during backpropagation. If set to
+     * false, no gradients will be computed for this tensor.
+     *
+     * @param require Boolean flag indicating whether gradients are required.
+     */
+    void set_requires_grad(bool require) noexcept;
+
+    /**
      * @brief Checks if the tensor is a view (non-owning).
      *
      * A tensor is considered a view if it does not own its memory
