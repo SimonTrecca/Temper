@@ -38,10 +38,32 @@ class FunctionEdge
 public:
     /**
      * @brief Construct an edge with a mandatory operation name.
+     *
+     * Initializes an operation node with a unique name but no stored
+     * input or output tensors.
+     *
      * @param op_name Unique identifier (e.g., "add", "matmul").
      */
     explicit FunctionEdge(std::string op_name)
         : m_op_name(std::move(op_name)) {}
+
+    /**
+     * @brief Construct an edge with an operation name and connected tensors.
+     *
+     * Initializes an operation node with a unique name, the input tensors
+     * consumed by the operation, and an optional weak reference to the
+     * produced output tensor.
+     *
+     * @param op_name Unique identifier (e.g., "add", "matmul").
+     * @param inputs Input tensors consumed by this operation.
+     * @param output Output tensor produced by this operation.
+     */
+    FunctionEdge(std::string op_name,
+        std::vector<std::shared_ptr<Tensor<value_t>>> inputs,
+        std::weak_ptr<Tensor<value_t>> output = {})
+        : m_op_name(std::move(op_name)),
+          m_inputs(std::move(inputs)),
+          m_output(std::move(output)) {}
 
     /**
      * @brief Virtual destructor for safe inheritance.
@@ -75,16 +97,55 @@ public:
      * @return A vector of shared pointers to the input tensors.
      */
     virtual std::vector<std::shared_ptr<Tensor<value_t>>>
-    inputs() const = 0;
+    inputs() const
+    {
+        return m_inputs;
+    }
 
     /**
      * @brief Get the output tensor produced by this edge.
      * @return A shared pointer to the resulting tensor.
      */
-    virtual std::shared_ptr<Tensor<value_t>> output() const = 0;
+    virtual std::shared_ptr<Tensor<value_t>> output() const
+    {
+        return m_output.lock();
+    }
 
 protected:
-    std::string m_op_name; ///< Unique identifier for serialization.
+    /**
+     * @brief Replace the currently stored input tensors.
+     *
+     * Updates the stable references to the tensors consumed by this edge.
+     * Intended for use by derived operation nodes during setup.
+     *
+     * @param inputs New input tensor list.
+     */
+    void set_inputs(std::vector<std::shared_ptr<Tensor<value_t>>> inputs)
+    {
+        m_inputs = std::move(inputs);
+    }
+
+    /**
+     * @brief Replace the currently stored output tensor.
+     *
+     * Updates the weak reference to the tensor produced by this edge.
+     * Intended for use by derived operation nodes during setup.
+     *
+     * @param output New weak reference to the output tensor.
+     */
+    void set_output(std::weak_ptr<Tensor<value_t>> output)
+    {
+        m_output = std::move(output);
+    }
+
+    /// Unique identifier for serialization.
+    std::string m_op_name;
+
+    /// Stable references to the tensors consumed by this operation.
+    std::vector<std::shared_ptr<Tensor<value_t>>> m_inputs{};
+
+    /// Weak reference to the tensor produced by this operation.
+    std::weak_ptr<Tensor<value_t>> m_output{};
 };
 
 /**
