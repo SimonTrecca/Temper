@@ -4,14 +4,15 @@
  */
 
 #include "temper/Autograd.hpp"
+#include "temper/Tensor.hpp"
 
 namespace temper
 {
 
 template<typename value_t>
-AddEdge<value_t>::AddEdge(const std::shared_ptr<Tensor<value_t>> & lhs,
-                         const std::shared_ptr<Tensor<value_t>> & rhs,
-                         std::weak_ptr<Tensor<value_t>> out)
+AddEdge<value_t>::AddEdge(const std::shared_ptr<TensorNode<value_t>> & lhs,
+                         const std::shared_ptr<TensorNode<value_t>> & rhs,
+                         std::weak_ptr<TensorNode<value_t>> out)
     : FunctionEdge<value_t>("add", {lhs, rhs}, std::move(out))
 {
     // No-op; all state is initialized by the base class.

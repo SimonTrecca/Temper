@@ -118,7 +118,7 @@ TYPED_TEST(TypedConv2DTranspose, basic_s2_nopad)
     expected[48] = static_cast<value_t>(0.73154258728027344);
 
     std::vector<value_t> host(expected.size());
-    g_sycl_queue.memcpy(host.data(), result.m_p_data. get(),
+    g_sycl_queue.memcpy(host.data(), result.get_data(),
                         host.size() * sizeof(value_t)).wait();
 
     // Compare results
@@ -213,7 +213,7 @@ TYPED_TEST(TypedConv2DTranspose, basic_s2_pad1)
     expected[24] = static_cast<value_t>(0.35875755548477173);
 
     std::vector<value_t> host(expected.size());
-    g_sycl_queue.memcpy(host.data(), result.m_p_data. get(),
+    g_sycl_queue.memcpy(host.data(), result.get_data(),
                         host.size() * sizeof(value_t)).wait();
 
     // Compare results
@@ -371,7 +371,7 @@ TYPED_TEST(TypedConv2DTranspose, basic_s2_4x4)
     expected[80] = static_cast<value_t>(0.36320859193801880);
 
     std::vector<value_t> host(expected.size());
-    g_sycl_queue.memcpy(host.data(), result.m_p_data. get(),
+    g_sycl_queue.memcpy(host.data(), result.get_data(),
                         host.size() * sizeof(value_t)).wait();
 
     // Compare results
@@ -508,7 +508,7 @@ TYPED_TEST(TypedConv2DTranspose, multi_in_channels)
     expected[48] = static_cast<value_t>(-0.62703448534011841);
 
     std::vector<value_t> host(expected.size());
-    g_sycl_queue.memcpy(host.data(), result.m_p_data. get(),
+    g_sycl_queue.memcpy(host.data(), result.get_data(),
                         host.size() * sizeof(value_t)).wait();
 
     // Compare results
@@ -743,7 +743,7 @@ TYPED_TEST(TypedConv2DTranspose, multi_out_channels)
     expected[146] = static_cast<value_t>(-0.52460616827011108);
 
     std::vector<value_t> host(expected.size());
-    g_sycl_queue.memcpy(host.data(), result.m_p_data. get(),
+    g_sycl_queue.memcpy(host.data(), result.get_data(),
                         host.size() * sizeof(value_t)).wait();
 
     // Compare results
@@ -1028,7 +1028,7 @@ TYPED_TEST(TypedConv2DTranspose, multi_both_channels)
     expected[146] = static_cast<value_t>(-0.63585883378982544);
 
     std::vector<value_t> host(expected.size());
-    g_sycl_queue.memcpy(host.data(), result.m_p_data. get(),
+    g_sycl_queue.memcpy(host.data(), result.get_data(),
                         host.size() * sizeof(value_t)).wait();
 
     // Compare results
@@ -1163,7 +1163,7 @@ TYPED_TEST(TypedConv2DTranspose, s1_nopad)
     expected[48] = static_cast<value_t>(0.49912431836128235);
 
     std::vector<value_t> host(expected.size());
-    g_sycl_queue.memcpy(host.data(), result.m_p_data. get(),
+    g_sycl_queue.memcpy(host.data(), result.get_data(),
                         host.size() * sizeof(value_t)).wait();
 
     // Compare results
@@ -1351,7 +1351,7 @@ TYPED_TEST(TypedConv2DTranspose, s1_pad1)
     expected[49] = static_cast<value_t>(3.51830911636352539);
 
     std::vector<value_t> host(expected.size());
-    g_sycl_queue.memcpy(host.data(), result.m_p_data. get(),
+    g_sycl_queue.memcpy(host.data(), result.get_data(),
                         host.size() * sizeof(value_t)).wait();
 
     // Compare results
@@ -1497,7 +1497,7 @@ TYPED_TEST(TypedConv2DTranspose, nonsquare_kernel_3x2)
     expected[71] = static_cast<value_t>(2.92717933654785156);
 
     std::vector<value_t> host(expected.size());
-    g_sycl_queue.memcpy(host.data(), result.m_p_data. get(),
+    g_sycl_queue.memcpy(host.data(), result.get_data(),
                         host.size() * sizeof(value_t)).wait();
 
     // Compare results
@@ -1691,7 +1691,7 @@ TYPED_TEST(TypedConv2DTranspose, nonsquare_kernel_2x3)
     expected[87] = static_cast<value_t>(1.40143477916717529);
 
     std::vector<value_t> host(expected.size());
-    g_sycl_queue.memcpy(host.data(), result.m_p_data. get(),
+    g_sycl_queue.memcpy(host.data(), result.get_data(),
                         host.size() * sizeof(value_t)).wait();
 
     // Compare results
@@ -1776,7 +1776,7 @@ TYPED_TEST(TypedConv2DTranspose, asym_padding)
     expected[14] = static_cast<value_t>(0.66155934333801270);
 
     std::vector<value_t> host(expected.size());
-    g_sycl_queue.memcpy(host.data(), result.m_p_data. get(),
+    g_sycl_queue.memcpy(host.data(), result.get_data(),
                         host.size() * sizeof(value_t)).wait();
 
     // Compare results
@@ -1910,7 +1910,7 @@ TYPED_TEST(TypedConv2DTranspose, output_padding_1_1)
     expected[63] = static_cast<value_t>(0.00000000000000000);
 
     std::vector<value_t> host(expected.size());
-    g_sycl_queue.memcpy(host.data(), result.m_p_data. get(),
+    g_sycl_queue.memcpy(host.data(), result.get_data(),
                         host.size() * sizeof(value_t)).wait();
 
     // Compare results
@@ -2142,7 +2142,7 @@ TYPED_TEST(TypedConv2DTranspose, output_padding_1_0)
     expected[111] = static_cast<value_t>(-0.12370811402797699);
 
     std::vector<value_t> host(expected.size());
-    g_sycl_queue.memcpy(host.data(), result.m_p_data. get(),
+    g_sycl_queue.memcpy(host.data(), result.get_data(),
                         host.size() * sizeof(value_t)).wait();
 
     // Compare results
@@ -2243,7 +2243,7 @@ TYPED_TEST(TypedConv2DTranspose, large_stride_s3)
     expected[35] = static_cast<value_t>(0.85314631462097168);
 
     std::vector<value_t> host(expected.size());
-    g_sycl_queue.memcpy(host.data(), result.m_p_data. get(),
+    g_sycl_queue.memcpy(host.data(), result.get_data(),
                         host.size() * sizeof(value_t)).wait();
 
     // Compare results
@@ -2374,7 +2374,7 @@ TYPED_TEST(TypedConv2DTranspose, view_weird_strides)
     expected[15] = static_cast<value_t>(36.00000000000000000);
 
     std::vector<value_t> host(expected.size());
-    g_sycl_queue.memcpy(host.data(), result.m_p_data.get(),
+    g_sycl_queue.memcpy(host.data(), result.get_data(),
                         host.size() * sizeof(value_t)).wait();
 
     // compare element-wise

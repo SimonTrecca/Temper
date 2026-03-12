@@ -36,6 +36,7 @@ add_executable(temper_ut
   ut_ML.cpp
   ut_NN.cpp
   ut_Stats.cpp
+  ${CMAKE_SOURCE_DIR}/src/Autograd.cpp
   ${CMAKE_SOURCE_DIR}/src/Tensor.cpp
   ${CMAKE_SOURCE_DIR}/src/SYCLQueue.cpp
   ${CMAKE_SOURCE_DIR}/src/Math.cpp
@@ -46,6 +47,7 @@ add_executable(temper_ut
 
 add_executable(tensor_ut
   ut_Tensor.cpp
+  ${CMAKE_SOURCE_DIR}/src/Autograd.cpp
   ${CMAKE_SOURCE_DIR}/src/Tensor.cpp
   ${CMAKE_SOURCE_DIR}/src/SYCLQueue.cpp
   ${CMAKE_SOURCE_DIR}/src/Math.cpp
@@ -54,6 +56,7 @@ add_executable(tensor_ut
 
 add_executable(math_ut
   ut_Math.cpp
+  ${CMAKE_SOURCE_DIR}/src/Autograd.cpp
   ${CMAKE_SOURCE_DIR}/src/Tensor.cpp
   ${CMAKE_SOURCE_DIR}/src/SYCLQueue.cpp
   ${CMAKE_SOURCE_DIR}/src/Math.cpp
@@ -62,6 +65,7 @@ add_executable(math_ut
 
 add_executable(ml_ut
   ut_ML.cpp
+  ${CMAKE_SOURCE_DIR}/src/Autograd.cpp
   ${CMAKE_SOURCE_DIR}/src/Tensor.cpp
   ${CMAKE_SOURCE_DIR}/src/SYCLQueue.cpp
   ${CMAKE_SOURCE_DIR}/src/Math.cpp
@@ -71,6 +75,7 @@ add_executable(ml_ut
 
 add_executable(stats_ut
   ut_Stats.cpp
+  ${CMAKE_SOURCE_DIR}/src/Autograd.cpp
   ${CMAKE_SOURCE_DIR}/src/Tensor.cpp
   ${CMAKE_SOURCE_DIR}/src/SYCLQueue.cpp
   ${CMAKE_SOURCE_DIR}/src/Math.cpp
@@ -79,6 +84,7 @@ add_executable(stats_ut
 
 add_executable(nn_ut
   ut_NN.cpp
+  ${CMAKE_SOURCE_DIR}/src/Autograd.cpp
   ${CMAKE_SOURCE_DIR}/src/Tensor.cpp
   ${CMAKE_SOURCE_DIR}/src/SYCLQueue.cpp
   ${CMAKE_SOURCE_DIR}/src/Math.cpp

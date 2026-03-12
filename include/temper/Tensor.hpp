@@ -19,6 +19,51 @@
 namespace temper
 {
 
+template<typename value_t>
+struct TensorNode
+{
+    /// Logical pointer to the first element visible through this tensor.
+    std::shared_ptr<value_t> data{};
+
+    /// Logical dimensions of this tensor node.
+    std::vector<uint64_t> dimensions{};
+
+    /// Logical strides of this tensor node.
+    std::vector<uint64_t> strides{};
+
+    /// Whether this logical tensor owns its storage shape identity.
+    bool owns_data{true};
+
+    /// Memory location where the allocation resides.
+    MemoryLocation mem_loc{MemoryLocation::DEVICE};
+
+    /// Autograd state for this logical tensor node, not for shared storage.
+    AutogradMeta<value_t> meta{};
+
+    /// Default construct an empty node.
+    TensorNode() = default;
+
+    /**
+     * @brief Construct a node with full structural metadata.
+     *
+     * Strides may be passed empty when the caller will invoke
+     * @c compute_strides() immediately after construction.
+     * Data is left default and must be set after allocation when
+     * the node is owning.
+     */
+    TensorNode(std::vector<uint64_t> dims,
+               std::vector<uint64_t> node_strides,
+               bool owns,
+               MemoryLocation loc,
+               AutogradMeta<value_t> autograd)
+        : dimensions(std::move(dims))
+        , strides(std::move(node_strides))
+        , owns_data(owns)
+        , mem_loc(loc)
+        , meta(std::move(autograd))
+    {}
+};
+
 /**
  * @brief Class template for the Tensor data structure.
  * @tparam value_t Numeric types.
@@ -30,24 +75,9 @@ class Tensor
 {
 
 private:
-
-    /// Member pointer to data.
-	std::shared_ptr<value_t> m_p_data {};
-
-    /// Member dimensions for each axis.
-    std::vector<uint64_t>    m_dimensions {};
-
-    /// Member strides for each axis.
-    std::vector<uint64_t>    m_strides {};
-
-    /// Member boolean for data ownership; true if it's owned by tensor
-    bool                     m_own_data {true};
-
-    /// Member enumeration to indicate if data is on host or device.
-    MemoryLocation           m_mem_loc {MemoryLocation::DEVICE};
-
-    /// Metadata for automatic differentiation and graph replay.
-    AutogradMeta<value_t>    m_meta;
+    /// Stable internal tensor identity used for graph references.
+    std::shared_ptr<TensorNode<value_t>> m_node {
+        std::make_shared<TensorNode<value_t>>()};
 
     /**
      * @brief Computes strides using dimensions.

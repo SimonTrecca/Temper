@@ -26,6 +26,16 @@ template <typename value_t>
 class Tensor;
 
 /**
+ * @brief Forward declaration of TensorNode.
+ *
+ * TensorNode is the stable internal identity used by the autograd graph.
+ * It is separate from the public @ref Tensor wrapper so edges can keep
+ * durable references to graph operands and results.
+ */
+template <typename value_t>
+struct TensorNode;
+
+/**
  * @brief Base interface for a functional edge in the graph.
  *
  * A FunctionEdge represents the mathematical relationship between
@@ -59,8 +69,8 @@ public:
      * @param output Output tensor produced by this operation.
      */
     FunctionEdge(std::string op_name,
-        std::vector<std::shared_ptr<Tensor<value_t>>> inputs,
-        std::weak_ptr<Tensor<value_t>> output = {})
+                std::vector<std::shared_ptr<TensorNode<value_t>>> inputs,
+                std::weak_ptr<TensorNode<value_t>> output = {})
         : m_op_name(std::move(op_name)),
           m_inputs(std::move(inputs)),
           m_output(std::move(output)) {}
@@ -96,7 +106,7 @@ public:
      * @brief Get the input tensors connected by this edge.
      * @return A vector of shared pointers to the input tensors.
      */
-    virtual std::vector<std::shared_ptr<Tensor<value_t>>>
+    virtual std::vector<std::shared_ptr<TensorNode<value_t>>>
     inputs() const
     {
         return m_inputs;
@@ -106,7 +116,7 @@ public:
      * @brief Get the output tensor produced by this edge.
      * @return A shared pointer to the resulting tensor.
      */
-    virtual std::shared_ptr<Tensor<value_t>> output() const
+    virtual std::shared_ptr<TensorNode<value_t>> output() const
     {
         return m_output.lock();
     }
@@ -120,7 +130,7 @@ protected:
      *
      * @param inputs New input tensor list.
      */
-    void set_inputs(std::vector<std::shared_ptr<Tensor<value_t>>> inputs)
+    void set_inputs(std::vector<std::shared_ptr<TensorNode<value_t>>> inputs)
     {
         m_inputs = std::move(inputs);
     }
@@ -133,7 +143,7 @@ protected:
      *
      * @param output New weak reference to the output tensor.
      */
-    void set_output(std::weak_ptr<Tensor<value_t>> output)
+    void set_output(std::weak_ptr<TensorNode<value_t>> output)
     {
         m_output = std::move(output);
     }
@@ -142,10 +152,10 @@ protected:
     std::string m_op_name;
 
     /// Stable references to the tensors consumed by this operation.
-    std::vector<std::shared_ptr<Tensor<value_t>>> m_inputs{};
+    std::vector<std::shared_ptr<TensorNode<value_t>>> m_inputs{};
 
-    /// Weak reference to the tensor produced by this operation.
-    std::weak_ptr<Tensor<value_t>> m_output{};
+    /// Weak reference to the node produced by this operation.
+    std::weak_ptr<TensorNode<value_t>> m_output{};
 };
 
 /**
@@ -188,9 +198,9 @@ public:
      * @param rhs Right-hand input tensor.
      * @param out Optional weak reference to the produced output tensor.
      */
-    AddEdge(const std::shared_ptr<Tensor<value_t>> & lhs,
-            const std::shared_ptr<Tensor<value_t>> & rhs,
-            std::weak_ptr<Tensor<value_t>> out = {});
+        AddEdge(const std::shared_ptr<TensorNode<value_t>> & lhs,
+            const std::shared_ptr<TensorNode<value_t>> & rhs,
+            std::weak_ptr<TensorNode<value_t>> out = {});
 
     /**
      * @brief Re-execute the forward pass.

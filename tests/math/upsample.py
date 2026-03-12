@@ -126,7 +126,7 @@ def create_typed_test_upsample(testname, input_shape, stride, mode, seed):
 
     # Copy result to host
     lines.append('    std::vector<value_t> host(expected.size());')
-    lines.append('    g_sycl_queue.memcpy(host.data(), result.m_p_data.get(),')
+    lines.append('    g_sycl_queue.memcpy(host.data(), result.get_data(),')
     lines.append('                        host.size() * sizeof(value_t)).wait();')
     lines.append('')
 
@@ -260,7 +260,7 @@ def make_view_strides_upsample_test(testname, owner_vals, offset,
 
     # Copy and compare
     lines.append('    std::vector<value_t> host(expected.size());')
-    lines.append('    g_sycl_queue.memcpy(host.data(), result.m_p_data. get(),')
+    lines.append('    g_sycl_queue.memcpy(host.data(), result.get_data(),')
     lines.append('                        host.size() * sizeof(value_t)).wait();')
     lines.append('')
     lines.append('    // compare element-wise')

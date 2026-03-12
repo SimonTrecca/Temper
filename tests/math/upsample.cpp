@@ -108,7 +108,7 @@ TYPED_TEST(TypedUpsample, zeros_simple_2x2_stride2)
     expected[8] = static_cast<value_t>(-0.25243604183197021);
 
     std::vector<value_t> host(expected.size());
-    g_sycl_queue.memcpy(host.data(), result.m_p_data.get(),
+        g_sycl_queue.memcpy(host.data(), result.get_data(),
                         host.size() * sizeof(value_t)).wait();
 
     // Compare results
@@ -255,7 +255,7 @@ TYPED_TEST(TypedUpsample, zeros_3channels_3x3_stride2)
     expected[74] = static_cast<value_t>(0.16690464317798615);
 
     std::vector<value_t> host(expected.size());
-    g_sycl_queue.memcpy(host.data(), result.m_p_data.get(),
+        g_sycl_queue.memcpy(host.data(), result.get_data(),
                         host.size() * sizeof(value_t)).wait();
 
     // Compare results
@@ -532,7 +532,7 @@ TYPED_TEST(TypedUpsample, zeros_multichannel_4x4_stride3)
     expected[199] = static_cast<value_t>(0.31429308652877808);
 
     std::vector<value_t> host(expected.size());
-    g_sycl_queue.memcpy(host.data(), result.m_p_data.get(),
+        g_sycl_queue.memcpy(host.data(), result.get_data(),
                         host.size() * sizeof(value_t)).wait();
 
     // Compare results
@@ -637,7 +637,7 @@ TYPED_TEST(TypedUpsample, zeros_nonsquare_3x5_stride2)
     expected[44] = static_cast<value_t>(-1.20194447040557861);
 
     std::vector<value_t> host(expected.size());
-    g_sycl_queue.memcpy(host.data(), result.m_p_data.get(),
+        g_sycl_queue.memcpy(host.data(), result.get_data(),
                         host.size() * sizeof(value_t)).wait();
 
     // Compare results
@@ -1072,7 +1072,7 @@ TYPED_TEST(TypedUpsample, zeros_batch_2x3x4x4_stride2)
     expected[293] = static_cast<value_t>(-0.92746239900588989);
 
     std::vector<value_t> host(expected.size());
-    g_sycl_queue.memcpy(host.data(), result.m_p_data.get(),
+        g_sycl_queue.memcpy(host.data(), result.get_data(),
                         host.size() * sizeof(value_t)).wait();
 
     // Compare results
@@ -1130,7 +1130,7 @@ TYPED_TEST(TypedUpsample, nearest_simple_2x2_stride2)
     expected[8] = static_cast<value_t>(0.05936607718467712);
 
     std::vector<value_t> host(expected.size());
-    g_sycl_queue.memcpy(host.data(), result.m_p_data.get(),
+        g_sycl_queue.memcpy(host.data(), result.get_data(),
                         host.size() * sizeof(value_t)).wait();
 
     // Compare results
@@ -1277,7 +1277,7 @@ TYPED_TEST(TypedUpsample, nearest_3channels_3x3_stride2)
     expected[74] = static_cast<value_t>(-0.05908547341823578);
 
     std::vector<value_t> host(expected.size());
-    g_sycl_queue.memcpy(host.data(), result.m_p_data.get(),
+        g_sycl_queue.memcpy(host.data(), result.get_data(),
                         host.size() * sizeof(value_t)).wait();
 
     // Compare results
@@ -1554,7 +1554,7 @@ TYPED_TEST(TypedUpsample, nearest_multichannel_4x4_stride3)
     expected[199] = static_cast<value_t>(-1.11192452907562256);
 
     std::vector<value_t> host(expected.size());
-    g_sycl_queue.memcpy(host.data(), result.m_p_data.get(),
+        g_sycl_queue.memcpy(host.data(), result.get_data(),
                         host.size() * sizeof(value_t)).wait();
 
     // Compare results
@@ -1659,7 +1659,7 @@ TYPED_TEST(TypedUpsample, nearest_nonsquare_3x5_stride2)
     expected[44] = static_cast<value_t>(-0.88933116197586060);
 
     std::vector<value_t> host(expected.size());
-    g_sycl_queue.memcpy(host.data(), result.m_p_data.get(),
+    g_sycl_queue.memcpy(host.data(), result.get_data(),
                         host.size() * sizeof(value_t)).wait();
 
     // Compare results
@@ -2094,7 +2094,7 @@ TYPED_TEST(TypedUpsample, nearest_batch_2x3x4x4_stride2)
     expected[293] = static_cast<value_t>(-0.32171306014060974);
 
     std::vector<value_t> host(expected.size());
-    g_sycl_queue.memcpy(host.data(), result.m_p_data.get(),
+    g_sycl_queue.memcpy(host.data(), result.get_data(),
                         host.size() * sizeof(value_t)).wait();
 
     // Compare results
@@ -2175,7 +2175,7 @@ TYPED_TEST(TypedUpsample, zeros_stride1_identity)
     expected[17] = static_cast<value_t>(-0.74491786956787109);
 
     std::vector<value_t> host(expected.size());
-    g_sycl_queue.memcpy(host.data(), result.m_p_data.get(),
+    g_sycl_queue.memcpy(host.data(), result.get_data(),
                         host.size() * sizeof(value_t)).wait();
 
     // Compare results
@@ -2256,7 +2256,7 @@ TYPED_TEST(TypedUpsample, nearest_stride1_identity)
     expected[17] = static_cast<value_t>(0.42467221617698669);
 
     std::vector<value_t> host(expected.size());
-    g_sycl_queue.memcpy(host.data(), result.m_p_data.get(),
+    g_sycl_queue.memcpy(host.data(), result.get_data(),
                         host.size() * sizeof(value_t)).wait();
 
     // Compare results
@@ -2341,7 +2341,7 @@ TYPED_TEST(TypedUpsample, zeros_large_stride5)
     expected[35] = static_cast<value_t>(0.48563247919082642);
 
     std::vector<value_t> host(expected.size());
-    g_sycl_queue.memcpy(host.data(), result.m_p_data.get(),
+    g_sycl_queue.memcpy(host.data(), result.get_data(),
                         host.size() * sizeof(value_t)).wait();
 
     // Compare results
@@ -2426,7 +2426,7 @@ TYPED_TEST(TypedUpsample, nearest_large_stride5)
     expected[35] = static_cast<value_t>(-1.02678322792053223);
 
     std::vector<value_t> host(expected.size());
-    g_sycl_queue.memcpy(host.data(), result.m_p_data.get(),
+    g_sycl_queue.memcpy(host.data(), result.get_data(),
                         host.size() * sizeof(value_t)).wait();
 
     // Compare results
@@ -2491,7 +2491,7 @@ TYPED_TEST(TypedUpsample, zeros_view_with_weird_strides)
     expected[17] = static_cast<value_t>(26.00000000000000000);
 
     std::vector<value_t> host(expected.size());
-    g_sycl_queue.memcpy(host.data(), result.m_p_data. get(),
+    g_sycl_queue.memcpy(host.data(), result.get_data(),
                         host.size() * sizeof(value_t)).wait();
 
     // compare element-wise
@@ -2556,7 +2556,7 @@ TYPED_TEST(TypedUpsample, nearest_view_with_weird_strides)
     expected[17] = static_cast<value_t>(26.00000000000000000);
 
     std::vector<value_t> host(expected.size());
-    g_sycl_queue.memcpy(host.data(), result.m_p_data. get(),
+    g_sycl_queue.memcpy(host.data(), result.get_data(),
                         host.size() * sizeof(value_t)).wait();
 
     // compare element-wise
@@ -2652,7 +2652,7 @@ TYPED_TEST(TypedUpsample, zeros_view_nonunit_strides)
     expected[48] = static_cast<value_t>(29.00000000000000000);
 
     std::vector<value_t> host(expected.size());
-    g_sycl_queue.memcpy(host.data(), result.m_p_data. get(),
+    g_sycl_queue.memcpy(host.data(), result.get_data(),
                         host.size() * sizeof(value_t)).wait();
 
     // compare element-wise
@@ -2747,7 +2747,7 @@ TYPED_TEST(TypedUpsample, nearest_view_nonunit_strides)
     expected[48] = static_cast<value_t>(29.00000000000000000);
 
     std::vector<value_t> host(expected.size());
-    g_sycl_queue.memcpy(host.data(), result.m_p_data. get(),
+    g_sycl_queue.memcpy(host.data(), result.get_data(),
                         host.size() * sizeof(value_t)).wait();
 
     // compare element-wise

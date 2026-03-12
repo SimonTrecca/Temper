@@ -112,7 +112,7 @@ def create_typed_test_conv2d_transpose(testname, in_channels, out_channels,
 
     # Copy result to host
     lines.append('    std::vector<value_t> host(expected.size());')
-    lines.append('    g_sycl_queue.memcpy(host.data(), result.m_p_data. get(),')
+    lines.append('    g_sycl_queue.memcpy(host.data(), result.get_data(),')
     lines.append('                        host.size() * sizeof(value_t)).wait();')
     lines.append('')
 
@@ -230,7 +230,7 @@ def make_view_strides_conv2d_transpose_test(testname,
 
     # Copy and compare
     lines.append('    std::vector<value_t> host(expected.size());')
-    lines.append('    g_sycl_queue.memcpy(host.data(), result.m_p_data.get(),')
+    lines.append('    g_sycl_queue.memcpy(host.data(), result.get_data(),')
     lines.append('                        host.size() * sizeof(value_t)).wait();')
     lines.append('')
     lines.append('    // compare element-wise')

@@ -39,9 +39,9 @@ TEST(RANDN, randn_deterministic_and_shape)
 
     std::vector<float> host_a(total), host_b(total);
     g_sycl_queue.memcpy(host_a.data(),
-        a.m_p_data.get(), sizeof(float) * total).wait();
+        a.m_node->data.get(), sizeof(float) * total).wait();
     g_sycl_queue.memcpy(host_b.data(),
-        b.m_p_data.get(), sizeof(float) * total).wait();
+        b.m_node->data.get(), sizeof(float) * total).wait();
 
     for (uint64_t i = 0; i < total; ++i)
     {
@@ -67,7 +67,7 @@ TEST(NORM, pdf_basic_values)
     Tensor<float> out = stats::norm::pdf<float>(x, loc, scale);
     std::vector<float> host_out(3);
     g_sycl_queue.memcpy(host_out.data(),
-        out.m_p_data.get(), sizeof(float) * 3).wait();
+        out.m_node->data.get(), sizeof(float) * 3).wait();
     std::vector<float> expected = {
         0.3989422804014327f,
         0.24197072451914337f,
@@ -98,7 +98,7 @@ TEST(NORM, pdf_broadcast_loc_scalar_scale_vector_x_vector)
     Tensor<float> out = stats::norm::pdf<float>(x, loc, scale);
     std::vector<float> host_out(4);
     g_sycl_queue.memcpy(host_out.data(),
-        out.m_p_data.get(), sizeof(float) * 4).wait();
+        out.m_node->data.get(), sizeof(float) * 4).wait();
     std::vector<float> expected = {
         0.24197072451914337f,
         0.19947114020071635f,
@@ -130,7 +130,7 @@ TEST(NORM, pdf_broadcast_x_scalar_loc_vector_scale_vector)
     Tensor<float> out = stats::norm::pdf<float>(x, loc, scale);
     std::vector<float> host_out(3);
     g_sycl_queue.memcpy(host_out.data(),
-        out.m_p_data.get(), sizeof(float) * 3).wait();
+        out.m_node->data.get(), sizeof(float) * 3).wait();
     std::vector<float> expected = {
         0.24197072451914337f,
         0.7978845608028654f,
@@ -161,7 +161,7 @@ TEST(NORM, pdf_broadcast_2d_x_loc_vector_scale_scalar)
     Tensor<float> out = stats::norm::pdf<float>(x, loc, scale);
     std::vector<float> host_out(4);
     g_sycl_queue.memcpy(host_out.data(),
-        out.m_p_data.get(), sizeof(float) * 4).wait();
+        out.m_node->data.get(), sizeof(float) * 4).wait();
     std::vector<float> expected = {
         0.3989422804014327f,
         0.3989422804014327f,
@@ -191,7 +191,7 @@ TEST(NORM, pdf_broadcast_mixed_shapes_all_operands)
     Tensor<float> out = stats::norm::pdf<float>(x, loc, scale);
     std::vector<float> host_out(6);
     g_sycl_queue.memcpy(host_out.data(),
-        out.m_p_data.get(), sizeof(float) * 6).wait();
+        out.m_node->data.get(), sizeof(float) * 6).wait();
     std::vector<float> expected = {
         0.3989422804014327f,
         0.10798193302637613f,
@@ -257,7 +257,7 @@ TEST(NORM, pdf_view_with_weird_strides)
 
     std::vector<float> host_out(total);
     g_sycl_queue.memcpy(host_out.data(),
-        out.m_p_data.get(), sizeof(float) * total).wait();
+        out.m_node->data.get(), sizeof(float) * total).wait();
 
     std::vector<float> expected(total, 0.3989422804014327f);
     const double tol = 1e-6;
@@ -356,7 +356,7 @@ TEST(NORM, logpdf_basic_values)
     Tensor<float> out = stats::norm::logpdf<float>(x, loc, scale);
     std::vector<float> host_out(3);
     g_sycl_queue.memcpy(host_out.data(),
-        out.m_p_data.get(), sizeof(float) * 3).wait();
+        out.m_node->data.get(), sizeof(float) * 3).wait();
     std::vector<float> expected = {
         -0.9189385332046727f,
         -1.4189385332046727f,
@@ -387,7 +387,7 @@ TEST(NORM, logpdf_broadcast_loc_scalar_scale_vector_x_vector)
     Tensor<float> out = stats::norm::logpdf<float>(x, loc, scale);
     std::vector<float> host_out(4);
     g_sycl_queue.memcpy(host_out.data(),
-        out.m_p_data.get(), sizeof(float) * 4).wait();
+        out.m_node->data.get(), sizeof(float) * 4).wait();
     std::vector<float> expected = {
         -1.4189385332046727f,
         -1.612085713764618f,
@@ -419,7 +419,7 @@ TEST(NORM, logpdf_broadcast_2d_x_loc_vector_scale_scalar)
     Tensor<float> out = stats::norm::logpdf<float>(x, loc, scale);
     std::vector<float> host_out(4);
     g_sycl_queue.memcpy(host_out.data(),
-        out.m_p_data.get(), sizeof(float) * 4).wait();
+        out.m_node->data.get(), sizeof(float) * 4).wait();
     std::vector<float> expected = {
         -0.9189385332046727f,
         -0.9189385332046727f,
@@ -449,7 +449,7 @@ TEST(NORM, logpdf_broadcast_mixed_shapes_all_operands)
     Tensor<float> out = stats::norm::logpdf<float>(x, loc, scale);
     std::vector<float> host_out(6);
     g_sycl_queue.memcpy(host_out.data(),
-        out.m_p_data.get(), sizeof(float) * 6).wait();
+        out.m_node->data.get(), sizeof(float) * 6).wait();
     std::vector<float> expected = {
         -0.9189385332046727f,
         -2.2257913526447273f,
@@ -511,7 +511,7 @@ TEST(NORM, logpdf_view_with_weird_strides)
         scale_alias);
     std::vector<float> host_out(total);
     g_sycl_queue.memcpy(host_out.data(),
-        out.m_p_data.get(), sizeof(float) * total).wait();
+        out.m_node->data.get(), sizeof(float) * total).wait();
     std::vector<float> expected(total, -0.9189385332046727f);
     const double tol = 1e-6;
     for (uint64_t i = 0; i < total; ++i)
@@ -594,7 +594,7 @@ TEST(NORM, cdf_basic_values)
     Tensor<float> out = stats::norm::cdf<float>(x, loc, scale);
     std::vector<float> host_out(3);
     g_sycl_queue.memcpy(host_out.data(),
-        out.m_p_data.get(), sizeof(float) * 3).wait();
+        out.m_node->data.get(), sizeof(float) * 3).wait();
     std::vector<float> expected = {
         0.5f,
         0.8413447460685429f,
@@ -625,7 +625,7 @@ TEST(NORM, cdf_broadcast_loc_scalar_scale_vector_x_vector)
     Tensor<float> out = stats::norm::cdf<float>(x, loc, scale);
     std::vector<float> host_out(4);
     g_sycl_queue.memcpy(host_out.data(),
-        out.m_p_data.get(), sizeof(float) * 4).wait();
+        out.m_node->data.get(), sizeof(float) * 4).wait();
     std::vector<float> expected = {
         0.15865525393145707f,
         0.5f,
@@ -657,7 +657,7 @@ TEST(NORM, cdf_broadcast_x_scalar_loc_vector_scale_vector)
     Tensor<float> out = stats::norm::cdf<float>(x, loc, scale);
     std::vector<float> host_out(3);
     g_sycl_queue.memcpy(host_out.data(),
-        out.m_p_data.get(), sizeof(float) * 3).wait();
+        out.m_node->data.get(), sizeof(float) * 3).wait();
     std::vector<float> expected = {
         0.8413447460685429f,
         0.5f,
@@ -688,7 +688,7 @@ TEST(NORM, cdf_broadcast_2d_x_loc_vector_scale_scalar)
     Tensor<float> out = stats::norm::cdf<float>(x, loc, scale);
     std::vector<float> host_out(4);
     g_sycl_queue.memcpy(host_out.data(),
-        out.m_p_data.get(), sizeof(float) * 4).wait();
+        out.m_node->data.get(), sizeof(float) * 4).wait();
     std::vector<float> expected = {
         0.5f,
         0.5f,
@@ -718,7 +718,7 @@ TEST(NORM, cdf_broadcast_mixed_shapes_all_operands)
     Tensor<float> out = stats::norm::cdf<float>(x, loc, scale);
     std::vector<float> host_out(6);
     g_sycl_queue.memcpy(host_out.data(),
-        out.m_p_data.get(), sizeof(float) * 6).wait();
+        out.m_node->data.get(), sizeof(float) * 6).wait();
     std::vector<float> expected = {
         0.5f,
         0.02275013194817921f,
@@ -784,7 +784,7 @@ TEST(NORM, cdf_view_with_weird_strides)
 
     std::vector<float> host_out(total);
     g_sycl_queue.memcpy(host_out.data(),
-        out.m_p_data.get(), sizeof(float) * total).wait();
+        out.m_node->data.get(), sizeof(float) * total).wait();
 
     std::vector<float> expected(total, 0.5f);
     const double tol = 1e-6;
@@ -913,7 +913,7 @@ TEST(NORM, ppf_view_and_alias)
 
     std::vector<float> host_out(6);
     g_sycl_queue.memcpy(host_out.data(),
-        out.m_p_data.get(), sizeof(float) * 6).wait();
+        out.m_node->data.get(), sizeof(float) * 6).wait();
 
     EXPECT_FLOAT_EQ(host_out[0], 10.0f);
     EXPECT_FLOAT_EQ(host_out[1], 10.0f);
@@ -1035,7 +1035,7 @@ TEST(NORM, isf_basic_quantiles)
     Tensor<float> out = stats::norm::isf<float>(q, loc, scale);
     std::vector<float> host_out(3);
     g_sycl_queue.memcpy(host_out.data(),
-        out.m_p_data.get(), sizeof(float) * 3).wait();
+        out.m_node->data.get(), sizeof(float) * 3).wait();
     const double tol = 1e-5;
     EXPECT_NEAR(static_cast<double>(host_out[0]), 0.0, tol);
     EXPECT_NEAR(static_cast<double>(host_out[1]), -1.0, tol);
@@ -1081,9 +1081,9 @@ TEST(NORM, isf_matches_ppf_with_complement)
     std::vector<float> host_expected(total);
     std::vector<float> host_actual(total);
     g_sycl_queue.memcpy(host_expected.data(),
-        expected.m_p_data.get(), sizeof(float) * total).wait();
+        expected.m_node->data.get(), sizeof(float) * total).wait();
     g_sycl_queue.memcpy(host_actual.data(),
-        actual.m_p_data.get(), sizeof(float) * total).wait();
+        actual.m_node->data.get(), sizeof(float) * total).wait();
     const double tol = 1e-6;
     for (uint64_t i = 0; i < total; ++i)
     {
@@ -1132,7 +1132,7 @@ TEST(NORM, isf_view_and_alias)
         scale_alias);
     std::vector<float> host_out(6);
     g_sycl_queue.memcpy(host_out.data(),
-        out.m_p_data.get(), sizeof(float) * 6).wait();
+        out.m_node->data.get(), sizeof(float) * 6).wait();
     EXPECT_FLOAT_EQ(host_out[0], 10.0f);
     EXPECT_FLOAT_EQ(host_out[1], 10.0f);
     EXPECT_FLOAT_EQ(host_out[2], 10.0f);
@@ -1256,9 +1256,9 @@ TEST(NORM, rvs_matches_ppf_with_seed)
     std::vector<float> host_expected(total);
     std::vector<float> host_actual(total);
     g_sycl_queue.memcpy(host_expected.data(),
-        expected.m_p_data.get(), sizeof(float) * total).wait();
+        expected.m_node->data.get(), sizeof(float) * total).wait();
     g_sycl_queue.memcpy(host_actual.data(),
-        actual.m_p_data.get(), sizeof(float) * total).wait();
+        actual.m_node->data.get(), sizeof(float) * total).wait();
 
     const double tol = 1e-6;
     for (uint64_t i = 0; i < total; ++i)
@@ -1323,9 +1323,9 @@ TEST(NORM, rvs_view_and_alias)
     std::vector<float> host_expected(total);
     std::vector<float> host_actual(total);
     g_sycl_queue.memcpy(host_expected.data(),
-        expected.m_p_data.get(), sizeof(float) * total).wait();
+        expected.m_node->data.get(), sizeof(float) * total).wait();
     g_sycl_queue.memcpy(host_actual.data(),
-        actual.m_p_data.get(), sizeof(float) * total).wait();
+        actual.m_node->data.get(), sizeof(float) * total).wait();
 
     const double tol = 1e-6;
     for (uint64_t i = 0; i < total; ++i)
@@ -1370,7 +1370,7 @@ TEST(NORM, mean_returns_loc)
 
     std::vector<float> host_out(3);
     g_sycl_queue.memcpy(host_out.data(),
-        out.m_p_data.get(), sizeof(float) * 3).wait();
+        out.m_node->data.get(), sizeof(float) * 3).wait();
 
     for (size_t i = 0; i < loc_vals.size(); ++i)
     {
@@ -1395,7 +1395,7 @@ TEST(NORM, var_scale_squared)
 
     std::vector<float> host_out(3);
     g_sycl_queue.memcpy(host_out.data(),
-        out.m_p_data.get(), sizeof(float) * 3).wait();
+        out.m_node->data.get(), sizeof(float) * 3).wait();
 
     std::vector<float> expected = {1.0f, 4.0f, 0.25f};
     const double tol = 1e-6;
@@ -1424,7 +1424,7 @@ TEST(NORM, stddev_returns_scale)
     const uint64_t total = 4;
     std::vector<float> host_out(total);
     g_sycl_queue.memcpy(host_out.data(),
-        out.m_p_data.get(), sizeof(float) * total).wait();
+        out.m_node->data.get(), sizeof(float) * total).wait();
 
     const double tol = 1e-6;
     for (size_t i = 0; i < total; ++i)

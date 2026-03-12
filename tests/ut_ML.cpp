@@ -246,7 +246,7 @@ TYPED_TEST(TypedOnehot, basic_2d)
     ASSERT_EQ(N, 12u);
 
     std::vector<value_t> host(N);
-    g_sycl_queue.memcpy(host.data(), out.m_p_data.get(),
+    g_sycl_queue.memcpy(host.data(), out.m_node->data.get(),
                         sizeof(value_t) * N).wait();
 
     std::vector<value_t> expected = {
@@ -301,7 +301,7 @@ TYPED_TEST(TypedOnehot, basic_axis_negative)
     ASSERT_EQ(N, 12u);
 
     std::vector<value_t> host(N);
-    g_sycl_queue.memcpy(host.data(), out.m_p_data.get(),
+    g_sycl_queue.memcpy(host.data(), out.m_node->data.get(),
                         sizeof(value_t) * N).wait();
 
     std::vector<value_t> expected = {
@@ -353,7 +353,7 @@ TYPED_TEST(TypedOnehot, alias_view_1d)
 
     ASSERT_EQ(out.get_num_elements(), 5u);
     std::vector<value_t> host(5);
-    g_sycl_queue.memcpy(host.data(), out.m_p_data.get(),
+    g_sycl_queue.memcpy(host.data(), out.m_node->data.get(),
                         sizeof(value_t) * 5).wait();
 
     std::vector<value_t> expected = {
@@ -424,7 +424,7 @@ TYPED_TEST(TypedOnehot, custom_on_off_axis0_first_index)
 
     const uint64_t N = out.get_num_elements();
     std::vector<value_t> host(N);
-    g_sycl_queue.memcpy(host.data(), out.m_p_data.get(),
+    g_sycl_queue.memcpy(host.data(), out.m_node->data.get(),
                         sizeof(value_t) * N).wait();
 
     std::vector<value_t> expected;
@@ -484,7 +484,7 @@ TYPED_TEST(TypedOnehot, depth_one_identity_like)
     EXPECT_EQ(out.get_dimensions(), t.get_dimensions());
 
     std::vector<value_t> host(out.get_num_elements());
-    g_sycl_queue.memcpy(host.data(), out.m_p_data.get(),
+    g_sycl_queue.memcpy(host.data(), out.m_node->data.get(),
                         sizeof(value_t) * host.size()).wait();
 
     EXPECT_FLOAT_EQ(host[0 * 3 + 0], static_cast<value_t>(7.0));
@@ -515,7 +515,7 @@ TYPED_TEST(TypedOnehot, onehot_3d_axis2_example)
 
     ASSERT_EQ(out.get_num_elements(), 5u);
     std::vector<value_t> host(5);
-    g_sycl_queue.memcpy(host.data(), out.m_p_data.get(),
+    g_sycl_queue.memcpy(host.data(), out.m_node->data.get(),
                         sizeof(value_t) * 5).wait();
 
     if constexpr (std::is_floating_point_v<value_t>)
@@ -584,7 +584,7 @@ TYPED_TEST(TypedOnehot, alias_view_2d_column_axis)
 
     const uint64_t N = out.get_num_elements();
     std::vector<value_t> host(N);
-    g_sycl_queue.memcpy(host.data(), out.m_p_data.get(),
+    g_sycl_queue.memcpy(host.data(), out.m_node->data.get(),
                         sizeof(value_t) * N).wait();
 
     std::vector<value_t> expected = {
@@ -667,7 +667,7 @@ TEST(SOFTMAX, softmax_basic_1d)
 
     std::vector<float> host(N);
     g_sycl_queue.memcpy(host.data(),
-        out.m_p_data.get(), sizeof(float) * N).wait();
+        out.m_node->data.get(), sizeof(float) * N).wait();
 
     const double e1 = 2.71828182845904523536;
     const double e2 = 7.38905609893065022723;
@@ -703,7 +703,7 @@ TEST(SOFTMAX, softmax_2d_axis1)
 
     std::vector<float> host(N);
     g_sycl_queue.memcpy(host.data(),
-        out.m_p_data.get(), sizeof(float) * N).wait();
+        out.m_node->data.get(), sizeof(float) * N).wait();
 
     const double e1 = 2.71828182845904523536;
     const double e2 = 7.38905609893065022723;
@@ -739,7 +739,7 @@ TEST(SOFTMAX, softmax_2d_axis0)
     ASSERT_EQ(N, 6u);
 
     std::vector<float> host(N);
-    g_sycl_queue.memcpy(host.data(), out.m_p_data.get(), sizeof(float) * N).wait();
+    g_sycl_queue.memcpy(host.data(), out.m_node->data.get(), sizeof(float) * N).wait();
 
     for (uint64_t r = 0; r < 2; ++r)
     {
@@ -777,7 +777,7 @@ TEST(SOFTMAX, alias_view_weird_strides)
 
     std::vector<float> host(4);
     g_sycl_queue.memcpy(host.data(),
-        out.m_p_data.get(), sizeof(float) * 4).wait();
+        out.m_node->data.get(), sizeof(float) * 4).wait();
 
     const double r0_c0 = 0.11920292202211755;
     const double r0_c1 = 0.88079707797788245;
@@ -809,7 +809,7 @@ TEST(SOFTMAX, softmax_negative_indexing)
 
     std::vector<float> host(N);
     g_sycl_queue.memcpy(host.data(),
-        out.m_p_data.get(), sizeof(float) * N).wait();
+        out.m_node->data.get(), sizeof(float) * N).wait();
 
     const double e1 = 2.71828182845904523536;
     const double e2 = 7.38905609893065022723;
@@ -847,7 +847,7 @@ TEST(SOFTMAX, softmax_flatten)
 
     std::vector<float> host(N);
     g_sycl_queue.memcpy(host.data(),
-        out.m_p_data.get(), sizeof(float) * N).wait();
+        out.m_node->data.get(), sizeof(float) * N).wait();
 
     const double e0 = std::exp(0.0);
     const double e1 = std::exp(1.0);
@@ -1003,7 +1003,7 @@ TEST(CROSS_ENTROPY, broadcast_labels_mean)
     ASSERT_EQ(out.get_num_elements(), 1u);
     std::vector<float> host(1);
     g_sycl_queue.memcpy(host.data(),
-        out.m_p_data.get(), sizeof(float) * 1).wait();
+        out.m_node->data.get(), sizeof(float) * 1).wait();
 
     const double expected = -std::log(0.5);
     EXPECT_NEAR(static_cast<double>(host[0]), expected, 1e-4);
@@ -1036,7 +1036,7 @@ TEST(CROSS_ENTROPY, broadcast_labels_no_reduction)
     ASSERT_EQ(N, 2u);
     std::vector<float> host(N, -1.0f);
     g_sycl_queue.memcpy(host.data(),
-        out.m_p_data.get(), sizeof(float) * N).wait();
+        out.m_node->data.get(), sizeof(float) * N).wait();
 
     const double expected = -std::log(0.5);
     for (uint64_t i = 0; i < N; ++i)
@@ -1070,7 +1070,7 @@ TEST(CROSS_ENTROPY, from_probs_no_logits)
     ASSERT_EQ(out.get_num_elements(), 1u);
     std::vector<float> host(1);
     g_sycl_queue.memcpy(host.data(),
-        out.m_p_data.get(), sizeof(float) * 1).wait();
+        out.m_node->data.get(), sizeof(float) * 1).wait();
 
     const double expected = -std::log(0.9);
     EXPECT_NEAR(static_cast<double>(host[0]), expected, 1e-6);
@@ -1102,9 +1102,9 @@ TEST(CROSS_ENTROPY, negative_axis_equals_positive)
 
     std::vector<float> host_neg(1), host_pos(1);
     g_sycl_queue.memcpy(host_neg.data(),
-        out_neg.m_p_data.get(), sizeof(float) * 1).wait();
+        out_neg.m_node->data.get(), sizeof(float) * 1).wait();
     g_sycl_queue.memcpy(host_pos.data(),
-        out_pos.m_p_data.get(), sizeof(float) * 1).wait();
+        out_pos.m_node->data.get(), sizeof(float) * 1).wait();
 
     EXPECT_NEAR(static_cast<double>(host_neg[0]),
         static_cast<double>(host_pos[0]), 1e-7);
@@ -1141,7 +1141,7 @@ TEST(CROSS_ENTROPY, alias_logits_weird_strides_mean)
     ASSERT_EQ(out.get_num_elements(), 1u);
     std::vector<float> host(1);
     g_sycl_queue.memcpy(host.data(),
-        out.m_p_data.get(), sizeof(float) * 1).wait();
+        out.m_node->data.get(), sizeof(float) * 1).wait();
 
     const double e1 = std::exp(1.0), e3 = std::exp(3.0);
     const double loss0 = -std::log(e1 / (e1 + e3));
@@ -1182,7 +1182,7 @@ TEST(CROSS_ENTROPY, alias_labels_weird_strides_mean)
 
     ASSERT_EQ(out.get_num_elements(), 1u);
     std::vector<float> host(1);
-    g_sycl_queue.memcpy(host.data(), out.m_p_data.get(), sizeof(float) * 1).wait();
+    g_sycl_queue.memcpy(host.data(), out.m_node->data.get(), sizeof(float) * 1).wait();
 
     const double expected = -std::log(0.5);
     EXPECT_NEAR(static_cast<double>(host[0]), expected, 1e-4);
@@ -1221,7 +1221,7 @@ TEST(CROSS_ENTROPY, alias_both_weird_strides)
     ASSERT_EQ(out.get_num_elements(), 1u);
     std::vector<float> host(1);
     g_sycl_queue.memcpy(host.data(),
-        out.m_p_data.get(), sizeof(float) * 1).wait();
+        out.m_node->data.get(), sizeof(float) * 1).wait();
 
     const double e1 = std::exp(1.0), e3 = std::exp(3.0);
     const double loss0 = -std::log(e1 / (e1 + e3));
@@ -1347,7 +1347,7 @@ TEST(MSE, flatten_mean_basic)
     ASSERT_EQ(out.get_num_elements(), 1u);
     std::vector<float> host(1);
     g_sycl_queue.memcpy(host.data(),
-        out.m_p_data.get(), sizeof(float) * 1).wait();
+        out.m_node->data.get(), sizeof(float) * 1).wait();
 
     EXPECT_NEAR(static_cast<double>(host[0]), 14.0, 1e-6);
 }
@@ -1371,7 +1371,7 @@ TEST(MSE, flatten_no_reduction)
     ASSERT_EQ(out.get_num_elements(), 1u);
     std::vector<float> host(1);
     g_sycl_queue.memcpy(host.data(),
-        out.m_p_data.get(), sizeof(float) * 1).wait();
+        out.m_node->data.get(), sizeof(float) * 1).wait();
 
     EXPECT_NEAR(static_cast<double>(host[0]), 14.0, 1e-6);
 }
@@ -1411,7 +1411,7 @@ TEST(MSE, broadcast_targets_mean)
     ASSERT_EQ(out.get_num_elements(), 1u);
     std::vector<float> host(1);
     g_sycl_queue.memcpy(host.data(),
-        out.m_p_data.get(), sizeof(float) * 1).wait();
+        out.m_node->data.get(), sizeof(float) * 1).wait();
 
     EXPECT_NEAR(static_cast<double>(host[0]), 2.0, 1e-6);
 }
@@ -1440,7 +1440,7 @@ TEST(MSE, broadcast_targets_no_reduction)
     ASSERT_EQ(N, 2u);
     std::vector<float> host(N, -1.0f);
     g_sycl_queue.memcpy(host.data(),
-        out.m_p_data.get(), sizeof(float) * N).wait();
+        out.m_node->data.get(), sizeof(float) * N).wait();
 
     for (uint64_t i = 0; i < N; ++i)
     {
@@ -1470,9 +1470,9 @@ TEST(MSE, negative_axis_equals_positive)
 
     std::vector<float> host_neg(1), host_pos(1);
     g_sycl_queue.memcpy(host_neg.data(),
-        out_neg.m_p_data.get(), sizeof(float) * 1).wait();
+        out_neg.m_node->data.get(), sizeof(float) * 1).wait();
     g_sycl_queue.memcpy(host_pos.data(),
-        out_pos.m_p_data.get(), sizeof(float) * 1).wait();
+        out_pos.m_node->data.get(), sizeof(float) * 1).wait();
 
     EXPECT_NEAR(static_cast<double>(host_neg[0]),
         static_cast<double>(host_pos[0]), 1e-7);
@@ -1504,7 +1504,7 @@ TEST(MSE, alias_preds_weird_strides_mean)
     ASSERT_EQ(out.get_num_elements(), 1u);
     std::vector<float> host(1);
     g_sycl_queue.memcpy(host.data(),
-        out.m_p_data.get(), sizeof(float) * 1).wait();
+        out.m_node->data.get(), sizeof(float) * 1).wait();
 
     EXPECT_NEAR(static_cast<double>(host[0]), 19.0, 1e-6);
 }
@@ -1537,7 +1537,7 @@ TEST(MSE, alias_targets_weird_strides_mean)
     ASSERT_EQ(out.get_num_elements(), 1u);
     std::vector<float> host(1);
     g_sycl_queue.memcpy(host.data(),
-        out.m_p_data.get(), sizeof(float) * 1).wait();
+        out.m_node->data.get(), sizeof(float) * 1).wait();
 
     EXPECT_NEAR(static_cast<double>(host[0]), 24.5, 1e-6);
 }
@@ -1571,7 +1571,7 @@ TEST(MSE, alias_both_weird_strides)
     ASSERT_EQ(out.get_num_elements(), 1u);
     std::vector<float> host(1);
     g_sycl_queue.memcpy(host.data(),
-        out.m_p_data.get(), sizeof(float) * 1).wait();
+        out.m_node->data.get(), sizeof(float) * 1).wait();
 
     EXPECT_NEAR(static_cast<double>(host[0]), 19.0, 1e-6);
 }
