@@ -165,7 +165,9 @@ Tensor<value_t>::Tensor(const Tensor & other)
       m_strides(other.m_strides),
       m_own_data(other.m_own_data),
       m_mem_loc(other.m_mem_loc),
-      m_meta(other.m_own_data ? AutogradMeta<value_t>{} : other.m_meta)
+      m_meta(other.m_own_data
+          ? AutogradMeta<value_t>{nullptr, nullptr, other.m_meta.requires_grad}
+          : other.m_meta)
 {
     if (m_own_data)
     {
@@ -284,7 +286,10 @@ Tensor<value_t>::Tensor(const Tensor & owner,
     const std::vector<uint64_t> & view_shape)
     : m_own_data(false),
       m_mem_loc(owner.m_mem_loc),
-      m_meta{owner.m_meta.fn, nullptr, owner.m_meta.requires_grad}
+      // TODO: Replace nullptr with a ViewEdge/SliceEdge that captures
+      //       start_indices and view_shape so backward() can scatter
+      //       the incoming gradient into the owner's full shape.
+      m_meta{nullptr, nullptr, owner.m_meta.requires_grad}
 {
     const int64_t original_rank = owner.get_rank();
     const size_t max_int64_size =
@@ -355,7 +360,10 @@ Tensor<value_t>::Tensor(const Tensor & owner,
       m_strides(strides),
       m_own_data(false),
       m_mem_loc(owner.m_mem_loc),
-      m_meta{owner.m_meta.fn, nullptr, owner.m_meta.requires_grad}
+      // TODO: Replace nullptr with a ViewEdge/SliceEdge that captures
+      //       start_indices, dims, and strides so backward() can scatter
+      //       the incoming gradient into the owner's full shape.
+      m_meta{nullptr, nullptr, owner.m_meta.requires_grad}
 {
     TEMPER_CHECK(owner.m_p_data,
         validation_error,
@@ -505,7 +513,9 @@ Tensor<value_t> & Tensor<value_t>::operator=(const Tensor & other)
         m_strides = other.m_strides;
         m_own_data = other.m_own_data;
         m_mem_loc = other.m_mem_loc;
-        m_meta = other.m_own_data ? AutogradMeta<value_t>{} : other.m_meta;
+        m_meta = other.m_own_data
+            ? AutogradMeta<value_t>{nullptr, nullptr, other.m_meta.requires_grad}
+            : other.m_meta;
 
         if (m_own_data)
         {
@@ -1351,6 +1361,8 @@ Tensor<value_t> Tensor<value_t>::clone() const
             linear, p_shape_divs, p_dest_strides, rank);
         p_dest_data[dest_offset] = p_src_data[src_offset];
     }).wait();
+
+    result.m_meta.requires_grad = m_meta.requires_grad;
 
     return result;
 }

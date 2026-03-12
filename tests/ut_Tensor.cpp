@@ -919,10 +919,11 @@ TYPED_TEST(TypedTensor, copy_constructor_on_default_constructed)
 }
 
 /**
- * @test TypedTensor.copy_constructor_autograd_clears_meta
- * @brief Copying an owning tensor should clear autograd metadata on the copy.
+ * @test TypedTensor.copy_constructor_autograd_preserves_requires_grad
+ * @brief Copying an owning tensor should preserve requires_grad but clear
+ * fn and grad (the copy is a new leaf, not produced by the same operation).
  */
-TYPED_TEST(TypedTensor, copy_constructor_autograd_clears_meta)
+TYPED_TEST(TypedTensor, copy_constructor_autograd_preserves_requires_grad)
 {
     using value_t = TypeParam;
     Tensor<value_t> t({2,2}, MemoryLocation::HOST);
@@ -938,15 +939,17 @@ TYPED_TEST(TypedTensor, copy_constructor_autograd_clears_meta)
     EXPECT_TRUE(t.m_meta.requires_grad);
     ASSERT_NE(t.m_meta.grad, nullptr);
 
-    // Copy constructed owning tensor must have fresh (cleared) autograd meta.
-    EXPECT_FALSE(cp.m_meta.requires_grad);
+    // Copy preserves requires_grad but clears fn and grad (new leaf).
+    EXPECT_TRUE(cp.m_meta.requires_grad);
+    EXPECT_EQ(cp.m_meta.fn, nullptr);
     EXPECT_EQ(cp.m_meta.grad, nullptr);
 }
 
 /**
  * @test TypedTensor.copy_constructor_autograd_from_view_preserves_meta
- * @brief Copy-constructing from a non-owning view should preserve the
- * Autograd meta (fn, requires_grad and aliased grad pointer with offset).
+ * @brief Copy-constructing from a non-owning view should preserve
+ * requires_grad and aliased grad pointer with offset. Views no longer
+ * inherit the owner's fn, so both the view and its copy have fn==nullptr.
  */
 TYPED_TEST(TypedTensor, copy_constructor_autograd_from_view_preserves_meta)
 {
@@ -974,15 +977,19 @@ TYPED_TEST(TypedTensor, copy_constructor_autograd_from_view_preserves_meta)
     Tensor<value_t> view(owner,
         std::vector<uint64_t>{1,1},
         std::vector<uint64_t>{1,2});
+
+    // View should not inherit owner's fn
+    EXPECT_EQ(view.m_meta.fn, nullptr);
+
     Tensor<value_t> cp(view);
 
     EXPECT_TRUE(cp.m_meta.requires_grad);
     ASSERT_NE(cp.m_meta.grad, nullptr);
-    // grad should be an alias into same control block (no offset here is 1*stride0+1*stride1)
+    // grad should be an alias into same control block
     uint64_t offset = 1 * owner.m_strides[0] + 1 * owner.m_strides[1];
     EXPECT_EQ(cp.m_meta.grad.get(), owner.m_meta.grad.get() + offset);
-    ASSERT_NE(cp.m_meta.fn, nullptr);
-    EXPECT_EQ(cp.m_meta.fn.get(), owner.m_meta.fn.get());
+    // fn is nullptr for views
+    EXPECT_EQ(cp.m_meta.fn, nullptr);
 }
 
 /**
@@ -1938,8 +1945,8 @@ TYPED_TEST(TypedTensor, alias_view_constructor_autograd)
     uint64_t offset = start[0] * owner.m_strides[0] + start[1] * owner.m_strides[1];
 
     EXPECT_TRUE(aview.m_meta.requires_grad);
-    ASSERT_NE(aview.m_meta.fn, nullptr);
-    EXPECT_EQ(aview.m_meta.fn.get(), owner.m_meta.fn.get());
+    // Views no longer inherit the owner's fn
+    EXPECT_EQ(aview.m_meta.fn, nullptr);
     ASSERT_NE(aview.m_meta.grad, nullptr);
     EXPECT_EQ(aview.m_meta.grad.get(), owner.m_meta.grad.get() + offset);
 
@@ -2453,8 +2460,9 @@ TYPED_TEST(TypedTensor, operator_equals_copy_from_view)
 
 /**
  * @test TypedTensor.operator_equals_copy_autograd
- * @brief Copy-assignment should clear meta when assigning from an owning
- * tensor, and copy meta when assigning from a view.
+ * @brief Copy-assignment should preserve requires_grad but clear fn and grad
+ * when assigning from an owning tensor, and copy meta when assigning from a
+ * view.
  */
 TYPED_TEST(TypedTensor, operator_equals_copy_autograd)
 {
@@ -2466,9 +2474,10 @@ TYPED_TEST(TypedTensor, operator_equals_copy_autograd)
     src.m_meta.grad = src.m_p_data;
 
     Tensor<value_t> dst;
-    dst = src; // dst should be owning and have cleared meta
+    dst = src; // dst should be owning: preserves requires_grad, clears fn/grad
 
-    EXPECT_FALSE(dst.m_meta.requires_grad);
+    EXPECT_TRUE(dst.m_meta.requires_grad);
+    EXPECT_EQ(dst.m_meta.fn, nullptr);
     EXPECT_EQ(dst.m_meta.grad, nullptr);
 
     // Now assignment from a view should copy meta
@@ -3038,8 +3047,8 @@ TYPED_TEST(TypedTensor, operator_brackets_autograd)
 
     Tensor<value_t> row = owner[1];
     EXPECT_TRUE(row.m_meta.requires_grad);
-    ASSERT_NE(row.m_meta.fn, nullptr);
-    EXPECT_EQ(row.m_meta.fn.get(), owner.m_meta.fn.get());
+    // Views no longer inherit the owner's fn
+    EXPECT_EQ(row.m_meta.fn, nullptr);
 
     // offset should be index * stride0
     uint64_t offset = 1 * owner.m_strides[0];
@@ -6027,6 +6036,38 @@ TYPED_TEST(TypedTensor, clone_const)
     }
 
     EXPECT_NE(c.m_p_data, t.m_p_data);
+}
+
+/**
+ * @test TypedTensor.clone_preserves_requires_grad
+ * @brief Cloning a tensor with requires_grad=true should preserve the flag
+ * on the result. The fn and grad should be cleared (clone is a new leaf).
+ */
+TYPED_TEST(TypedTensor, clone_preserves_requires_grad)
+{
+    using value_t = TypeParam;
+    Tensor<value_t> t({2, 3}, MemoryLocation::HOST);
+    t = std::vector<value_t>{
+        static_cast<value_t>(1), static_cast<value_t>(2), static_cast<value_t>(3),
+        static_cast<value_t>(4), static_cast<value_t>(5), static_cast<value_t>(6)
+    };
+
+    // Without requires_grad, clone should also have requires_grad==false
+    Tensor<value_t> c1 = t.clone();
+    EXPECT_FALSE(c1.requires_grad());
+    EXPECT_EQ(c1.m_meta.fn, nullptr);
+    EXPECT_EQ(c1.m_meta.grad, nullptr);
+
+    // With requires_grad, clone should preserve it
+    t.set_requires_grad(true);
+    Tensor<value_t> c2 = t.clone();
+    EXPECT_TRUE(c2.requires_grad());
+    EXPECT_EQ(c2.m_meta.fn, nullptr);
+    EXPECT_EQ(c2.m_meta.grad, nullptr);
+
+    // Data should still be independent
+    EXPECT_NE(c2.m_p_data, t.m_p_data);
+    EXPECT_EQ(c2.get_dimensions(), t.get_dimensions());
 }
 
 /**
@@ -9223,9 +9264,9 @@ TYPED_TEST(TypedTensor, requires_grad_default_and_flag)
     Tensor<value_t> v(t, std::vector<uint64_t>{0,0}, std::vector<uint64_t>{2,2});
     EXPECT_TRUE(v.requires_grad());
 
-    // A deep copy (owner) should be a fresh start (false)
+    // A deep copy (owner) should preserve requires_grad (new leaf)
     Tensor<value_t> deep_copy = t;
-    EXPECT_FALSE(deep_copy.requires_grad());
+    EXPECT_TRUE(deep_copy.requires_grad());
 }
 
 /**
