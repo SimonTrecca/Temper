@@ -1,4 +1,5 @@
 add_library (temper STATIC
+            Autograd.cpp
             Tensor.cpp
             SYCLQueue.cpp
             Math.cpp

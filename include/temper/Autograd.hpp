@@ -168,6 +168,47 @@ struct AutogradMeta
     bool requires_grad{false};
 };
 
+/**
+ * @brief Autograd edge for element-wise tensor addition.
+ *
+ * Stores stable references to the two input tensors and an optional weak
+ * reference to the produced output tensor via the @ref FunctionEdge base
+ * class. Backward propagation logic will be implemented in a later step.
+ *
+ * @tparam value_t Tensor numeric type.
+ */
+template<typename value_t>
+class AddEdge : public FunctionEdge<value_t>
+{
+public:
+    /**
+     * @brief Construct an addition edge.
+     *
+     * @param lhs Left-hand input tensor.
+     * @param rhs Right-hand input tensor.
+     * @param out Optional weak reference to the produced output tensor.
+     */
+    AddEdge(const std::shared_ptr<Tensor<value_t>> & lhs,
+            const std::shared_ptr<Tensor<value_t>> & rhs,
+            std::weak_ptr<Tensor<value_t>> out = {});
+
+    /**
+     * @brief Re-execute the forward pass.
+     *
+     * Forward replay is not implemented yet for addition edges.
+     */
+    void forward() override;
+
+    /**
+     * @brief Propagate gradients through the addition edge.
+     *
+     * Backward logic is intentionally deferred to a later step.
+     *
+     * @param grad_output Gradient of the loss w.r.t. the output.
+     */
+    void backward(const Tensor<value_t> & grad_output) override;
+};
+
 } // namespace temper
 
 #endif // TEMPER_AUTOGRAD_HPP
