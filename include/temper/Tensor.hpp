@@ -610,9 +610,12 @@ public:
      *
      * @param dimensions Shape of the tensor (each entry must be > 0).
      * @param loc Memory location for data (HOST or DEVICE).
+     * @param requires_grad Whether this tensor requires gradient
+     *                      computation (default: false).
      */
     explicit Tensor(const std::vector<uint64_t>& dimensions,
-        MemoryLocation loc = MemoryLocation::DEVICE);
+        MemoryLocation loc = MemoryLocation::DEVICE,
+        bool requires_grad = false);
 
     /**
      * @brief Construct a tensor from an initializer list of dimensions.
@@ -623,9 +626,12 @@ public:
      *
      * @param dimensions Shape of the tensor (each entry must be > 0).
      * @param loc Memory location for data (HOST or DEVICE).
+     * @param requires_grad Whether this tensor requires gradient
+     *                      computation (default: false).
      */
     explicit Tensor(const std::initializer_list<uint64_t> & dimensions,
-       MemoryLocation loc = MemoryLocation::DEVICE);
+       MemoryLocation loc = MemoryLocation::DEVICE,
+       bool requires_grad = false);
 
     /**
      * @brief Copy constructor.
@@ -655,8 +661,11 @@ public:
      * @param val Scalar value to initialize the tensor with.
      * @param loc Memory location where the tensor should be allocated
      *            (default: MemoryLocation::DEVICE).
+     * @param requires_grad Whether this tensor requires gradient
+     *                      computation (default: false).
      */
-    explicit Tensor(value_t val, MemoryLocation loc = MemoryLocation::DEVICE);
+    explicit Tensor(value_t val, MemoryLocation loc = MemoryLocation::DEVICE,
+        bool requires_grad = false);
 
     /**
      * @brief View constructor.

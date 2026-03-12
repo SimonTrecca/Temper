@@ -731,6 +731,37 @@ TYPED_TEST(TypedTensor, main_constructor_autograd_defaults)
 }
 
 /**
+ * @test TypedTensor.constructor_requires_grad_parameter
+ * @brief The vector, initializer_list, and scalar constructors accept an
+ * optional requires_grad flag that defaults to false.
+ */
+TYPED_TEST(TypedTensor, constructor_requires_grad_parameter)
+{
+    using value_t = TypeParam;
+
+    // Vector constructor with requires_grad = true
+    Tensor<value_t> a(std::vector<uint64_t>{2, 3}, MemoryLocation::HOST, true);
+    EXPECT_TRUE(a.requires_grad());
+    EXPECT_EQ(a.m_meta.fn, nullptr);
+    EXPECT_EQ(a.m_meta.grad, nullptr);
+
+    // Initializer-list constructor with requires_grad = true
+    Tensor<value_t> b({4, 5}, MemoryLocation::HOST, true);
+    EXPECT_TRUE(b.requires_grad());
+
+    // Scalar constructor with requires_grad = true
+    Tensor<value_t> c(static_cast<value_t>(7), MemoryLocation::HOST, true);
+    EXPECT_TRUE(c.requires_grad());
+
+    // Default (false) still works
+    Tensor<value_t> d({2, 2}, MemoryLocation::HOST);
+    EXPECT_FALSE(d.requires_grad());
+
+    Tensor<value_t> e(static_cast<value_t>(1), MemoryLocation::HOST);
+    EXPECT_FALSE(e.requires_grad());
+}
+
+/**
  * @test TypedTensor.main_constructor_memory_location_and_access
  * @brief Tests correct memory location assignment.
  */

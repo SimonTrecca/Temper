@@ -44,12 +44,13 @@ void Tensor<value_t>::compute_strides()
 
 template<typename value_t>
 Tensor<value_t>::Tensor(const std::vector<uint64_t> & dimensions,
-                        MemoryLocation loc)
+                        MemoryLocation loc,
+                        bool requires_grad)
     : m_dimensions(dimensions),
       m_strides(dimensions.size()),
       m_own_data(true),
       m_mem_loc(loc),
-      m_meta{nullptr, nullptr, false}
+      m_meta{nullptr, nullptr, requires_grad}
 {
     TEMPER_CHECK(!m_dimensions.empty(),
         validation_error,
@@ -153,8 +154,9 @@ Tensor<value_t>::Tensor(const std::vector<uint64_t> & dimensions,
 
 template<typename value_t>
 Tensor<value_t>::Tensor(const std::initializer_list<uint64_t> & dimensions,
-                        MemoryLocation loc)
-    : Tensor(std::vector<uint64_t>(dimensions), loc)
+                        MemoryLocation loc,
+                        bool requires_grad)
+    : Tensor(std::vector<uint64_t>(dimensions), loc, requires_grad)
 {
     // Constructor already delegated; no op.
 }
@@ -232,12 +234,13 @@ Tensor<value_t>::Tensor(Tensor && other) noexcept
 }
 
 template<typename value_t>
-Tensor<value_t>::Tensor(value_t val, MemoryLocation loc)
+Tensor<value_t>::Tensor(value_t val, MemoryLocation loc,
+                        bool requires_grad)
     : m_dimensions({1}),
       m_strides(1),
       m_own_data(true),
       m_mem_loc(loc),
-      m_meta{}
+      m_meta{nullptr, nullptr, requires_grad}
 {
     compute_strides();
 
