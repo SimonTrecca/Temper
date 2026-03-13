@@ -80,6 +80,89 @@ private:
         std::make_shared<TensorNode<value_t>>()};
 
     /**
+     * @brief Sets the logical data pointer for this tensor.
+     *
+     * Rebinds the tensor's shared data handle. Used by internal
+     * construction and aliasing paths.
+     *
+     * @param data Shared pointer to tensor storage.
+     */
+    void set_data(const std::shared_ptr<value_t>& data) noexcept;
+
+    /**
+     * @brief Returns the shared data handle for this tensor.
+     *
+     * Exposes the control block needed for aliasing shared_ptr views.
+     *
+     * @return const std::shared_ptr<value_t>& Shared data handle.
+     */
+    const std::shared_ptr<value_t>& get_data_handle() const noexcept;
+
+    /**
+     * @brief Sets the logical dimensions (shape) of this tensor.
+     *
+     * Updates the tensor shape metadata only.
+     *
+     * @param dimensions New dimensions vector.
+     */
+    void set_dimensions(const std::vector<uint64_t>& dimensions) noexcept;
+
+    /**
+     * @brief Sets the logical strides of this tensor.
+     *
+     * Updates the tensor stride metadata only.
+     *
+     * @param strides New strides vector.
+     */
+    void set_strides(const std::vector<uint64_t>& strides) noexcept;
+
+    /**
+     * @brief Sets whether this tensor logically owns its storage.
+     *
+     * Marks tensor identity as owning or non-owning.
+     *
+     * @param owns_data Ownership flag.
+     */
+    void set_owns_data(bool owns_data) noexcept;
+
+    /**
+     * @brief Sets the memory location metadata of this tensor.
+     *
+     * Updates whether storage is considered HOST or DEVICE.
+     *
+     * @param loc New memory location.
+     */
+    void set_memory_location(MemoryLocation loc) noexcept;
+
+    /**
+     * @brief Sets the source function edge for autograd metadata.
+     *
+     * Associates this tensor with the operation that produced it.
+     *
+     * @param fn Producing function edge, or nullptr.
+     */
+    void set_source_function(
+        const std::shared_ptr<FunctionEdge<value_t>>& fn) noexcept;
+
+    /**
+     * @brief Sets the gradient storage handle for this tensor.
+     *
+     * Rebinds gradient pointer metadata used by autograd.
+     *
+     * @param grad Shared pointer to gradient storage, or nullptr.
+     */
+    void set_gradient(const std::shared_ptr<value_t>& grad) noexcept;
+
+    /**
+     * @brief Returns the shared gradient handle for this tensor.
+     *
+     * Exposes the control block needed for aliasing gradient views.
+     *
+     * @return const std::shared_ptr<value_t>& Shared gradient handle.
+     */
+    const std::shared_ptr<value_t>& get_gradient_handle() const noexcept;
+
+    /**
      * @brief Computes strides using dimensions.
      *
      * Resizes `m_strides` and fills each element so that

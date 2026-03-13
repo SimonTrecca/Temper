@@ -9317,6 +9317,58 @@ TYPED_TEST(TypedTensor, set_requires_grad_effect)
 }
 
 /**
+ * @test TypedTensor.private_setters
+ * @brief Verifies private internal setters update all Tensor node fields.
+ */
+TYPED_TEST(TypedTensor, private_setters)
+{
+    using value_t = TypeParam;
+
+    struct DummyEdge : public temper::FunctionEdge<value_t>
+    {
+        DummyEdge() : FunctionEdge<value_t>("dummy-private-setter") {}
+        void forward() override {}
+        void backward(const Tensor<value_t>&) override {}
+        std::vector<std::shared_ptr<TensorNode<value_t>>> inputs() const override
+        { return {}; }
+        std::shared_ptr<TensorNode<value_t>> output() const override
+        { return nullptr; }
+    };
+
+    Tensor<value_t> t({2, 2}, MemoryLocation::HOST);
+    auto owner_data = t.m_node->data;
+    ASSERT_NE(owner_data, nullptr);
+
+    auto shifted_data = std::shared_ptr<value_t>(owner_data, owner_data.get() + 1);
+    t.set_data(shifted_data);
+    EXPECT_EQ(t.m_node->data.get(), owner_data.get() + 1);
+
+    t.set_dimensions(std::vector<uint64_t>{3, 4});
+    EXPECT_EQ(t.m_node->dimensions, (std::vector<uint64_t>{3, 4}));
+
+    t.set_strides(std::vector<uint64_t>{4, 1});
+    EXPECT_EQ(t.m_node->strides, (std::vector<uint64_t>{4, 1}));
+
+    t.set_owns_data(false);
+    EXPECT_FALSE(t.m_node->owns_data);
+
+    t.set_memory_location(MemoryLocation::DEVICE);
+    EXPECT_EQ(t.m_node->mem_loc, MemoryLocation::DEVICE);
+
+    auto fn = std::make_shared<DummyEdge>();
+    t.set_source_function(fn);
+    EXPECT_EQ(t.m_node->meta.fn, fn);
+
+    t.set_gradient(owner_data);
+    EXPECT_EQ(t.m_node->meta.grad.get(), owner_data.get());
+
+    t.set_requires_grad(true);
+    EXPECT_TRUE(t.m_node->meta.requires_grad);
+    t.set_requires_grad(false);
+    EXPECT_FALSE(t.m_node->meta.requires_grad);
+}
+
+/**
  * @test TypedTensor.is_view
  * @brief Verifies that is_view() correctly identifies tensor views.
  */

@@ -16,10 +16,10 @@ namespace temper
 template<typename value_t>
 void Tensor<value_t>::compute_strides()
 {
-    m_node->strides.resize(m_node->dimensions.size());
+    std::vector<uint64_t> strides(get_dimensions().size());
 
     // Empty shape: nothing to do; callers should normally prevent this.
-    if (m_node->dimensions.empty())
+    if (get_dimensions().empty())
     {
         return;
     }
@@ -27,19 +27,21 @@ void Tensor<value_t>::compute_strides()
     // Use uint64_t limits for overflow guards below.
     constexpr uint64_t U64_MAX = std::numeric_limits<uint64_t>::max();
 
-    m_node->strides.back() = 1;
+    strides.back() = 1;
 
     for (int64_t i = this->get_rank() - 1; i > 0; --i)
     {
-        uint64_t dim = m_node->dimensions[i];
-        uint64_t next_stride = m_node->strides[i];
+        uint64_t dim = get_dimensions()[i];
+        uint64_t next_stride = strides[i];
 
         TEMPER_CHECK(next_stride <= U64_MAX / dim,
             bounds_error,
             R"(Tensor(compute_strides): stride multiplication overflow.)");
 
-        m_node->strides[i - 1] = next_stride * dim;
+        strides[i - 1] = next_stride * dim;
     }
+
+    set_strides(strides);
 }
 
 template<typename value_t>
@@ -49,7 +51,7 @@ Tensor<value_t>::Tensor(const std::vector<uint64_t> & dimensions,
     : m_node(std::make_shared<TensorNode<value_t>>(dimensions, std::vector<uint64_t>{}, true, loc,
         AutogradMeta<value_t>{nullptr, nullptr, requires_grad}))
 {
-    TEMPER_CHECK(!m_node->dimensions.empty(),
+    TEMPER_CHECK(!get_dimensions().empty(),
         validation_error,
         R"(Tensor(main constructor):
             dims must not be empty (rank-0 not supported).)");
@@ -58,7 +60,7 @@ Tensor<value_t>::Tensor(const std::vector<uint64_t> & dimensions,
     const size_t max_int64_size =
         static_cast<size_t>(std::numeric_limits<int64_t>::max());
 
-    TEMPER_CHECK(m_node->dimensions.size() <= max_int64_size,
+    TEMPER_CHECK(get_dimensions().size() <= max_int64_size,
         bounds_error,
         R"(Tensor(main constructor):
             number of dimensions doesn't fit in int64_t.)");
@@ -67,7 +69,7 @@ Tensor<value_t>::Tensor(const std::vector<uint64_t> & dimensions,
 
     // Compute total element count with overflow guard.
     uint64_t total_size = 1;
-    for (uint64_t d : m_node->dimensions)
+    for (uint64_t d : get_dimensions())
     {
         TEMPER_CHECK(d != 0,
             validation_error,
@@ -119,7 +121,7 @@ Tensor<value_t>::Tensor(const std::vector<uint64_t> & dimensions,
 
     // Allocate USM (shared for HOST, device for DEVICE).
     value_t* raw_ptr = nullptr;
-    if (m_node->mem_loc == MemoryLocation::HOST)
+    if (get_memory_location() == MemoryLocation::HOST)
     {
         raw_ptr = static_cast<value_t*>(
             sycl::malloc_shared(allocation_bytes, g_sycl_queue));
@@ -135,7 +137,7 @@ Tensor<value_t>::Tensor(const std::vector<uint64_t> & dimensions,
         R"(Tensor(main constructor):
             error allocating tensor memory on device.)");
 
-    m_node->data = std::shared_ptr<value_t>(raw_ptr,
+    set_data(std::shared_ptr<value_t>(raw_ptr,
         [](value_t* p)
         {
             if (p)
@@ -143,10 +145,10 @@ Tensor<value_t>::Tensor(const std::vector<uint64_t> & dimensions,
                 sycl::free(p, g_sycl_queue);
             }
         }
-    );
+    ));
 
     // Zero-initialize the buffer.
-    g_sycl_queue.memset(m_node->data.get(), 0, allocation_bytes).wait();
+    g_sycl_queue.memset(get_data(), 0, allocation_bytes).wait();
 
 }
 
@@ -161,22 +163,22 @@ Tensor<value_t>::Tensor(const std::initializer_list<uint64_t> & dimensions,
 
 template<typename value_t>
 Tensor<value_t>::Tensor(const Tensor & other)
-     : m_node(other.m_node->owns_data
+     : m_node(other.get_owns_data()
         ? std::make_shared<TensorNode<value_t>>(
-            other.m_node->dimensions,
-            other.m_node->strides,
+            other.get_dimensions(),
+            other.get_strides(),
             true,
-            other.m_node->mem_loc,
+            other.get_memory_location(),
             AutogradMeta<value_t>{nullptr, nullptr,
-                other.m_node->meta.requires_grad})
+                other.requires_grad()})
         : other.m_node)
 {
-    if (other.m_node->owns_data)
+    if (other.get_owns_data())
     {
         // If other has been default constructed, build an empty ptr and return.
-        if (m_node->dimensions.empty())
+        if (get_dimensions().empty())
         {
-            m_node->data = std::shared_ptr<value_t>(nullptr);
+            set_data(std::shared_ptr<value_t>(nullptr));
             return;
         }
 
@@ -187,7 +189,7 @@ Tensor<value_t>::Tensor(const Tensor & other)
 
         // Allocate same kind of USM as other's mem_loc.
         value_t* raw_ptr = nullptr;
-        if (m_node->mem_loc == MemoryLocation::HOST)
+        if (get_memory_location() == MemoryLocation::HOST)
         {
             raw_ptr = static_cast<value_t*>
                 (sycl::malloc_shared(alloc_bytes, g_sycl_queue));
@@ -203,12 +205,12 @@ Tensor<value_t>::Tensor(const Tensor & other)
             R"(Tensor(copy constructor):
                 error allocating tensor memory on device.)");
 
-        m_node->data = std::shared_ptr<value_t>(raw_ptr,
-            [](value_t* p) { if (p) sycl::free(p, g_sycl_queue); });
+        set_data(std::shared_ptr<value_t>(raw_ptr,
+            [](value_t* p) { if (p) sycl::free(p, g_sycl_queue); }));
 
-        // Copy contents (assume other.m_node->data is valid).
+        // Copy contents (assume other.get_data() is valid).
         g_sycl_queue.memcpy
-            (m_node->data.get(), other.m_node->data.get(), alloc_bytes).wait();
+            (get_data(), other.get_data(), alloc_bytes).wait();
 
     }
 }
@@ -234,7 +236,7 @@ Tensor<value_t>::Tensor(value_t val, MemoryLocation loc,
     const size_t alloc_bytes = sizeof(value_t);
 
     value_t* raw_ptr = nullptr;
-    if (m_node->mem_loc == MemoryLocation::HOST)
+    if (get_memory_location() == MemoryLocation::HOST)
     {
         raw_ptr = static_cast<value_t*>
             (sycl::malloc_shared(alloc_bytes, g_sycl_queue));
@@ -250,7 +252,7 @@ Tensor<value_t>::Tensor(value_t val, MemoryLocation loc,
         R"(Tensor(scalar constructor):
             error allocating tensor memory on device.)");
 
-    m_node->data = std::shared_ptr<value_t>(raw_ptr,
+    set_data(std::shared_ptr<value_t>(raw_ptr,
         [](value_t* p)
         {
             if (p)
@@ -258,9 +260,9 @@ Tensor<value_t>::Tensor(value_t val, MemoryLocation loc,
                 sycl::free(p, g_sycl_queue);
             }
         }
-    );
+    ));
 
-    if (m_node->mem_loc == MemoryLocation::HOST)
+    if (get_memory_location() == MemoryLocation::HOST)
     {
         *raw_ptr = val;
     }
@@ -279,9 +281,9 @@ Tensor<value_t>::Tensor(const Tensor & owner,
         std::vector<uint64_t>{},
         std::vector<uint64_t>{},
         false,
-        owner.m_node->mem_loc,
+        owner.get_memory_location(),
         AutogradMeta<value_t>{nullptr, nullptr,
-            owner.m_node->meta.requires_grad}))
+            owner.requires_grad()}))
 {
     // TODO: Replace nullptr with a ViewEdge/SliceEdge that captures
     //       start_indices and view_shape so backward() can scatter
@@ -298,7 +300,7 @@ Tensor<value_t>::Tensor(const Tensor & owner,
 
     const int64_t view_rank = static_cast<int64_t>(view_shape.size());
 
-    TEMPER_CHECK(owner.m_node->data,
+    TEMPER_CHECK(owner.get_data(),
         validation_error,
         R"(Tensor(view constructor):
             cannot create view from uninitialized tensor.)");
@@ -316,7 +318,7 @@ Tensor<value_t>::Tensor(const Tensor & owner,
     // Check bounds for start indices and view dimensions.
     for (int64_t i = 0; i < original_rank; ++i)
     {
-        TEMPER_CHECK(start_indices[i] < owner.m_node->dimensions[i],
+        TEMPER_CHECK(start_indices[i] < owner.get_dimensions()[i],
             bounds_error,
             R"(Tensor(view constructor): start index out of bounds.)");
     }
@@ -324,7 +326,7 @@ Tensor<value_t>::Tensor(const Tensor & owner,
     {
         int64_t i = original_rank - view_rank + j;
         TEMPER_CHECK(view_shape[j] != 0 &&
-            start_indices[i] + view_shape[j] <= owner.m_node->dimensions[i],
+            start_indices[i] + view_shape[j] <= owner.get_dimensions()[i],
             bounds_error,
             R"(Tensor(view constructor): view shape out of bounds.)");
     }
@@ -332,22 +334,23 @@ Tensor<value_t>::Tensor(const Tensor & owner,
     uint64_t offset = 0;
     for (int64_t i = 0; i < original_rank; ++i)
     {
-        offset += start_indices[i] * owner.m_node->strides[i];
+        offset += start_indices[i] * owner.get_strides()[i];
     }
 
     // Aliasing constructors: Shared control block, shifted raw pointer.
-    m_node->data = std::shared_ptr<value_t>(owner.m_node->data,
-        owner.m_node->data.get() + offset);
+    const auto& owner_data = owner.get_data_handle();
+    set_data(std::shared_ptr<value_t>(owner_data, owner_data.get() + offset));
 
-    m_node->meta.grad = owner.m_node->meta.grad
-        ? std::shared_ptr<value_t>(owner.m_node->meta.grad,
-            owner.m_node->meta.grad.get() + offset)
-        : nullptr;
+    const auto& owner_grad = owner.get_gradient_handle();
+    set_gradient(owner_grad
+        ? std::shared_ptr<value_t>(owner_grad, owner_grad.get() + offset)
+        : nullptr);
 
     // Set dimensions and strides for the view.
-    m_node->dimensions.assign(view_shape.begin(), view_shape.end());
-    m_node->strides.assign(owner.m_node->strides.end() - view_rank,
-        owner.m_node->strides.end());
+    set_dimensions(std::vector<uint64_t>(view_shape.begin(), view_shape.end()));
+    const auto& owner_strides = owner.get_strides();
+    set_strides(std::vector<uint64_t>(owner_strides.end() - view_rank,
+        owner_strides.end()));
 }
 
 template<typename value_t>
@@ -359,15 +362,15 @@ Tensor<value_t>::Tensor(const Tensor & owner,
         dims,
         strides,
         false,
-        owner.m_node->mem_loc,
+        owner.get_memory_location(),
         AutogradMeta<value_t>{nullptr, nullptr,
-            owner.m_node->meta.requires_grad}))
+            owner.requires_grad()}))
 {
     // TODO: Replace nullptr with a ViewEdge/SliceEdge that captures
     //       start_indices, dims, and strides so backward() can scatter
     //       the incoming gradient into the owner's full shape.
 
-    TEMPER_CHECK(owner.m_node->data,
+    TEMPER_CHECK(owner.get_data(),
         validation_error,
         R"(Tensor(alias view constructor):
             cannot create view from uninitialized tensor.)");
@@ -401,7 +404,7 @@ Tensor<value_t>::Tensor(const Tensor & owner,
 
     for (int64_t i = 0; i < owner_rank; ++i)
     {
-        TEMPER_CHECK(start_indices[i] < owner.m_node->dimensions[i],
+        TEMPER_CHECK(start_indices[i] < owner.get_dimensions()[i],
             bounds_error,
             R"(Tensor(alias view constructor):
                 start index out of bounds.)");
@@ -421,7 +424,7 @@ Tensor<value_t>::Tensor(const Tensor & owner,
     for (int64_t i = 0; i < owner_rank; ++i)
     {
         uint64_t si = start_indices[i];
-        uint64_t ostride = owner.m_node->strides[i];
+        uint64_t ostride = owner.get_strides()[i];
 
         if (si != 0 && ostride != 0)
         {
@@ -442,7 +445,7 @@ Tensor<value_t>::Tensor(const Tensor & owner,
     }
 
     // Compute the maximum linear index that the new view may access
-    // (relative to owner.m_node->data).
+    // (relative to owner's data).
     uint64_t max_index = offset;
     for (int64_t j = 0; j < view_rank; ++j)
     {
@@ -468,12 +471,12 @@ Tensor<value_t>::Tensor(const Tensor & owner,
     }
 
     // Compute the owner's maximum reachable linear index
-    // (relative to owner.m_node->data).
+    // (relative to owner's data).
     uint64_t owner_max_index = 0;
     for (int64_t j = 0; j < owner_rank; ++j)
     {
-        uint64_t odimm1 = owner.m_node->dimensions[j] - 1;
-        uint64_t ostride = owner.m_node->strides[j];
+        uint64_t odimm1 = owner.get_dimensions()[j] - 1;
+        uint64_t ostride = owner.get_strides()[j];
 
         if (ostride != 0 && odimm1 > 0)
         {
@@ -499,13 +502,13 @@ Tensor<value_t>::Tensor(const Tensor & owner,
         R"(Tensor(alias view constructor):
             view exceeds owner's bounds.)");
 
-    m_node->data = std::shared_ptr<value_t>(owner.m_node->data,
-        owner.m_node->data.get() + offset);
+    const auto& owner_data = owner.get_data_handle();
+    set_data(std::shared_ptr<value_t>(owner_data, owner_data.get() + offset));
 
-    m_node->meta.grad = owner.m_node->meta.grad
-        ? std::shared_ptr<value_t>(owner.m_node->meta.grad,
-            owner.m_node->meta.grad.get() + offset)
-        : nullptr;
+    const auto& owner_grad = owner.get_gradient_handle();
+    set_gradient(owner_grad
+        ? std::shared_ptr<value_t>(owner_grad, owner_grad.get() + offset)
+        : nullptr);
 }
 
 template<typename value_t>
@@ -514,15 +517,15 @@ Tensor<value_t> & Tensor<value_t>::operator=(const Tensor & other)
     if (this != &other)
     {
         auto new_node = std::make_shared<TensorNode<value_t>>();
-        new_node->dimensions = other.m_node->dimensions;
-        new_node->strides = other.m_node->strides;
-        new_node->owns_data = other.m_node->owns_data;
-        new_node->mem_loc = other.m_node->mem_loc;
+        new_node->dimensions = other.get_dimensions();
+        new_node->strides = other.get_strides();
+        new_node->owns_data = other.get_owns_data();
+        new_node->mem_loc = other.get_memory_location();
 
-        if (other.m_node->owns_data)
+        if (other.get_owns_data())
         {
             new_node->meta = AutogradMeta<value_t>{nullptr, nullptr,
-                other.m_node->meta.requires_grad};
+            other.requires_grad()};
 
             if (new_node->dimensions.empty())
             {
@@ -563,7 +566,7 @@ Tensor<value_t> & Tensor<value_t>::operator=(const Tensor & other)
                 }
             );
 
-            g_sycl_queue.memcpy(new_node->data.get(), other.m_node->data.get(),
+            g_sycl_queue.memcpy(new_node->data.get(), other.get_data(),
                                 alloc_bytes).wait();
 
             m_node = std::move(new_node);
@@ -595,7 +598,7 @@ Tensor<value_t>& Tensor<value_t>::operator=(Tensor && other) noexcept
 template<typename value_t>
 Tensor<value_t> & Tensor<value_t>::operator=(const std::vector<value_t> & values)
 {
-    TEMPER_CHECK(!m_node->dimensions.empty(),
+    TEMPER_CHECK(!get_dimensions().empty(),
         validation_error,
         R"(Tensor(values assignment):
             target tensor has no elements.)");
@@ -618,16 +621,16 @@ Tensor<value_t> & Tensor<value_t>::operator=(const std::vector<value_t> & values
         canon[rank - 1] = 1;
         for (int64_t i = rank - 2; i >= 0; --i)
         {
-            canon[i] = canon[i + 1] * m_node->dimensions[i + 1];
+            canon[i] = canon[i + 1] * get_dimensions()[i + 1];
         }
-        dst_contig = (m_node->strides == canon);
+        dst_contig = (get_strides() == canon);
     }
 
     if (dst_contig)
     {
         const size_t alloc_bytes =
             static_cast<size_t>(total_size) * sizeof(value_t);
-        g_sycl_queue.memcpy(m_node->data.get(), values.data(), alloc_bytes).wait();
+        g_sycl_queue.memcpy(get_data(), values.data(), alloc_bytes).wait();
         return *this;
     }
 
@@ -637,7 +640,7 @@ Tensor<value_t> & Tensor<value_t>::operator=(const std::vector<value_t> & values
         uint64_t d = 1;
         for (int64_t j = i + 1; j < rank; ++j)
         {
-            d *= m_node->dimensions[j];
+            d *= get_dimensions()[j];
         }
         divisors[i] = d;
     }
@@ -645,7 +648,7 @@ Tensor<value_t> & Tensor<value_t>::operator=(const std::vector<value_t> & values
     sycl_utils::SyclArray<uint64_t> res_divs_ptr(g_sycl_queue, divisors,
         MemoryLocation::DEVICE);
     sycl_utils::SyclArray<uint64_t> dst_strides_ptr(g_sycl_queue,
-        m_node->strides,
+        get_strides(),
         MemoryLocation::DEVICE);
     sycl_utils::SyclArray<value_t> vals_shared_ptr(g_sycl_queue, values,
         MemoryLocation::HOST);
@@ -675,13 +678,13 @@ Tensor<value_t> & Tensor<value_t>::operator=(const std::vector<value_t> & values
 template<typename value_t>
 Tensor<value_t> & Tensor<value_t>::operator=(value_t val)
 {
-    if (m_node->dimensions.empty())
+    if (get_dimensions().empty())
     {
-        m_node->dimensions = {1};
+        set_dimensions({1});
         compute_strides();
 
         value_t* raw_ptr = nullptr;
-        if (m_node->mem_loc == MemoryLocation::HOST)
+        if (get_memory_location() == MemoryLocation::HOST)
         {
             raw_ptr = static_cast<value_t*>(
                 sycl::malloc_shared(sizeof(value_t), g_sycl_queue));
@@ -697,14 +700,14 @@ Tensor<value_t> & Tensor<value_t>::operator=(value_t val)
             R"(Tensor(operator= scalar):
                 error allocating tensor memory on device.)");
 
-        m_node->data = std::shared_ptr<value_t>(raw_ptr,
+        set_data(std::shared_ptr<value_t>(raw_ptr,
             [](value_t* p)
             {
                 if (p) { sycl::free(p, g_sycl_queue); }
             }
-        );
+        ));
 
-        m_node->owns_data = true;
+        set_owns_data(true);
     }
 
     uint64_t total_size = this->get_num_elements();
@@ -714,13 +717,13 @@ Tensor<value_t> & Tensor<value_t>::operator=(value_t val)
         R"(Tensor(single value assignment):
             scalar assignment only allowed for tensors with single element.)");
 
-    if (m_node->mem_loc == MemoryLocation::HOST)
+    if (get_memory_location() == MemoryLocation::HOST)
     {
-        *m_node->data.get() = val;
+        *get_data() = val;
     }
     else
     {
-        g_sycl_queue.memcpy(m_node->data.get(), &val, sizeof(value_t)).wait();
+        g_sycl_queue.memcpy(get_data(), &val, sizeof(value_t)).wait();
     }
 
     return *this;
@@ -735,7 +738,7 @@ Tensor<value_t> Tensor<value_t>::operator[](uint64_t idx)
         validation_error,
         R"(Tensor(operator[]): tensor has no elements.)");
 
-    TEMPER_CHECK(idx < m_node->dimensions[0],
+    TEMPER_CHECK(idx < get_dimensions()[0],
         bounds_error,
         R"(Tensor(operator[]): Index out of bounds.)");
 
@@ -750,7 +753,7 @@ Tensor<value_t> Tensor<value_t>::operator[](uint64_t idx)
         std::vector<uint64_t> start_indices(rank, 0);
         start_indices[0] = idx;
         std::vector<uint64_t> view_shape
-            (m_node->dimensions.begin() + 1, m_node->dimensions.end());
+            (get_dimensions().begin() + 1, get_dimensions().end());
         return Tensor(*this, start_indices, view_shape);
     }
 }
@@ -764,7 +767,7 @@ const Tensor<value_t> Tensor<value_t>::operator[](uint64_t idx) const
         validation_error,
         R"(Tensor(operator[]): tensor has no elements.)");
 
-    TEMPER_CHECK(idx < m_node->dimensions[0],
+    TEMPER_CHECK(idx < get_dimensions()[0],
         bounds_error,
         R"(Tensor(operator[]): Index out of bounds.)");
 
@@ -779,7 +782,7 @@ const Tensor<value_t> Tensor<value_t>::operator[](uint64_t idx) const
         std::vector<uint64_t> start_indices(rank, 0);
         start_indices[0] = idx;
         std::vector<uint64_t> view_shape
-            (m_node->dimensions.begin() + 1, m_node->dimensions.end());
+            (get_dimensions().begin() + 1, get_dimensions().end());
         return Tensor(*this, start_indices, view_shape);
     }
 }
@@ -787,7 +790,7 @@ const Tensor<value_t> Tensor<value_t>::operator[](uint64_t idx) const
 template<typename value_t>
 Tensor<value_t>::operator value_t() const
 {
-    TEMPER_CHECK(!m_node->dimensions.empty(),
+    TEMPER_CHECK(!get_dimensions().empty(),
         validation_error,
         R"(Tensor(implicit type conversion): tensor has no elements.)");
 
@@ -798,13 +801,13 @@ Tensor<value_t>::operator value_t() const
 
     value_t tmp;
 
-    if (m_node->mem_loc == MemoryLocation::HOST)
+    if (get_memory_location() == MemoryLocation::HOST)
     {
-        tmp = *m_node->data.get();
+        tmp = *get_data();
     }
     else
     {
-        g_sycl_queue.memcpy(&tmp, m_node->data.get(), sizeof(value_t)).wait();
+        g_sycl_queue.memcpy(&tmp, get_data(), sizeof(value_t)).wait();
     }
 
     return tmp;
@@ -814,12 +817,12 @@ Tensor<value_t>::operator value_t() const
 template<typename value_t>
 Tensor<value_t> Tensor<value_t>::operator+(const Tensor & other) const
 {
-    TEMPER_CHECK(!m_node->dimensions.empty() && !other.m_node->dimensions.empty(),
+    TEMPER_CHECK(!get_dimensions().empty() && !other.get_dimensions().empty(),
         validation_error,
         R"(Tensor(operator+): either tensor has no elements.)");
 
-    utils::TensorDesc a_desc{m_node->dimensions, m_node->strides};
-    utils::TensorDesc b_desc{other.m_node->dimensions, other.m_node->strides};
+    utils::TensorDesc a_desc{get_dimensions(), get_strides()};
+    utils::TensorDesc b_desc{other.get_dimensions(), other.get_strides()};
 
     utils::BroadcastResult br = utils::compute_broadcast({a_desc, b_desc});
 
@@ -837,8 +840,8 @@ Tensor<value_t> Tensor<value_t>::operator+(const Tensor & other) const
     }
 
     MemoryLocation res_loc;
-    if (m_node->mem_loc == MemoryLocation::DEVICE ||
-        other.m_node->mem_loc == MemoryLocation::DEVICE)
+    if (get_memory_location() == MemoryLocation::DEVICE ||
+        other.get_memory_location() == MemoryLocation::DEVICE)
     {
         res_loc = MemoryLocation::DEVICE;
     }
@@ -906,15 +909,14 @@ Tensor<value_t> Tensor<value_t>::operator+(const Tensor & other) const
         nonfinite_error,
         R"(Tensor(operator+): non-finite result (overflow or Inf).)");
 
-    result.m_node->meta.requires_grad =
-        m_node->meta.requires_grad || other.m_node->meta.requires_grad;
+    result.set_requires_grad(requires_grad() || other.requires_grad());
 
-    if (result.m_node->meta.requires_grad)
+    if (result.requires_grad())
     {
-        result.m_node->meta.fn = std::make_shared<AddEdge<value_t>>(
+        result.set_source_function(std::make_shared<AddEdge<value_t>>(
             m_node,
             other.m_node,
-            result.m_node);
+            result.m_node));
     }
 
     return result;
@@ -923,12 +925,12 @@ Tensor<value_t> Tensor<value_t>::operator+(const Tensor & other) const
 template<typename value_t>
 Tensor<value_t> Tensor<value_t>::operator-(const Tensor & other) const
 {
-    TEMPER_CHECK(!m_node->dimensions.empty() && !other.m_node->dimensions.empty(),
+    TEMPER_CHECK(!get_dimensions().empty() && !other.get_dimensions().empty(),
         validation_error,
         R"(Tensor(operator-): either tensor has no elements.)");
 
-    utils::TensorDesc a_desc{m_node->dimensions, m_node->strides};
-    utils::TensorDesc b_desc{other.m_node->dimensions, other.m_node->strides};
+    utils::TensorDesc a_desc{get_dimensions(), get_strides()};
+    utils::TensorDesc b_desc{other.get_dimensions(), other.get_strides()};
 
     utils::BroadcastResult br = utils::compute_broadcast({a_desc, b_desc});
 
@@ -946,8 +948,8 @@ Tensor<value_t> Tensor<value_t>::operator-(const Tensor & other) const
     }
 
     MemoryLocation res_loc;
-    if (m_node->mem_loc == MemoryLocation::DEVICE ||
-        other.m_node->mem_loc == MemoryLocation::DEVICE)
+    if (get_memory_location() == MemoryLocation::DEVICE ||
+        other.get_memory_location() == MemoryLocation::DEVICE)
     {
         res_loc = MemoryLocation::DEVICE;
     }
@@ -1021,12 +1023,12 @@ Tensor<value_t> Tensor<value_t>::operator-(const Tensor & other) const
 template<typename value_t>
 Tensor<value_t> Tensor<value_t>::operator*(const Tensor & other) const
 {
-    TEMPER_CHECK(!m_node->dimensions.empty() && !other.m_node->dimensions.empty(),
+    TEMPER_CHECK(!get_dimensions().empty() && !other.get_dimensions().empty(),
         validation_error,
         R"(Tensor(operator*): either tensor has no elements.)");
 
-    utils::TensorDesc a_desc{m_node->dimensions, m_node->strides};
-    utils::TensorDesc b_desc{other.m_node->dimensions, other.m_node->strides};
+    utils::TensorDesc a_desc{get_dimensions(), get_strides()};
+    utils::TensorDesc b_desc{other.get_dimensions(), other.get_strides()};
 
     utils::BroadcastResult br = utils::compute_broadcast({a_desc, b_desc});
 
@@ -1044,8 +1046,8 @@ Tensor<value_t> Tensor<value_t>::operator*(const Tensor & other) const
     }
 
     MemoryLocation res_loc;
-    if (m_node->mem_loc == MemoryLocation::DEVICE ||
-        other.m_node->mem_loc == MemoryLocation::DEVICE)
+    if (get_memory_location() == MemoryLocation::DEVICE ||
+        other.get_memory_location() == MemoryLocation::DEVICE)
     {
         res_loc = MemoryLocation::DEVICE;
     }
@@ -1119,12 +1121,12 @@ Tensor<value_t> Tensor<value_t>::operator*(const Tensor & other) const
 template<typename value_t>
 Tensor<value_t> Tensor<value_t>::operator/(const Tensor & other) const
 {
-    TEMPER_CHECK(!m_node->dimensions.empty() && !other.m_node->dimensions.empty(),
+    TEMPER_CHECK(!get_dimensions().empty() && !other.get_dimensions().empty(),
         validation_error,
         R"(Tensor(operator/): either tensor has no elements.)");
 
-    utils::TensorDesc a_desc{m_node->dimensions, m_node->strides};
-    utils::TensorDesc b_desc{other.m_node->dimensions, other.m_node->strides};
+    utils::TensorDesc a_desc{get_dimensions(), get_strides()};
+    utils::TensorDesc b_desc{other.get_dimensions(), other.get_strides()};
 
     utils::BroadcastResult br = utils::compute_broadcast({a_desc, b_desc});
 
@@ -1142,8 +1144,8 @@ Tensor<value_t> Tensor<value_t>::operator/(const Tensor & other) const
     }
 
     MemoryLocation res_loc;
-    if (m_node->mem_loc == MemoryLocation::DEVICE ||
-        other.m_node->mem_loc == MemoryLocation::DEVICE)
+    if (get_memory_location() == MemoryLocation::DEVICE ||
+        other.get_memory_location() == MemoryLocation::DEVICE)
     {
         res_loc = MemoryLocation::DEVICE;
     }
@@ -1230,10 +1232,10 @@ Tensor<value_t> Tensor<value_t>::operator-() const
 
     uint64_t total_size = this->get_num_elements();
 
-    MemoryLocation res_loc = m_node->mem_loc;
-    Tensor result(m_node->dimensions, res_loc);
+    MemoryLocation res_loc = get_memory_location();
+    Tensor result(get_dimensions(), res_loc);
 
-    std::vector<uint64_t> divisors = utils::compute_divisors(m_node->dimensions);
+    std::vector<uint64_t> divisors = utils::compute_divisors(get_dimensions());
 
     sycl_utils::SyclArray<uint64_t> divs_ptr(g_sycl_queue, divisors,
         MemoryLocation::DEVICE);
@@ -1346,11 +1348,11 @@ Tensor<value_t> Tensor<value_t>::clone() const
         validation_error,
         R"(Tensor(clone): tensor has no elements.)");
 
-    Tensor<value_t> result(m_node->dimensions, m_node->mem_loc);
+    Tensor<value_t> result(get_dimensions(), get_memory_location());
 
     const uint64_t total_elements = this->get_num_elements();
 
-    std::vector<uint64_t> shape_divs = utils::compute_divisors(m_node->dimensions);
+    std::vector<uint64_t> shape_divs = utils::compute_divisors(get_dimensions());
 
     sycl_utils::SyclArray<uint64_t> shape_divs_ptr(g_sycl_queue, shape_divs,
         MemoryLocation::DEVICE);
@@ -1378,7 +1380,7 @@ Tensor<value_t> Tensor<value_t>::clone() const
         p_dest_data[dest_offset] = p_src_data[src_offset];
     }).wait();
 
-    result.m_node->meta.requires_grad = m_node->meta.requires_grad;
+    result.set_requires_grad(requires_grad());
 
     return result;
 }
@@ -1479,15 +1481,15 @@ void Tensor<value_t>::copy_from(const Tensor & src)
 template<typename value_t>
 void Tensor<value_t>::to(MemoryLocation target_loc)
 {
-    TEMPER_CHECK(!m_node->dimensions.empty(),
+    TEMPER_CHECK(!get_dimensions().empty(),
         validation_error,
         R"(Tensor(to): tensor has no elements.)");
 
-    TEMPER_CHECK(m_node->owns_data,
+    TEMPER_CHECK(get_owns_data(),
         validation_error,
         R"(Tensor(to): cannot move memory of a Tensor view (non-owning).)");
 
-    if (m_node->mem_loc == target_loc)
+    if (get_memory_location() == target_loc)
     {
         return;
     }
@@ -1522,10 +1524,10 @@ void Tensor<value_t>::to(MemoryLocation target_loc)
     );
 
     g_sycl_queue.memcpy
-        (new_ptr.get(), m_node->data.get(), total_size * sizeof(value_t)).wait();
+        (new_ptr.get(), get_data(), total_size * sizeof(value_t)).wait();
 
-    m_node->data = std::move(new_ptr);
-    m_node->mem_loc = target_loc;
+    set_data(std::move(new_ptr));
+    set_memory_location(target_loc);
 }
 
 template<typename value_t>
@@ -1535,14 +1537,14 @@ void Tensor<value_t>::reshape(const std::vector<uint64_t>& new_dimensions)
         validation_error,
         R"(Tensor(reshape): new_dimensions cannot be empty.)");
 
-    TEMPER_CHECK(m_node->owns_data,
+    TEMPER_CHECK(get_owns_data(),
         validation_error,
         R"(Tensor(reshape): cannot reshape an alias/view tensor.)");
 
     constexpr uint64_t U64_MAX = std::numeric_limits<uint64_t>::max();
 
     uint64_t og_total_size = 1;
-    for (uint64_t dim : m_node->dimensions)
+    for (uint64_t dim : get_dimensions())
     {
         og_total_size *= dim;
     }
@@ -1565,7 +1567,7 @@ void Tensor<value_t>::reshape(const std::vector<uint64_t>& new_dimensions)
         validation_error,
         R"(Tensor(reshape): total number of elements must remain the same.)");
 
-    m_node->dimensions = new_dimensions;
+    set_dimensions(new_dimensions);
     compute_strides();
 }
 
@@ -1613,17 +1615,17 @@ void Tensor<value_t>::sort(std::optional<int64_t> axis_opt)
         {
             if (i == axis)
             {
-                effective_axis_size = m_node->dimensions[i];
-                axis_stride = m_node->strides[i];
+                effective_axis_size = get_dimensions()[i];
+                axis_stride = get_strides()[i];
             }
             else
             {
-                slice_count *= m_node->dimensions[i];
+                slice_count *= get_dimensions()[i];
             }
         }
     }
 
-    std::vector<uint64_t> divisors = utils::compute_divisors(m_node->dimensions);
+    std::vector<uint64_t> divisors = utils::compute_divisors(get_dimensions());
 
     std::vector<uint64_t> host_slice_base(static_cast<size_t>(slice_count), 0);
     if (!flatten)
@@ -1633,8 +1635,8 @@ void Tensor<value_t>::sort(std::optional<int64_t> axis_opt)
         for (int64_t i = 0; i < rank; ++i)
         {
             if (i == axis) continue;
-            dims.push_back(m_node->dimensions[i]);
-            strides_for_dims.push_back(m_node->strides[i]);
+            dims.push_back(get_dimensions()[i]);
+            strides_for_dims.push_back(get_strides()[i]);
         }
         std::vector<uint64_t> index_factors = utils::compute_divisors(dims);
         const uint64_t D = static_cast<uint64_t>(dims.size());
@@ -1651,16 +1653,16 @@ void Tensor<value_t>::sort(std::optional<int64_t> axis_opt)
     sycl_utils::SyclArray<uint64_t> divisors_arr(g_sycl_queue,
         divisors, MemoryLocation::DEVICE);
     sycl_utils::SyclArray<uint64_t> strides_arr(g_sycl_queue,
-        m_node->strides, MemoryLocation::DEVICE);
+        get_strides(), MemoryLocation::DEVICE);
 
     const uint64_t* p_slice_base = slice_base_arr;
     const uint64_t* p_divisors = divisors_arr;
     const uint64_t* p_strides = strides_arr;
 
-    value_t* tensor_data = m_node->data.get();
+    value_t* tensor_data = get_data();
 
     sycl_utils::SyclArray<value_t> merge_buffer_arr(g_sycl_queue,
-        total_size, m_node->mem_loc);
+        total_size, get_memory_location());
     value_t* merge_buffer = merge_buffer_arr;
 
     value_t* merge_input = tensor_data;
@@ -1884,11 +1886,11 @@ Tensor<value_t> Tensor<value_t>::sum(std::optional<int64_t> axis_opt) const
     }
 
     uint64_t axis_size = 0;
-    std::vector<uint64_t> new_dimensions(m_node->dimensions);
+    std::vector<uint64_t> new_dimensions(get_dimensions());
 
     if (!flatten)
     {
-        axis_size = m_node->dimensions[axis];
+        axis_size = get_dimensions()[axis];
         new_dimensions[axis] = 1;
     }
 
@@ -1931,7 +1933,7 @@ Tensor<value_t> Tensor<value_t>::sum(std::optional<int64_t> axis_opt) const
     for (int64_t i = 0; i < rank; ++i)
     {
         if (!flatten && i == axis) continue;
-        fixed_dims.push_back(m_node->dimensions[i]);
+        fixed_dims.push_back(get_dimensions()[i]);
     }
     const uint64_t fixed_count = fixed_dims.size();
 
@@ -1963,7 +1965,7 @@ Tensor<value_t> Tensor<value_t>::sum(std::optional<int64_t> axis_opt) const
     }
 
     const std::vector<uint64_t> divisors =
-        utils::compute_divisors(m_node->dimensions);
+        utils::compute_divisors(get_dimensions());
 
     sycl_utils::SyclArray<uint64_t> strides_arr(g_sycl_queue,
         this->get_strides(), MemoryLocation::DEVICE);
@@ -2175,7 +2177,7 @@ Tensor<value_t> Tensor<value_t>::cumsum(std::optional<int64_t> axis_opt) const
     }
     else
     {
-        axis_size = m_node->dimensions[axis];
+        axis_size = get_dimensions()[axis];
     }
 
     std::vector<uint64_t> out_dims;
@@ -2185,14 +2187,14 @@ Tensor<value_t> Tensor<value_t>::cumsum(std::optional<int64_t> axis_opt) const
     }
     else
     {
-        out_dims = m_node->dimensions;
+        out_dims = get_dimensions();
     }
 
-    Tensor<value_t> result(out_dims, m_node->mem_loc);
+    Tensor<value_t> result(out_dims, get_memory_location());
 
     const value_t* p_src = get_data();
     value_t* p_out = result.get_data();
-    std::vector<uint64_t> divisors = utils::compute_divisors(m_node->dimensions);
+    std::vector<uint64_t> divisors = utils::compute_divisors(get_dimensions());
 
     std::vector<uint64_t> fixed_divisors;
     std::vector<uint64_t> fixed_strides;
@@ -2206,7 +2208,7 @@ Tensor<value_t> Tensor<value_t>::cumsum(std::optional<int64_t> axis_opt) const
         for (int64_t i = 0; i < rank; ++i)
         {
             if (i == axis) continue;
-            fixed_dims.push_back(m_node->dimensions[i]);
+            fixed_dims.push_back(get_dimensions()[i]);
         }
         fixed_count = static_cast<uint64_t>(fixed_dims.size());
         fixed_divisors = temper::utils::compute_divisors(fixed_dims);
@@ -2216,8 +2218,8 @@ Tensor<value_t> Tensor<value_t>::cumsum(std::optional<int64_t> axis_opt) const
         for (int64_t d = 0; d < rank; ++d)
         {
             if (d == axis) continue;
-            fixed_strides.push_back(m_node->strides[d]);
-            fixed_out_strides.push_back(result.m_node->strides[d]);
+            fixed_strides.push_back(get_strides()[d]);
+            fixed_out_strides.push_back(result.get_strides()[d]);
         }
     }
 
@@ -2242,7 +2244,7 @@ Tensor<value_t> Tensor<value_t>::cumsum(std::optional<int64_t> axis_opt) const
         for (int64_t i = 0; i < rank; ++i)
         {
             if (i == axis) continue;
-            out_sz *= m_node->dimensions[i];
+            out_sz *= get_dimensions()[i];
         }
         effective_output_size = out_sz;
     }
@@ -2265,7 +2267,7 @@ Tensor<value_t> Tensor<value_t>::cumsum(std::optional<int64_t> axis_opt) const
     sycl_utils::SyclArray<uint64_t> divs_arr(g_sycl_queue,
         divisors, MemoryLocation::DEVICE);
     sycl_utils::SyclArray<uint64_t> strides_arr(g_sycl_queue,
-        m_node->strides, MemoryLocation::DEVICE);
+        get_strides(), MemoryLocation::DEVICE);
     sycl_utils::SyclArray<int32_t> error_flag_arr(g_sycl_queue,
         1, MemoryLocation::HOST);
     sycl_utils::SyclArray<value_t> block_partials_arr(g_sycl_queue,
@@ -2280,7 +2282,7 @@ Tensor<value_t> Tensor<value_t>::cumsum(std::optional<int64_t> axis_opt) const
     if (!flatten)
     {
         out_strides_arr_opt.emplace(g_sycl_queue,
-            result.m_node->strides, MemoryLocation::DEVICE);
+            result.get_strides(), MemoryLocation::DEVICE);
     }
     const uint64_t* p_out_strides_dev = (!flatten)
         ? out_strides_arr_opt->data() : nullptr;
@@ -2526,8 +2528,8 @@ Tensor<value_t> Tensor<value_t>::transpose(const std::vector<int64_t> & axes) co
     std::vector<uint64_t> new_strides(rank);
     for (int64_t i = 0; i < rank; ++i)
     {
-        new_dims[i] = m_node->dimensions[new_axes[i]];
-        new_strides[i] = m_node->strides[new_axes[i]];
+        new_dims[i] = get_dimensions()[new_axes[i]];
+        new_strides[i] = get_strides()[new_axes[i]];
     }
 
     std::vector<uint64_t> start_indices(rank, 0);
@@ -2541,19 +2543,19 @@ void Tensor<value_t>::print(std::ostream& os) const
     std::function<void(uint64_t, uint64_t)> recurse
         = [&](uint64_t dim, uint64_t offset)
     {
-        if (dim == m_node->dimensions.size() - 1)
+        if (dim == get_dimensions().size() - 1)
         {
             os << "[";
-            for (uint64_t i = 0; i < m_node->dimensions[dim]; ++i)
+            for (uint64_t i = 0; i < get_dimensions()[dim]; ++i)
             {
                 value_t val;
 
-                uint64_t current_offset = offset + i * m_node->strides[dim];
-                g_sycl_queue.memcpy(&val, m_node->data.get() + current_offset,
+                uint64_t current_offset = offset + i * get_strides()[dim];
+                g_sycl_queue.memcpy(&val, get_data() + current_offset,
                     sizeof(value_t)).wait();
 
                 os << val;
-                if (i != m_node->dimensions[dim] - 1)
+                if (i != get_dimensions()[dim] - 1)
                 {
                     os << ", ";
                 }
@@ -2563,10 +2565,10 @@ void Tensor<value_t>::print(std::ostream& os) const
         else
         {
             os << "[";
-            for (uint64_t i = 0; i < m_node->dimensions[dim]; ++i)
+            for (uint64_t i = 0; i < get_dimensions()[dim]; ++i)
             {
-                recurse(dim + 1, offset + i * m_node->strides[dim]);
-                if (i != m_node->dimensions[dim] - 1)
+                recurse(dim + 1, offset + i * get_strides()[dim]);
+                if (i != get_dimensions()[dim] - 1)
                 {
                     os << ",\n" << std::string(dim + 1, ' ');
                 }
@@ -2575,7 +2577,7 @@ void Tensor<value_t>::print(std::ostream& os) const
         }
     };
 
-    if (m_node->dimensions.empty())
+    if (get_dimensions().empty())
     {
         os << "[]\n";
         return;
@@ -2589,12 +2591,69 @@ template<typename value_t>
 void Tensor<value_t>::print_shape(std::ostream& os) const
 {
     os << "[";
-    for (size_t i = 0; i < m_node->dimensions.size(); ++i)
+    for (size_t i = 0; i < get_dimensions().size(); ++i)
     {
         if (i > 0) os << ", ";
-        os << m_node->dimensions[i];
+        os << get_dimensions()[i];
     }
     os << "]\n";
+}
+
+template<typename value_t>
+void Tensor<value_t>::set_data(const std::shared_ptr<value_t>& data) noexcept
+{
+    m_node->data = data;
+}
+
+template<typename value_t>
+const std::shared_ptr<value_t>& Tensor<value_t>::get_data_handle() const noexcept
+{
+    return m_node->data;
+}
+
+template<typename value_t>
+void Tensor<value_t>::set_dimensions(
+    const std::vector<uint64_t>& dimensions) noexcept
+{
+    m_node->dimensions = dimensions;
+}
+
+template<typename value_t>
+void Tensor<value_t>::set_strides(
+    const std::vector<uint64_t>& strides) noexcept
+{
+    m_node->strides = strides;
+}
+
+template<typename value_t>
+void Tensor<value_t>::set_owns_data(bool owns_data) noexcept
+{
+    m_node->owns_data = owns_data;
+}
+
+template<typename value_t>
+void Tensor<value_t>::set_memory_location(MemoryLocation loc) noexcept
+{
+    m_node->mem_loc = loc;
+}
+
+template<typename value_t>
+void Tensor<value_t>::set_source_function(
+    const std::shared_ptr<FunctionEdge<value_t>>& fn) noexcept
+{
+    m_node->meta.fn = fn;
+}
+
+template<typename value_t>
+void Tensor<value_t>::set_gradient(const std::shared_ptr<value_t>& grad) noexcept
+{
+    m_node->meta.grad = grad;
+}
+
+template<typename value_t>
+const std::shared_ptr<value_t>& Tensor<value_t>::get_gradient_handle() const noexcept
+{
+    return m_node->meta.grad;
 }
 
 template<typename value_t>
@@ -2624,25 +2683,25 @@ const std::vector<uint64_t> & Tensor<value_t>::get_strides() const noexcept
 template<typename value_t>
 const std::vector<uint64_t> & Tensor<value_t>::get_shape() const noexcept
 {
-    return m_node->dimensions;
+    return get_dimensions();
 }
 
 template<typename value_t>
 int64_t Tensor<value_t>::get_rank() const noexcept
 {
-    return static_cast<int64_t>(m_node->dimensions.size());
+    return static_cast<int64_t>(get_dimensions().size());
 }
 
 template<typename value_t>
 uint64_t Tensor<value_t>::get_num_elements() const noexcept
 {
-    if (m_node->dimensions.empty())
+    if (get_dimensions().empty())
     {
         return 0;
     }
 
     uint64_t total_size = 1;
-    for (uint64_t d : m_node->dimensions)
+    for (uint64_t d : get_dimensions())
     {
         total_size *= d;
     }
@@ -2726,7 +2785,7 @@ std::vector<uint64_t> Tensor<value_t>::index_to_coords(uint64_t flat) const
         bounds_error,
         "Tensor::index_to_coords: flat out of range");
 
-    std::vector<uint64_t> divs = utils::compute_divisors(m_node->dimensions);
+    std::vector<uint64_t> divs = utils::compute_divisors(get_dimensions());
     std::vector<uint64_t> coords(rank, 0);
 
     for (int64_t d = 0; d < rank; ++d)
@@ -2737,7 +2796,7 @@ std::vector<uint64_t> Tensor<value_t>::index_to_coords(uint64_t flat) const
         }
         else
         {
-            coords[d] = (flat / divs[d]) % m_node->dimensions[d];
+            coords[d] = (flat / divs[d]) % get_dimensions()[d];
         }
     }
 
@@ -2760,7 +2819,7 @@ uint64_t Tensor<value_t>::coords_to_index
     }
 
     std::vector<uint64_t> divs =
-        temper::utils::compute_divisors(m_node->dimensions);
+        temper::utils::compute_divisors(get_dimensions());
     uint64_t flat = 0;
 
     const std::vector<uint64_t> & dimensions = this->get_dimensions();
