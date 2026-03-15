@@ -3787,6 +3787,76 @@ TYPED_TEST(TypedTensor, operator_addition_alias_view_weird_strides)
 }
 
 /**
+ * @test TypedTensor.operator_addition_builds_add_graph_chain
+ * @brief Verifies repeated operator+ creates a correctly linked AddEdge chain.
+ */
+TYPED_TEST(TypedTensor, operator_addition_builds_add_graph_chain)
+{
+    using value_t = TypeParam;
+
+    Tensor<value_t> a({2,2}, MemoryLocation::HOST, true);
+    Tensor<value_t> b({2,2}, MemoryLocation::HOST, true);
+    Tensor<value_t> c({2,2}, MemoryLocation::HOST, true);
+
+    a = std::vector<value_t>{
+        static_cast<value_t>(1), static_cast<value_t>(2),
+        static_cast<value_t>(3), static_cast<value_t>(4)
+    };
+    b = std::vector<value_t>{
+        static_cast<value_t>(5), static_cast<value_t>(6),
+        static_cast<value_t>(7), static_cast<value_t>(8)
+    };
+    c = std::vector<value_t>{
+        static_cast<value_t>(9), static_cast<value_t>(10),
+        static_cast<value_t>(11), static_cast<value_t>(12)
+    };
+
+    Tensor<value_t> y1 = a + b;
+    Tensor<value_t> y2 = y1 + c;
+    Tensor<value_t> y3 = y2 + b;
+
+    EXPECT_EQ(a.get_source_function(), nullptr);
+    EXPECT_EQ(b.get_source_function(), nullptr);
+    EXPECT_EQ(c.get_source_function(), nullptr);
+
+    ASSERT_NE(y1.get_source_function(), nullptr);
+    ASSERT_NE(y2.get_source_function(), nullptr);
+    ASSERT_NE(y3.get_source_function(), nullptr);
+
+    EXPECT_TRUE(y1.requires_grad());
+    EXPECT_TRUE(y2.requires_grad());
+    EXPECT_TRUE(y3.requires_grad());
+
+    auto f1 = y1.get_source_function();
+    auto f2 = y2.get_source_function();
+    auto f3 = y3.get_source_function();
+
+    EXPECT_EQ(f1->name(), "add");
+    EXPECT_EQ(f2->name(), "add");
+    EXPECT_EQ(f3->name(), "add");
+
+    auto in1 = f1->inputs();
+    auto in2 = f2->inputs();
+    auto in3 = f3->inputs();
+
+    ASSERT_EQ(in1.size(), 2u);
+    ASSERT_EQ(in2.size(), 2u);
+    ASSERT_EQ(in3.size(), 2u);
+
+    EXPECT_EQ(in1[0], a.m_node);
+    EXPECT_EQ(in1[1], b.m_node);
+    EXPECT_EQ(f1->output(), y1.m_node);
+
+    EXPECT_EQ(in2[0], y1.m_node);
+    EXPECT_EQ(in2[1], c.m_node);
+    EXPECT_EQ(f2->output(), y2.m_node);
+
+    EXPECT_EQ(in3[0], y2.m_node);
+    EXPECT_EQ(in3[1], b.m_node);
+    EXPECT_EQ(f3->output(), y3.m_node);
+}
+
+/**
  * @test TypedTensor.operator_subtraction
  * @brief Verifies element-wise subtraction on device memory.
  */
