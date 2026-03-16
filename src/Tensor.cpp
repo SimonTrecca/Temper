@@ -8,6 +8,7 @@
 #include "temper/Utils.hpp"
 #include "temper/Errors.hpp"
 
+#include <algorithm>
 #include <iostream>
 
 namespace temper
@@ -1859,7 +1860,8 @@ void Tensor<value_t>::sort(std::optional<int64_t> axis_opt)
 }
 
 template<typename value_t>
-Tensor<value_t> Tensor<value_t>::sum(std::optional<int64_t> axis_opt) const
+Tensor<value_t> Tensor<value_t>::sum(
+    std::optional<std::vector<int64_t>> axes_opt) const
 {
     const int64_t rank = this->get_rank();
     const MemoryLocation res_loc = this->get_memory_location();
@@ -1869,83 +1871,110 @@ Tensor<value_t> Tensor<value_t>::sum(std::optional<int64_t> axis_opt) const
         return Tensor<value_t>({1}, res_loc);
     }
 
-    const bool flatten = ! axis_opt.has_value();
-    int64_t axis;
+    const bool flatten = !axes_opt.has_value();
+    const std::vector<uint64_t>& dims = get_dimensions();
 
-    if (!flatten)
+    std::vector<bool> is_reduced(static_cast<size_t>(rank), false);
+    std::vector<uint64_t> reduced_axes;
+    reduced_axes.reserve(static_cast<size_t>(rank));
+
+    if (flatten)
     {
-        axis = axis_opt.value();
-        if (axis < 0)
+        for (int64_t i = 0; i < rank; ++i)
         {
-            axis += rank;
+            is_reduced[static_cast<size_t>(i)] = true;
+            reduced_axes.push_back(static_cast<uint64_t>(i));
         }
-
-        TEMPER_CHECK(axis >= 0 && axis < rank,
-            bounds_error,
-            "Tensor(sum): axis out of bounds");
-    }
-
-    uint64_t axis_size = 0;
-    std::vector<uint64_t> new_dimensions(get_dimensions());
-
-    if (!flatten)
-    {
-        axis_size = get_dimensions()[axis];
-        new_dimensions[axis] = 1;
-    }
-
-    uint64_t output_size = 1;
-    for (uint64_t d : new_dimensions)
-    {
-        output_size *= d;
-    }
-
-    uint64_t effective_axis_size = 0;
-    uint64_t effective_output_size = 0;
-
-    const uint64_t total_size = this->get_num_elements();
-    if (flatten)
-    {
-        effective_axis_size = total_size;
-        effective_output_size = 1;
     }
     else
     {
-        effective_axis_size = axis_size;
-        effective_output_size = output_size;
+        const std::vector<int64_t> & axes = axes_opt.value();
+        TEMPER_CHECK(!axes.empty(),
+            validation_error,
+            "Tensor(sum): axes cannot be empty");
+
+        for (int64_t raw_axis : axes)
+        {
+            int64_t aligned_axis = raw_axis;
+            if (aligned_axis < 0)
+            {
+                aligned_axis += rank;
+            }
+
+            TEMPER_CHECK(aligned_axis >= 0 && aligned_axis < rank,
+                bounds_error,
+                "Tensor(sum): axis out of bounds");
+
+            const size_t idx = static_cast<size_t>(aligned_axis);
+            TEMPER_CHECK(!is_reduced[idx],
+                validation_error,
+                "Tensor(sum): duplicate axes are not allowed");
+
+            is_reduced[idx] = true;
+            reduced_axes.push_back(static_cast<uint64_t>(aligned_axis));
+        }
     }
 
-    Tensor<value_t> result;
-    if (flatten)
+    std::vector<uint64_t> kept_axes;
+    kept_axes.reserve(static_cast<size_t>(rank));
+    std::vector<uint64_t> kept_dims;
+    kept_dims.reserve(static_cast<size_t>(rank));
+    std::vector<uint64_t> reduced_dims;
+    reduced_dims.reserve(reduced_axes.size());
+
+    std::vector<uint64_t> new_dimensions = dims;
+    for (int64_t i = 0; i < rank; ++i)
     {
-        result = Tensor<value_t>({1}, res_loc);
+        const uint64_t ui = static_cast<uint64_t>(i);
+        if (is_reduced[static_cast<size_t>(i)])
+        {
+            reduced_dims.push_back(dims[ui]);
+            if (!flatten)
+            {
+                new_dimensions[ui] = 1;
+            }
+        }
+        else
+        {
+            kept_axes.push_back(ui);
+            kept_dims.push_back(dims[ui]);
+        }
     }
-    else
+
+    uint64_t effective_output_size = 1;
+    for (uint64_t d : kept_dims)
     {
-        result = Tensor<value_t>(new_dimensions, res_loc);
+        effective_output_size *= d;
     }
+
+    uint64_t effective_reduction_size = 1;
+    for (uint64_t d : reduced_dims)
+    {
+        effective_reduction_size *= d;
+    }
+
+    Tensor<value_t> result = flatten
+        ? Tensor<value_t>({1}, res_loc)
+        : Tensor<value_t>(new_dimensions, res_loc);
 
     value_t* p_out = result.get_data();
     const value_t* p_src = get_data();
 
-    std::vector<uint64_t> fixed_dims;
-    fixed_dims.reserve(rank - 1);
-    for (int64_t i = 0; i < rank; ++i)
+    std::vector<uint64_t> kept_divisors;
+    if (!kept_dims.empty())
     {
-        if (!flatten && i == axis) continue;
-        fixed_dims.push_back(get_dimensions()[i]);
+        kept_divisors = temper::utils::compute_divisors(kept_dims);
     }
-    const uint64_t fixed_count = fixed_dims.size();
 
-    std::vector<uint64_t> fixed_divisors;
-    if (fixed_count > 0)
+    std::vector<uint64_t> reduced_divisors;
+    if (!reduced_dims.empty())
     {
-        fixed_divisors = temper:: utils::compute_divisors(fixed_dims);
+        reduced_divisors = temper::utils::compute_divisors(reduced_dims);
     }
 
     auto [workgroup_size, num_groups_per_slice] =
         utils::compute_wg_and_groups(g_sycl_queue,
-            static_cast<size_t>(effective_axis_size));
+            static_cast<size_t>(effective_reduction_size));
 
     size_t total_groups =
         static_cast<size_t>(effective_output_size) * num_groups_per_slice;
@@ -1964,32 +1993,49 @@ Tensor<value_t> Tensor<value_t>::sum(std::optional<int64_t> axis_opt) const
         alloc_partial_count = partial_count;
     }
 
-    const std::vector<uint64_t> divisors =
-        utils::compute_divisors(get_dimensions());
-
     sycl_utils::SyclArray<uint64_t> strides_arr(g_sycl_queue,
         this->get_strides(), MemoryLocation::DEVICE);
-    sycl_utils::SyclArray<uint64_t> divisors_arr(g_sycl_queue,
-        divisors, MemoryLocation::DEVICE);
     sycl_utils::SyclArray<value_t> partials_arr(g_sycl_queue,
         alloc_partial_count, MemoryLocation::DEVICE);
     sycl_utils::SyclArray<int32_t> error_flag_arr(g_sycl_queue,
         1, MemoryLocation::HOST);
 
     const uint64_t* p_strides_dev = strides_arr;
-    const uint64_t* p_divisors_dev = divisors_arr;
     value_t* p_partials = partials_arr;
     int32_t* p_error_flag = error_flag_arr;
 
-    std::optional<sycl_utils::SyclArray<uint64_t>> fixed_divs_arr_opt;
+    const uint64_t kept_count = static_cast<uint64_t>(kept_axes.size());
+    const uint64_t reduced_count = static_cast<uint64_t>(reduced_axes.size());
 
-    if (fixed_count > 0)
+    std::optional<sycl_utils::SyclArray<uint64_t>> kept_axes_arr_opt;
+    std::optional<sycl_utils::SyclArray<uint64_t>> kept_divs_arr_opt;
+    std::optional<sycl_utils::SyclArray<uint64_t>> reduced_axes_arr_opt;
+    std::optional<sycl_utils::SyclArray<uint64_t>> reduced_divs_arr_opt;
+
+    if (kept_count > 0)
     {
-        fixed_divs_arr_opt.emplace(g_sycl_queue,
-            fixed_divisors, MemoryLocation::DEVICE);
+        kept_axes_arr_opt.emplace(g_sycl_queue,
+            kept_axes, MemoryLocation::DEVICE);
+        kept_divs_arr_opt.emplace(g_sycl_queue,
+            kept_divisors, MemoryLocation::DEVICE);
     }
-    const uint64_t* p_fixed_divs_dev = (fixed_count > 0)
-        ? fixed_divs_arr_opt->data() : nullptr;
+
+    if (reduced_count > 0)
+    {
+        reduced_axes_arr_opt.emplace(g_sycl_queue,
+            reduced_axes, MemoryLocation::DEVICE);
+        reduced_divs_arr_opt.emplace(g_sycl_queue,
+            reduced_divisors, MemoryLocation::DEVICE);
+    }
+
+    const uint64_t* p_kept_axes_dev = (kept_count > 0)
+        ? kept_axes_arr_opt->data() : nullptr;
+    const uint64_t* p_kept_divs_dev = (kept_count > 0)
+        ? kept_divs_arr_opt->data() : nullptr;
+    const uint64_t* p_reduced_axes_dev = (reduced_count > 0)
+        ? reduced_axes_arr_opt->data() : nullptr;
+    const uint64_t* p_reduced_divs_dev = (reduced_count > 0)
+        ? reduced_divs_arr_opt->data() : nullptr;
 
     g_sycl_queue.memset
         (p_partials, 0, sizeof(value_t) * alloc_partial_count).wait();
@@ -2011,56 +2057,38 @@ Tensor<value_t> Tensor<value_t>::sum(std::optional<int64_t> axis_opt) const
 
             value_t local_sum = value_t{};
 
-            if (flatten)
+            uint64_t remaining_slice = static_cast<uint64_t>(slice);
+            uint64_t base_offset = 0;
+            for (uint64_t k = 0; k < kept_count; ++k)
             {
-                size_t start = group_in_slice * workgroup_size + local_id;
-                size_t stride = workgroup_size * num_groups_per_slice;
-                const size_t N = static_cast<size_t>(effective_axis_size);
-                for (size_t linear = start; linear < N; linear += stride)
-                {
-                    uint64_t offset = sycl_utils::idx_of(
-                        static_cast<uint64_t>(linear),
-                        p_divisors_dev, p_strides_dev, rank);
-
-                    value_t v = p_src[offset];
-                    TEMPER_DEVICE_EXPECT(!sycl_utils::is_nan(v), p_error_flag, 1);
-                    local_sum += v;
-                }
+                uint64_t div = p_kept_divs_dev[k];
+                uint64_t idx = remaining_slice / div;
+                remaining_slice = remaining_slice % div;
+                uint64_t axis_idx = p_kept_axes_dev[k];
+                base_offset += idx * p_strides_dev[axis_idx];
             }
-            else
+
+            size_t start = group_in_slice * workgroup_size + local_id;
+            size_t stride = workgroup_size * num_groups_per_slice;
+            for (size_t linear = start;
+                linear < static_cast<size_t>(effective_reduction_size);
+                linear += stride)
             {
-                uint64_t remaining = slice;
-                uint64_t base_offset = 0;
-                uint64_t counter = 0;
-                for (int64_t i = 0; i < rank; ++i)
+                uint64_t remaining_red = static_cast<uint64_t>(linear);
+                uint64_t reduction_offset = 0;
+                for (uint64_t r = 0; r < reduced_count; ++r)
                 {
-                    if (i == axis)
-                    {
-                        continue;
-                    }
-                    uint64_t div = 1;
-                    if (p_fixed_divs_dev)
-                    {
-                        div = p_fixed_divs_dev[counter];
-                    }
-                    uint64_t idx = remaining / div;
-                    remaining = remaining % div;
-                    base_offset += idx * p_strides_dev[i];
-                    ++counter;
+                    uint64_t div = p_reduced_divs_dev[r];
+                    uint64_t coord = remaining_red / div;
+                    remaining_red = remaining_red % div;
+                    uint64_t axis_idx = p_reduced_axes_dev[r];
+                    reduction_offset += coord * p_strides_dev[axis_idx];
                 }
 
-                size_t start = group_in_slice * workgroup_size + local_id;
-                size_t stride = workgroup_size * num_groups_per_slice;
-                for (size_t j = start;
-                    j < static_cast<size_t>(effective_axis_size);
-                    j += stride)
-                {
-                    uint64_t offs = base_offset + static_cast<uint64_t>(j) *
-                        p_strides_dev[axis];
-                    value_t v = p_src[offs];
-                    TEMPER_DEVICE_EXPECT(!sycl_utils:: is_nan(v), p_error_flag, 1);
-                    local_sum += v;
-                }
+                uint64_t offs = base_offset + reduction_offset;
+                value_t v = p_src[offs];
+                TEMPER_DEVICE_EXPECT(!sycl_utils::is_nan(v), p_error_flag, 1);
+                local_sum += v;
             }
 
             auto group = it.get_group();

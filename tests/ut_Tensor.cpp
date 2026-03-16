@@ -7779,7 +7779,11 @@ TYPED_TEST(TypedTensor, sum_axis0)
     };
     t = vals;
 
-    Tensor<value_t> res = t.sum(0);
+    Tensor<value_t> res = t.sum(std::vector<int64_t>{0});
+
+    ASSERT_EQ(res.get_dimensions().size(), 2u);
+    EXPECT_EQ(res.get_dimensions()[0], 1u);
+    EXPECT_EQ(res.get_dimensions()[1], 3u);
 
     std::vector<value_t> host(3);
     g_sycl_queue.memcpy(host.data(), res.m_node->data.get(),
@@ -7814,7 +7818,11 @@ TYPED_TEST(TypedTensor, sum_axis1)
     };
     t = vals;
 
-    Tensor<value_t> res = t.sum(1);
+    Tensor<value_t> res = t.sum(std::vector<int64_t>{1});
+
+    ASSERT_EQ(res.get_dimensions().size(), 2u);
+    EXPECT_EQ(res.get_dimensions()[0], 2u);
+    EXPECT_EQ(res.get_dimensions()[1], 1u);
 
     std::vector<value_t> host(2);
     g_sycl_queue.memcpy(host.data(), res.m_node->data.get(),
@@ -7847,7 +7855,12 @@ TYPED_TEST(TypedTensor, sum_axis0_3D)
     };
     t = vals;
 
-    Tensor<value_t> res = t.sum(0);
+    Tensor<value_t> res = t.sum(std::vector<int64_t>{0});
+
+    ASSERT_EQ(res.get_dimensions().size(), 3u);
+    EXPECT_EQ(res.get_dimensions()[0], 1u);
+    EXPECT_EQ(res.get_dimensions()[1], 2u);
+    EXPECT_EQ(res.get_dimensions()[2], 2u);
 
     std::vector<value_t> host(4);
     g_sycl_queue.memcpy(host.data(), res.m_node->data.get(),
@@ -7882,7 +7895,7 @@ TYPED_TEST(TypedTensor, sum_axis_negative)
     };
     t = vals;
 
-    Tensor<value_t> res = t.sum(-3);
+    Tensor<value_t> res = t.sum(std::vector<int64_t>{-3});
 
     std::vector<value_t> host(4);
     g_sycl_queue.memcpy(host.data(), res.m_node->data.get(),
@@ -7917,7 +7930,7 @@ TYPED_TEST(TypedTensor, sum_axis1_3D)
     };
     t = vals;
 
-    Tensor<value_t> res = t.sum(1);
+    Tensor<value_t> res = t.sum(std::vector<int64_t>{1});
 
     std::vector<value_t> host(4);
     g_sycl_queue.memcpy(host.data(), res.m_node->data.get(),
@@ -7952,7 +7965,12 @@ TYPED_TEST(TypedTensor, sum_axis2_3D)
     };
     t = vals;
 
-    Tensor<value_t> res = t.sum(2);
+    Tensor<value_t> res = t.sum(std::vector<int64_t>{2});
+
+    ASSERT_EQ(res.get_dimensions().size(), 3u);
+    EXPECT_EQ(res.get_dimensions()[0], 2u);
+    EXPECT_EQ(res.get_dimensions()[1], 2u);
+    EXPECT_EQ(res.get_dimensions()[2], 1u);
 
     std::vector<value_t> host(4);
     g_sycl_queue.memcpy(host.data(), res.m_node->data.get(),
@@ -7969,6 +7987,154 @@ TYPED_TEST(TypedTensor, sum_axis2_3D)
         EXPECT_EQ(host[2], static_cast<value_t>(5 + 6));
         EXPECT_EQ(host[3], static_cast<value_t>(7 + 8));
     }
+}
+
+/**
+ * @test TypedTensor.sum_multiple_axes
+ * @brief Sum along axes {0, 2} for a 2x2x2 device tensor and verify output.
+ */
+TYPED_TEST(TypedTensor, sum_multiple_axes)
+{
+    using value_t = TypeParam;
+    Tensor<value_t> t({2, 2, 2}, MemoryLocation::DEVICE);
+    std::vector<value_t> vals = {
+        static_cast<value_t>(1.0f), static_cast<value_t>(2.0f),
+        static_cast<value_t>(3.0f), static_cast<value_t>(4.0f),
+        static_cast<value_t>(5.0f), static_cast<value_t>(6.0f),
+        static_cast<value_t>(7.0f), static_cast<value_t>(8.0f)
+    };
+    t = vals;
+
+    Tensor<value_t> res = t.sum(std::vector<int64_t>{0, 2});
+
+    ASSERT_EQ(res.get_dimensions().size(), 3u);
+    EXPECT_EQ(res.get_dimensions()[0], 1u);
+    EXPECT_EQ(res.get_dimensions()[1], 2u);
+    EXPECT_EQ(res.get_dimensions()[2], 1u);
+
+    std::vector<value_t> host(2);
+    g_sycl_queue.memcpy(host.data(), res.m_node->data.get(),
+                       2 * sizeof(value_t)).wait();
+
+    if constexpr (std::is_floating_point_v<value_t>) {
+        EXPECT_FLOAT_EQ(static_cast<float>(host[0]), 1.0f + 2.0f + 5.0f + 6.0f);
+        EXPECT_FLOAT_EQ(static_cast<float>(host[1]), 3.0f + 4.0f + 7.0f + 8.0f);
+    } else {
+        EXPECT_EQ(host[0], static_cast<value_t>(1 + 2 + 5 + 6));
+        EXPECT_EQ(host[1], static_cast<value_t>(3 + 4 + 7 + 8));
+    }
+}
+
+/**
+ * @test TypedTensor.sum_multiple_axes_with_negative_index
+ * @brief Sum along axes {0, -1} for a 2x2x2 tensor and verify output.
+ */
+TYPED_TEST(TypedTensor, sum_multiple_axes_with_negative_index)
+{
+    using value_t = TypeParam;
+    Tensor<value_t> t({2, 2, 2}, MemoryLocation::DEVICE);
+    std::vector<value_t> vals = {
+        static_cast<value_t>(1.0f), static_cast<value_t>(2.0f),
+        static_cast<value_t>(3.0f), static_cast<value_t>(4.0f),
+        static_cast<value_t>(5.0f), static_cast<value_t>(6.0f),
+        static_cast<value_t>(7.0f), static_cast<value_t>(8.0f)
+    };
+    t = vals;
+
+    Tensor<value_t> res = t.sum(std::vector<int64_t>{0, -1});
+
+    ASSERT_EQ(res.get_dimensions().size(), 3u);
+    EXPECT_EQ(res.get_dimensions()[0], 1u);
+    EXPECT_EQ(res.get_dimensions()[1], 2u);
+    EXPECT_EQ(res.get_dimensions()[2], 1u);
+
+    std::vector<value_t> host(2);
+    g_sycl_queue.memcpy(host.data(), res.m_node->data.get(),
+                       2 * sizeof(value_t)).wait();
+
+    if constexpr (std::is_floating_point_v<value_t>) {
+        EXPECT_FLOAT_EQ(static_cast<float>(host[0]), 14.0f);
+        EXPECT_FLOAT_EQ(static_cast<float>(host[1]), 22.0f);
+    } else {
+        EXPECT_EQ(host[0], static_cast<value_t>(14));
+        EXPECT_EQ(host[1], static_cast<value_t>(22));
+    }
+}
+
+/**
+ * @test TypedTensor.sum_multiple_axes_all_axes
+ * @brief Sum across all axes {0,1,2} and verify scalar total.
+ */
+TYPED_TEST(TypedTensor, sum_multiple_axes_all_axes)
+{
+    using value_t = TypeParam;
+    Tensor<value_t> t({2, 2, 2}, MemoryLocation::DEVICE);
+    std::vector<value_t> vals = {
+        static_cast<value_t>(1.0f), static_cast<value_t>(2.0f),
+        static_cast<value_t>(3.0f), static_cast<value_t>(4.0f),
+        static_cast<value_t>(5.0f), static_cast<value_t>(6.0f),
+        static_cast<value_t>(7.0f), static_cast<value_t>(8.0f)
+    };
+    t = vals;
+
+    Tensor<value_t> res = t.sum(std::vector<int64_t>{0, 1, 2});
+
+    ASSERT_EQ(res.get_dimensions().size(), 3u);
+    EXPECT_EQ(res.get_dimensions()[0], 1u);
+    EXPECT_EQ(res.get_dimensions()[1], 1u);
+    EXPECT_EQ(res.get_dimensions()[2], 1u);
+
+    std::vector<value_t> host(1);
+    g_sycl_queue.memcpy(host.data(), res.m_node->data.get(),
+                       sizeof(value_t)).wait();
+
+    if constexpr (std::is_floating_point_v<value_t>) {
+        EXPECT_FLOAT_EQ(static_cast<float>(host[0]), 36.0f);
+    } else {
+        EXPECT_EQ(host[0], static_cast<value_t>(36));
+    }
+}
+
+/**
+ * @test TypedTensor.sum_multiple_axes_duplicate_throws
+ * @brief Duplicate axes should throw validation_error.
+ */
+TYPED_TEST(TypedTensor, sum_multiple_axes_duplicate_throws)
+{
+    using value_t = TypeParam;
+    Tensor<value_t> t({2, 2, 2}, MemoryLocation::DEVICE);
+    std::vector<value_t> vals(8, static_cast<value_t>(1));
+    t = vals;
+
+    EXPECT_THROW(t.sum(std::vector<int64_t>{0, 0}), temper::validation_error);
+}
+
+/**
+ * @test TypedTensor.sum_multiple_axes_empty_throws
+ * @brief Empty axis list should throw validation_error.
+ */
+TYPED_TEST(TypedTensor, sum_multiple_axes_empty_throws)
+{
+    using value_t = TypeParam;
+    Tensor<value_t> t({2, 2, 2}, MemoryLocation::DEVICE);
+    std::vector<value_t> vals(8, static_cast<value_t>(1));
+    t = vals;
+
+    EXPECT_THROW(t.sum(std::vector<int64_t>{}), temper::validation_error);
+}
+
+/**
+ * @test TypedTensor.sum_multiple_axes_out_of_bounds_throws
+ * @brief Out-of-range axis should throw bounds_error.
+ */
+TYPED_TEST(TypedTensor, sum_multiple_axes_out_of_bounds_throws)
+{
+    using value_t = TypeParam;
+    Tensor<value_t> t({2, 2, 2}, MemoryLocation::DEVICE);
+    std::vector<value_t> vals(8, static_cast<value_t>(1));
+    t = vals;
+
+    EXPECT_THROW(t.sum(std::vector<int64_t>{3}), temper::bounds_error);
 }
 
 /**
@@ -8059,7 +8225,7 @@ TYPED_TEST(TypedTensor, sum_view_tensor_3d_axis1)
     std::vector<uint64_t> view_shape    = {2ull, 2ull};
     Tensor<value_t> view(t, start_indices, view_shape);
 
-    Tensor<value_t> res = view.sum(1);
+    Tensor<value_t> res = view.sum(std::vector<int64_t>{1});
 
     std::vector<value_t> host(2);
     g_sycl_queue.memcpy(host.data(), res.m_node->data.get(),
@@ -8095,7 +8261,7 @@ TYPED_TEST(TypedTensor, sum_alias_view_tensor_2d_strided)
     std::vector<uint64_t> strides = {5ull, 2ull};
     Tensor<value_t> alias_view(t, start_indices, dims, strides);
 
-    Tensor<value_t> res = alias_view.sum(0);
+    Tensor<value_t> res = alias_view.sum(std::vector<int64_t>{0});
 
     std::vector<value_t> host(3);
     g_sycl_queue.memcpy(host.data(), res.m_node->data.get(),
@@ -8133,7 +8299,7 @@ TYPED_TEST(TypedTensor, sum_alias_view_tensor_overlapping_stride_zero)
     std::vector<uint64_t> strides = {0ull, 1ull};
     Tensor<value_t> alias_view(t, start_indices, dims, strides);
 
-    Tensor<value_t> res = alias_view.sum(0);
+    Tensor<value_t> res = alias_view.sum(std::vector<int64_t>{0});
 
     std::vector<value_t> host(2);
     g_sycl_queue.memcpy(host.data(), res.m_node->data.get(),

@@ -796,7 +796,7 @@ TYPED_TEST(TypedSum, sum_axis0)
     };
     t = vals;
 
-    Tensor<value_t> res = math::sum<value_t>(t, 0);
+    Tensor<value_t> res = math::sum<value_t>(t, std::vector<int64_t>{0});
 
     std::vector<value_t> host(3);
     g_sycl_queue.memcpy(host.data(), res.m_node->data.get(),
@@ -840,7 +840,7 @@ TYPED_TEST(TypedSum, sum_axis1)
     };
     t = vals;
 
-    Tensor<value_t> res = math::sum<value_t>(t, 1);
+    Tensor<value_t> res = math::sum<value_t>(t, std::vector<int64_t>{1});
 
     std::vector<value_t> host(2);
     g_sycl_queue.memcpy(host.data(), res.m_node->data.get(),
@@ -882,7 +882,7 @@ TYPED_TEST(TypedSum, sum_axis0_3D)
     };
     t = vals;
 
-    Tensor<value_t> res = math::sum<value_t>(t, 0);
+    Tensor<value_t> res = math::sum<value_t>(t, std::vector<int64_t>{0});
 
     std::vector<value_t> host(4);
     g_sycl_queue.memcpy(host.data(), res.m_node->data.get(),
@@ -930,7 +930,7 @@ TYPED_TEST(TypedSum, sum_axis_negative)
     };
     t = vals;
 
-    Tensor<value_t> res = math::sum<value_t>(t, -3);
+    Tensor<value_t> res = math::sum<value_t>(t, std::vector<int64_t>{-3});
 
     std::vector<value_t> host(4);
     g_sycl_queue.memcpy(host.data(), res.m_node->data.get(),
@@ -978,7 +978,7 @@ TYPED_TEST(TypedSum, sum_axis1_3D)
     };
     t = vals;
 
-    Tensor<value_t> res = math::sum<value_t>(t, 1);
+    Tensor<value_t> res = math::sum<value_t>(t, std::vector<int64_t>{1});
 
     std::vector<value_t> host(4);
     g_sycl_queue.memcpy(host.data(), res.m_node->data.get(),
@@ -1026,7 +1026,7 @@ TYPED_TEST(TypedSum, sum_axis2_3D)
     };
     t = vals;
 
-    Tensor<value_t> res = math::sum<value_t>(t, 2);
+    Tensor<value_t> res = math::sum<value_t>(t, std::vector<int64_t>{2});
 
     std::vector<value_t> host(4);
     g_sycl_queue.memcpy(host.data(), res.m_node->data.get(),
@@ -1159,7 +1159,7 @@ TYPED_TEST(TypedSum, sum_view_tensor_3d_axis1)
     std::vector<uint64_t> view_shape    = {2ull, 2ull};
     Tensor<value_t> view(t, start_indices, view_shape);
 
-    Tensor<value_t> res = math::sum<value_t>(view, 1);
+    Tensor<value_t> res = math::sum<value_t>(view, std::vector<int64_t>{1});
 
     std::vector<value_t> host(2);
     g_sycl_queue.memcpy(host.data(), res.m_node->data.get(),
@@ -1201,7 +1201,7 @@ TYPED_TEST(TypedSum, sum_alias_view_tensor_2d_strided)
     std::vector<uint64_t> strides       = {5ull, 2ull};
     Tensor<value_t> alias_view(t, start_indices, dims, strides);
 
-    Tensor<value_t> res = math::sum<value_t>(alias_view, 0);
+    Tensor<value_t> res = math::sum<value_t>(alias_view, std::vector<int64_t>{0});
 
     std::vector<value_t> host(3);
     g_sycl_queue.memcpy(host.data(), res.m_node->data.get(),
@@ -1251,7 +1251,7 @@ TYPED_TEST(TypedSum, sum_alias_view_tensor_overlapping_stride_zero)
     std::vector<uint64_t> strides       = {0ull, 1ull};
     Tensor<value_t> alias_view(t, start_indices, dims, strides);
 
-    Tensor<value_t> res = math::sum<value_t>(alias_view, 0);
+    Tensor<value_t> res = math::sum<value_t>(alias_view, std::vector<int64_t>{0});
 
     std::vector<value_t> host(2);
     g_sycl_queue.memcpy(host.data(), res.m_node->data.get(),
@@ -1294,7 +1294,8 @@ TYPED_TEST(TypedSum, sum_nan_throws)
     };
     t = vals;
 
-    EXPECT_THROW(math::sum<value_t>(t, -1), temper::nan_error);
+    EXPECT_THROW(math::sum<value_t>(t, std::vector<int64_t>{-1}),
+        temper::nan_error);
 }
 
 /**

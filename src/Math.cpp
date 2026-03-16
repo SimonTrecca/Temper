@@ -362,15 +362,15 @@ template Tensor<uint64_t> sort<uint64_t>
 
 template <typename value_t>
 Tensor<value_t> sum(const Tensor<value_t> & tensor,
-    std::optional<int64_t> axis_opt)
+    std::optional<std::vector<int64_t>> axes_opt)
 {
-    Tensor<value_t> t = tensor.sum(axis_opt);
+    Tensor<value_t> t = tensor.sum(axes_opt);
     return t;
 }
 template Tensor<float> sum<float>
-    (const Tensor<float>&, std::optional<int64_t>);
+    (const Tensor<float>&, std::optional<std::vector<int64_t>>);
 template Tensor<uint64_t> sum<uint64_t>
-    (const Tensor<uint64_t>&, std::optional<int64_t>);
+    (const Tensor<uint64_t>&, std::optional<std::vector<int64_t>>);
 
 template <typename value_t>
 Tensor<value_t> cumsum(const Tensor<value_t> & tensor,
@@ -1856,7 +1856,12 @@ Tensor<value_t> mean(const Tensor<value_t> & tensor,
             "mean: axis out of bounds");
         denom_u = tensor.get_dimensions()[axis];
     }
-    Tensor<value_t> s = math::sum(tensor, axis_opt);
+    std::optional<std::vector<int64_t>> sum_axes_opt = std::nullopt;
+    if (axis_opt.has_value())
+    {
+        sum_axes_opt = std::vector<int64_t>{axis_opt.value()};
+    }
+    Tensor<value_t> s = math::sum(tensor, sum_axes_opt);
 
     value_t denom_val = static_cast<value_t>(denom_u);
     MemoryLocation loc = tensor.get_memory_location();
@@ -1918,7 +1923,12 @@ Tensor<value_t> var(const Tensor<value_t> & tensor,
 
     Tensor<value_t> diff = tensor - m;
     Tensor<value_t> sq = diff * diff;
-    Tensor<value_t> sumsq = math::sum(sq, axis_opt);
+    std::optional<std::vector<int64_t>> sum_axes_opt = std::nullopt;
+    if (axis_opt.has_value())
+    {
+        sum_axes_opt = std::vector<int64_t>{axis_opt.value()};
+    }
+    Tensor<value_t> sumsq = math::sum(sq, sum_axes_opt);
 
     value_t denom_val = static_cast<value_t>(denom_u);
     MemoryLocation loc = tensor.get_memory_location();

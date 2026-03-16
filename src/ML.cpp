@@ -210,8 +210,14 @@ Tensor<value_t> softmax(const Tensor<value_t> & tensor,
             R"(softmax: axis out of range.)");
     }
 
+    std::optional<std::vector<int64_t>> sum_axes_opt = std::nullopt;
+    if (axis_opt.has_value())
+    {
+        sum_axes_opt = std::vector<int64_t>{axis_opt.value()};
+    }
+
     Tensor<value_t> ex = math::exp(tensor);
-    Tensor<value_t> denom = math::sum(ex, axis_opt);
+    Tensor<value_t> denom = math::sum(ex, sum_axes_opt);
     Tensor<value_t> out = ex / denom;
 
     return out;
@@ -287,7 +293,13 @@ Tensor<value_t> cross_entropy(const Tensor<value_t> & logits,
     Tensor<value_t> logp = temper::math::log(probs);
     Tensor<value_t> mul = labels * logp;
 
-    Tensor<value_t> summed = temper::math::sum(mul, axis_aligned);
+    std::optional<std::vector<int64_t>> sum_axes_opt = std::nullopt;
+    if (axis_aligned.has_value())
+    {
+        sum_axes_opt = std::vector<int64_t>{axis_aligned.value()};
+    }
+
+    Tensor<value_t> summed = temper::math::sum(mul, sum_axes_opt);
     Tensor<value_t> loss = -summed;
 
     if (reduction_mean)
@@ -342,7 +354,13 @@ Tensor<value_t> mean_squared_error(const Tensor<value_t>& predictions,
     Tensor<value_t> diff = predictions - targets;
     Tensor<value_t> sq = diff * diff;
 
-    Tensor<value_t> summed = temper::math::sum(sq, axis_aligned);
+    std::optional<std::vector<int64_t>> sum_axes_opt = std::nullopt;
+    if (axis_aligned.has_value())
+    {
+        sum_axes_opt = std::vector<int64_t>{axis_aligned.value()};
+    }
+
+    Tensor<value_t> summed = temper::math::sum(sq, sum_axes_opt);
 
     if (reduction_mean)
     {

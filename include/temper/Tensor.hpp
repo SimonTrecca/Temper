@@ -1038,18 +1038,19 @@ public:
     /**
      * @brief Compute the sum of tensor elements (device reduction).
      *
-     * Computes sums either flattened (axis = nullopt) or independently
-     * along a single axis.
+     * Computes sums either flattened (`axes_opt = nullopt`) or independently
+     * along one or multiple axes provided in @p axes_opt.
      * Uses device buffers and SYCL kernels; operation returns a new tensor.
      *
-     * @param axis_opt Axis to sum along, nullopt = flatten,
-     * otherwise -rank..rank-1.
+     * @param axes_opt Optional list of axes to sum along.
+     * `nullopt` reduces all elements to shape `{1}`.
+     * Each axis must be in `-rank..rank-1`, duplicates are not allowed.
+     * Reduced dimensions are kept with size 1.
      * @return Tensor<value_t> New tensor containing the sums;
      * the returned tensor uses the same memory location as the input.
-     * If the input tensor has no dimensions, a tensor
-     * with shape {1} is returned.
      */
-    Tensor<value_t> sum(std::optional<int64_t> axis_opt = std::nullopt) const;
+    Tensor<value_t> sum(
+        std::optional<std::vector<int64_t>> axes_opt = std::nullopt) const;
 
     /**
      * @brief Compute the cumulative sum of tensor elements (device scan).

@@ -92,21 +92,20 @@ extern template Tensor<uint64_t> sort<uint64_t>
  * @brief Compute the sum of tensor elements (free function wrapper).
  *
  * Returns a new tensor containing the sums of @p tensor along the specified
- * axis. Delegates to `Tensor::sum`.
+ * axes. Delegates to `Tensor::sum`.
  *
  * @param tensor Input tensor.
- * @param axis_opt Axis to sum along, nullopt = flatten,
- * otherwise -rank..rank-1.
+ * @param axes_opt Optional axes to sum along. `nullopt` = flatten.
  * @return Tensor<value_t> A new tensor containing the sums.
  */
 template <typename value_t>
 Tensor<value_t> sum(const Tensor<value_t> & tensor,
-    std::optional<int64_t> axis_opt = std::nullopt);
+    std::optional<std::vector<int64_t>> axes_opt = std::nullopt);
 /// \cond
 extern template Tensor<float> sum<float>
-    (const Tensor<float>&, std::optional<int64_t>);
+    (const Tensor<float>&, std::optional<std::vector<int64_t>>);
 extern template Tensor<uint64_t> sum<uint64_t>
-    (const Tensor<uint64_t>&, std::optional<int64_t>);
+    (const Tensor<uint64_t>&, std::optional<std::vector<int64_t>>);
 /// \endcond
 
 /**
