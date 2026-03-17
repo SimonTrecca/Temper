@@ -2780,6 +2780,34 @@ void Tensor<value_t>::set_requires_grad(bool require) noexcept
 }
 
 template<typename value_t>
+void Tensor<value_t>::backward()
+{
+    // First of all we need to check if the tensor needs grad; if not maybe we
+    // should just throw an error.
+    TEMPER_CHECK(requires_grad(),
+        validation_error,
+        R"(Tensor::backward:
+            cannot call backward on a tensor that does not require grad.)");
+
+    // By default, the entry point for the backward pass is a Tensor filled
+    // with 1.0 of the same shape as the original tensor.
+    Tensor<value_t> grad_output(get_dimensions(), get_memory_location());
+
+}
+
+template<typename value_t>
+void Tensor<value_t>::backward(const Tensor<value_t> & grad_output)
+{
+    // First of all we need to check if the tensor needs grad; if not maybe we
+    // should just throw an error.
+    TEMPER_CHECK(requires_grad(),
+        validation_error,
+        R"(Tensor::backward:
+            cannot call backward on a tensor that does not require grad.)");
+    (void)grad_output;
+}
+
+template<typename value_t>
 bool Tensor<value_t>::is_view() const noexcept
 {
     return !m_node->owns_data;

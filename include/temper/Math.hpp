@@ -421,6 +421,51 @@ extern template Tensor<uint64_t> zeros<uint64_t>
 /// \endcond
 
 /**
+ * @brief Create a tensor filled from a broadcastable tensor value.
+ *
+ * Constructs a tensor with the given @p shape and fills it by broadcasting
+ * @p fill_value to the requested shape, following NumPy-like broadcast rules.
+ * Memory for the tensor is allocated in the location specified by @p res_loc.
+ *
+ * @param shape Vector of dimension sizes for the tensor.
+ * @param fill_value Tensor whose values are broadcast into the result.
+ * @param res_loc Memory location for the resulting tensor (default: DEVICE).
+ * @return Tensor<value_t> Tensor of the given shape filled from
+ *         @p fill_value.
+ */
+template<typename value_t>
+Tensor<value_t> full(const std::vector<uint64_t> & shape,
+    const Tensor<value_t> & fill_value,
+    MemoryLocation res_loc = MemoryLocation::DEVICE);
+/// \cond
+extern template Tensor<float> full<float>
+    (const std::vector<uint64_t>&, const Tensor<float>&, MemoryLocation);
+extern template Tensor<uint64_t> full<uint64_t>
+    (const std::vector<uint64_t>&, const Tensor<uint64_t>&, MemoryLocation);
+/// \endcond
+
+/**
+ * @brief Create a tensor filled with ones.
+ *
+ * Convenience wrapper implemented by calling @ref full with a fill tensor
+ * containing the value `1`.
+ *
+ * @param shape Vector of dimension sizes for the tensor.
+ * @param res_loc Memory location for the resulting tensor (default: DEVICE).
+ * @return Tensor<value_t> Tensor of the given shape with all elements equal to
+ *         one.
+ */
+template<typename value_t>
+Tensor<value_t> ones(const std::vector<uint64_t> & shape,
+    MemoryLocation res_loc = MemoryLocation::DEVICE);
+/// \cond
+extern template Tensor<float> ones<float>
+    (const std::vector<uint64_t>&, MemoryLocation);
+extern template Tensor<uint64_t> ones<uint64_t>
+    (const std::vector<uint64_t>&, MemoryLocation);
+/// \endcond
+
+/**
  * @brief Approximate the integral of f over [a, b] using Simpson's rule.
  *
  * Splits [a, b] into @p n_bins equal intervals and applies composite

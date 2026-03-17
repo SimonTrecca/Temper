@@ -1643,6 +1643,76 @@ template Tensor<float> zeros<float>
 template Tensor<uint64_t> zeros<uint64_t>
     (const std::vector<uint64_t>&, MemoryLocation);
 
+template<typename value_t>
+Tensor<value_t> full(const std::vector<uint64_t> & shape,
+    const Tensor<value_t> & fill_value,
+    MemoryLocation res_loc)
+{
+    TEMPER_CHECK(fill_value.get_data(),
+        validation_error,
+        R"(full: fill_value tensor data is uninitialized.)");
+
+    Tensor<value_t> result(shape, res_loc);
+
+    temper::utils::TensorDesc fill_desc;
+    fill_desc.shape = fill_value.get_dimensions();
+    fill_desc.strides = fill_value.get_strides();
+
+    temper::utils::TensorDesc out_desc;
+    out_desc.shape = shape;
+    out_desc.strides = temper::utils::compute_divisors(shape);
+
+    auto bcast = temper::utils::compute_broadcast({fill_desc, out_desc});
+
+    TEMPER_CHECK(bcast.shape == shape,
+        validation_error,
+        R"(full: fill_value is not broadcastable to requested shape.)");
+
+    const uint64_t total_output_elems = result.get_num_elements();
+    const uint64_t rank = static_cast<uint64_t>(bcast.shape.size());
+
+    sycl_utils::SyclArray<uint64_t> out_divs_arr(g_sycl_queue,
+        bcast.divisors, MemoryLocation::DEVICE);
+    sycl_utils::SyclArray<uint64_t> fill_strides_arr(g_sycl_queue,
+        bcast.strides[0], MemoryLocation::DEVICE);
+
+    const value_t* p_fill = fill_value.get_data();
+    const uint64_t* p_out_divs = out_divs_arr;
+    const uint64_t* p_fill_strides = fill_strides_arr;
+    value_t* p_out = result.get_data();
+
+    g_sycl_queue.submit([&](sycl::handler& cgh)
+    {
+        cgh.parallel_for(sycl::range<1>(static_cast<size_t>(total_output_elems)),
+            [=](sycl::id<1> id)
+        {
+            const uint64_t flat = static_cast<uint64_t>(id[0]);
+
+            uint64_t fill_off = temper::sycl_utils::idx_of(
+                flat, p_out_divs, p_fill_strides, rank);
+            p_out[flat] = p_fill[fill_off];
+        });
+    }).wait();
+
+    return result;
+}
+template Tensor<float> full<float>
+    (const std::vector<uint64_t>&, const Tensor<float>&, MemoryLocation);
+template Tensor<uint64_t> full<uint64_t>
+    (const std::vector<uint64_t>&, const Tensor<uint64_t>&, MemoryLocation);
+
+template<typename value_t>
+Tensor<value_t> ones(const std::vector<uint64_t> & shape,
+    MemoryLocation res_loc)
+{
+    Tensor<value_t> one(static_cast<value_t>(1), res_loc);
+    return full<value_t>(shape, one, res_loc);
+}
+template Tensor<float> ones<float>
+    (const std::vector<uint64_t>&, MemoryLocation);
+template Tensor<uint64_t> ones<uint64_t>
+    (const std::vector<uint64_t>&, MemoryLocation);
+
 template <typename value_t>
 value_t integral(std::function<value_t(value_t)> f,
     value_t a,

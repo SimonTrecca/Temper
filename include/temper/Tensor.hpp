@@ -1286,6 +1286,24 @@ public:
     void set_requires_grad(bool require) noexcept;
 
     /**
+     * @brief Runs reverse-mode autodiff starting from this tensor.
+     *
+     * Current implementation is a placeholder and intentionally performs
+     * no work.
+     */
+    void backward();
+
+    /**
+     * @brief Runs reverse-mode autodiff with an explicit root gradient.
+     *
+     * Current implementation is a placeholder and intentionally performs
+     * no work.
+     *
+     * @param grad_output Upstream gradient for this tensor.
+     */
+    void backward(const Tensor<value_t>& grad_output);
+
+    /**
      * @brief Checks if the tensor is a view (non-owning).
      *
      * A tensor is considered a view if it does not own its memory

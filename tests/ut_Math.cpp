@@ -4979,6 +4979,271 @@ TYPED_TEST(TypedZeros, host)
     }
 }
 
+template<typename T>
+class TypedFull : public ::testing::Test {};
+
+using FullTestTypes = ::testing::Types<float, uint64_t>;
+TYPED_TEST_SUITE(TypedFull, FullTestTypes);
+
+/**
+ * @test TypedFull.device
+ * @brief full<T> returns a device tensor filled with the requested value.
+ */
+TYPED_TEST(TypedFull, device)
+{
+    using value_t = TypeParam;
+    std::vector<uint64_t> shape = {2, 3};
+    Tensor<value_t> fill({1, 3}, MemoryLocation::DEVICE);
+    fill = std::vector<value_t>{
+        static_cast<value_t>(7),
+        static_cast<value_t>(8),
+        static_cast<value_t>(9)
+    };
+
+    Tensor<value_t> out =
+        math::full<value_t>(shape, fill, MemoryLocation::DEVICE);
+
+    ASSERT_NE(out.m_node->data.get(), nullptr);
+
+    uint64_t total = out.get_num_elements();
+
+    std::vector<value_t> host(total);
+    g_sycl_queue.memcpy(host.data(), out.m_node->data.get(),
+                        total * sizeof(value_t)).wait();
+
+    for (uint64_t i = 0; i < total; ++i)
+    {
+        value_t expected = static_cast<value_t>(7 + (i % 3));
+        if constexpr (std::is_floating_point<value_t>::value)
+            EXPECT_FLOAT_EQ(static_cast<double>(host[i]),
+                            static_cast<double>(expected));
+        else
+            EXPECT_EQ(host[i], expected);
+    }
+}
+
+/**
+ * @test TypedFull.host
+ * @brief full<T> returns a host tensor filled with the requested value.
+ */
+TYPED_TEST(TypedFull, host)
+{
+    using value_t = TypeParam;
+    std::vector<uint64_t> shape = {5};
+    Tensor<value_t> fill({1}, MemoryLocation::HOST);
+    fill = std::vector<value_t>{static_cast<value_t>(11)};
+
+    Tensor<value_t> out =
+        math::full<value_t>(shape, fill, MemoryLocation::HOST);
+
+    ASSERT_NE(out.m_node->data.get(), nullptr);
+
+    uint64_t total = out.get_num_elements();
+
+    std::vector<value_t> host(total);
+    g_sycl_queue.memcpy(host.data(), out.m_node->data.get(),
+                        total * sizeof(value_t)).wait();
+
+    for (uint64_t i = 0; i < total; ++i)
+    {
+        if constexpr (std::is_floating_point<value_t>::value)
+            EXPECT_FLOAT_EQ(static_cast<double>(host[i]),
+                            static_cast<double>(static_cast<value_t>(11)));
+        else
+            EXPECT_EQ(host[i], static_cast<value_t>(11));
+    }
+}
+
+/**
+ * @test TypedFull.from_normal_view
+ * @brief full<T> accepts a regular view as fill_value and broadcasts it.
+ */
+TYPED_TEST(TypedFull, from_normal_view)
+{
+    using value_t = TypeParam;
+
+    Tensor<value_t> base({2, 3}, MemoryLocation::DEVICE);
+    base = std::vector<value_t>{
+        static_cast<value_t>(1),
+        static_cast<value_t>(2),
+        static_cast<value_t>(3),
+        static_cast<value_t>(10),
+        static_cast<value_t>(20),
+        static_cast<value_t>(30)
+    };
+
+    Tensor<value_t> fill_view(base,
+        std::vector<uint64_t>{1, 0},
+        std::vector<uint64_t>{1, 3});
+
+    Tensor<value_t> out =
+        math::full<value_t>({2, 3}, fill_view, MemoryLocation::DEVICE);
+
+    std::vector<value_t> host(6);
+    g_sycl_queue.memcpy(host.data(), out.m_node->data.get(),
+                        host.size() * sizeof(value_t)).wait();
+
+    std::vector<value_t> expected = {
+        static_cast<value_t>(10),
+        static_cast<value_t>(20),
+        static_cast<value_t>(30),
+        static_cast<value_t>(10),
+        static_cast<value_t>(20),
+        static_cast<value_t>(30)
+    };
+
+    for (size_t i = 0; i < host.size(); ++i)
+    {
+        if constexpr (std::is_floating_point<value_t>::value)
+            EXPECT_FLOAT_EQ(static_cast<double>(host[i]),
+                            static_cast<double>(expected[i]));
+        else
+            EXPECT_EQ(host[i], expected[i]);
+    }
+}
+
+/**
+ * @test TypedFull.from_alias_view
+ * @brief full<T> accepts an alias-strided view as fill_value and broadcasts it.
+ */
+TYPED_TEST(TypedFull, from_alias_view)
+{
+    using value_t = TypeParam;
+
+    Tensor<value_t> base({6}, MemoryLocation::DEVICE);
+    base = std::vector<value_t>{
+        static_cast<value_t>(5),
+        static_cast<value_t>(100),
+        static_cast<value_t>(6),
+        static_cast<value_t>(200),
+        static_cast<value_t>(7),
+        static_cast<value_t>(300)
+    };
+
+    Tensor<value_t> fill_alias(base,
+        std::vector<uint64_t>{0},
+        std::vector<uint64_t>{1, 3},
+        std::vector<uint64_t>{0, 2});
+
+    Tensor<value_t> out =
+        math::full<value_t>({2, 3}, fill_alias, MemoryLocation::DEVICE);
+
+    std::vector<value_t> host(6);
+    g_sycl_queue.memcpy(host.data(), out.m_node->data.get(),
+                        host.size() * sizeof(value_t)).wait();
+
+    std::vector<value_t> expected = {
+        static_cast<value_t>(5),
+        static_cast<value_t>(6),
+        static_cast<value_t>(7),
+        static_cast<value_t>(5),
+        static_cast<value_t>(6),
+        static_cast<value_t>(7)
+    };
+
+    for (size_t i = 0; i < host.size(); ++i)
+    {
+        if constexpr (std::is_floating_point<value_t>::value)
+            EXPECT_FLOAT_EQ(static_cast<double>(host[i]),
+                            static_cast<double>(expected[i]));
+        else
+            EXPECT_EQ(host[i], expected[i]);
+    }
+}
+
+/**
+ * @test TypedFull.throw_non_broadcastable
+ * @brief full<T> throws when fill_value is not broadcastable to output shape.
+ */
+TYPED_TEST(TypedFull, throw_non_broadcastable)
+{
+    using value_t = TypeParam;
+
+    Tensor<value_t> fill({2, 2}, MemoryLocation::DEVICE);
+    fill = std::vector<value_t>{
+        static_cast<value_t>(1),
+        static_cast<value_t>(2),
+        static_cast<value_t>(3),
+        static_cast<value_t>(4)
+    };
+
+    EXPECT_THROW((void)math::full<value_t>(
+        {2, 3}, fill, MemoryLocation::DEVICE), validation_error);
+}
+
+/**
+ * @test TypedFull.throw_uninitialized_fill
+ * @brief full<T> throws when fill_value tensor has uninitialized data.
+ */
+TYPED_TEST(TypedFull, throw_uninitialized_fill)
+{
+    using value_t = TypeParam;
+    Tensor<value_t> fill;
+
+    EXPECT_THROW((void)math::full<value_t>(
+        {2, 3}, fill, MemoryLocation::DEVICE), validation_error);
+}
+
+template<typename T>
+class TypedOnes : public ::testing::Test {};
+
+using OnesTestTypes = ::testing::Types<float, uint64_t>;
+TYPED_TEST_SUITE(TypedOnes, OnesTestTypes);
+
+/**
+ * @test TypedOnes.device
+ * @brief ones<T> returns a device tensor filled with ones.
+ */
+TYPED_TEST(TypedOnes, device)
+{
+    using value_t = TypeParam;
+    std::vector<uint64_t> shape = {2, 4};
+
+    Tensor<value_t> out = math::ones<value_t>(shape, MemoryLocation::DEVICE);
+    ASSERT_NE(out.m_node->data.get(), nullptr);
+
+    uint64_t total = out.get_num_elements();
+    std::vector<value_t> host(total);
+    g_sycl_queue.memcpy(host.data(), out.m_node->data.get(),
+                        total * sizeof(value_t)).wait();
+
+    for (uint64_t i = 0; i < total; ++i)
+    {
+        if constexpr (std::is_floating_point<value_t>::value)
+            EXPECT_FLOAT_EQ(static_cast<double>(host[i]),
+                            static_cast<double>(static_cast<value_t>(1)));
+        else
+            EXPECT_EQ(host[i], static_cast<value_t>(1));
+    }
+}
+
+/**
+ * @test TypedOnes.host
+ * @brief ones<T> returns a host tensor filled with ones.
+ */
+TYPED_TEST(TypedOnes, host)
+{
+    using value_t = TypeParam;
+    std::vector<uint64_t> shape = {3};
+
+    Tensor<value_t> out = math::ones<value_t>(shape, MemoryLocation::HOST);
+    ASSERT_NE(out.m_node->data.get(), nullptr);
+
+    uint64_t total = out.get_num_elements();
+    std::vector<value_t> host(total);
+    g_sycl_queue.memcpy(host.data(), out.m_node->data.get(),
+                        total * sizeof(value_t)).wait();
+
+    for (uint64_t i = 0; i < total; ++i)
+    {
+        if constexpr (std::is_floating_point<value_t>::value)
+            EXPECT_FLOAT_EQ(static_cast<double>(host[i]),
+                            static_cast<double>(static_cast<value_t>(1)));
+        else
+            EXPECT_EQ(host[i], static_cast<value_t>(1));
+    }
+}
+
 /**
  * @test INTEGRAL.polynomial_exact
  * @brief Integrate f(x) = x^2 on [0,1]. Exact result = 1/3.
