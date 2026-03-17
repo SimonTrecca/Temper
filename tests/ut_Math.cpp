@@ -68,7 +68,7 @@ TYPED_TEST(TypedMatmul, basic_2d)
     }
 
     std::vector<value_t> host(4);
-    g_sycl_queue.memcpy(host.data(), R.m_node->data.get(),
+    g_sycl_queue.memcpy(host.data(), R.get_data(),
                         host.size() * sizeof(value_t)).wait();
 
     for (size_t i = 0; i < host.size(); ++i)
@@ -113,7 +113,7 @@ TYPED_TEST(TypedMatmul, vec_vec_dot)
         expect += av[idx] * bv[idx];
 
     std::vector<value_t> host(1);
-    g_sycl_queue.memcpy(host.data(), r.m_node->data.get(),
+    g_sycl_queue.memcpy(host.data(), r.get_data(),
                         sizeof(value_t)).wait();
 
     if constexpr (std::is_floating_point<value_t>::value)
@@ -160,7 +160,7 @@ TYPED_TEST(TypedMatmul, vec_mat)
     }
 
     std::vector<value_t> host(3);
-    g_sycl_queue.memcpy(host.data(), R.m_node->data.get(),
+    g_sycl_queue.memcpy(host.data(), R.get_data(),
                         3 * sizeof(value_t)).wait();
 
     for (size_t i = 0; i < host.size(); ++i)
@@ -211,7 +211,7 @@ TYPED_TEST(TypedMatmul, mat_vec)
     }
 
     std::vector<value_t> host(2);
-    g_sycl_queue.memcpy(host.data(), R.m_node->data.get(),
+    g_sycl_queue.memcpy(host.data(), R.get_data(),
                         2 * sizeof(value_t)).wait();
 
     for (size_t i = 0; i < host.size(); ++i)
@@ -274,7 +274,7 @@ TYPED_TEST(TypedMatmul, batched_equal_batches)
     }
 
     std::vector<value_t> host(B * M * N);
-    g_sycl_queue.memcpy(host.data(), R.m_node->data.get(),
+    g_sycl_queue.memcpy(host.data(), R.get_data(),
                         host.size() * sizeof(value_t)).wait();
 
     for (size_t i = 0; i < host.size(); ++i)
@@ -347,7 +347,7 @@ TYPED_TEST(TypedMatmul, batched_broadcast_batches)
     }
 
     std::vector<value_t> host(B0 * B1 * M * N);
-    g_sycl_queue.memcpy(host.data(), R.m_node->data.get(),
+    g_sycl_queue.memcpy(host.data(), R.get_data(),
                         host.size() * sizeof(value_t)).wait();
 
     for (size_t i = 0; i < host.size(); ++i)
@@ -765,7 +765,7 @@ TYPED_TEST(TypedSum, sum_all_elements)
     Tensor<value_t> res = math::sum<value_t>(t);
 
     std::vector<value_t> host(1);
-    g_sycl_queue.memcpy(host.data(), res.m_node->data.get(),
+    g_sycl_queue.memcpy(host.data(), res.get_data(),
                         sizeof(value_t)).wait();
 
     if constexpr (std::is_floating_point<value_t>::value)
@@ -799,7 +799,7 @@ TYPED_TEST(TypedSum, sum_axis0)
     Tensor<value_t> res = math::sum<value_t>(t, std::vector<int64_t>{0});
 
     std::vector<value_t> host(3);
-    g_sycl_queue.memcpy(host.data(), res.m_node->data.get(),
+    g_sycl_queue.memcpy(host.data(), res.get_data(),
                         3 * sizeof(value_t)).wait();
 
     auto e0 = static_cast<value_t>(1) + static_cast<value_t>(4);
@@ -843,7 +843,7 @@ TYPED_TEST(TypedSum, sum_axis1)
     Tensor<value_t> res = math::sum<value_t>(t, std::vector<int64_t>{1});
 
     std::vector<value_t> host(2);
-    g_sycl_queue.memcpy(host.data(), res.m_node->data.get(),
+    g_sycl_queue.memcpy(host.data(), res.get_data(),
                         2 * sizeof(value_t)).wait();
 
     auto r0 = static_cast<value_t>(1) + static_cast<value_t>(2) +
@@ -885,7 +885,7 @@ TYPED_TEST(TypedSum, sum_axis0_3D)
     Tensor<value_t> res = math::sum<value_t>(t, std::vector<int64_t>{0});
 
     std::vector<value_t> host(4);
-    g_sycl_queue.memcpy(host.data(), res.m_node->data.get(),
+    g_sycl_queue.memcpy(host.data(), res.get_data(),
                         4 * sizeof(value_t)).wait();
 
     auto e0 = static_cast<value_t>(1) + static_cast<value_t>(5);
@@ -933,7 +933,7 @@ TYPED_TEST(TypedSum, sum_axis_negative)
     Tensor<value_t> res = math::sum<value_t>(t, std::vector<int64_t>{-3});
 
     std::vector<value_t> host(4);
-    g_sycl_queue.memcpy(host.data(), res.m_node->data.get(),
+    g_sycl_queue.memcpy(host.data(), res.get_data(),
                         4 * sizeof(value_t)).wait();
 
     auto e0 = static_cast<value_t>(1) + static_cast<value_t>(5);
@@ -981,7 +981,7 @@ TYPED_TEST(TypedSum, sum_axis1_3D)
     Tensor<value_t> res = math::sum<value_t>(t, std::vector<int64_t>{1});
 
     std::vector<value_t> host(4);
-    g_sycl_queue.memcpy(host.data(), res.m_node->data.get(),
+    g_sycl_queue.memcpy(host.data(), res.get_data(),
                         4 * sizeof(value_t)).wait();
 
     auto e0 = static_cast<value_t>(1) + static_cast<value_t>(3);
@@ -1029,7 +1029,7 @@ TYPED_TEST(TypedSum, sum_axis2_3D)
     Tensor<value_t> res = math::sum<value_t>(t, std::vector<int64_t>{2});
 
     std::vector<value_t> host(4);
-    g_sycl_queue.memcpy(host.data(), res.m_node->data.get(),
+    g_sycl_queue.memcpy(host.data(), res.get_data(),
                         4 * sizeof(value_t)).wait();
 
     auto e0 = static_cast<value_t>(1) + static_cast<value_t>(2);
@@ -1082,7 +1082,7 @@ TYPED_TEST(TypedSum, sum_view_tensor)
     Tensor<value_t> res = math::sum<value_t>(view);
 
     std::vector<value_t> host(1);
-    g_sycl_queue.memcpy(host.data(), res.m_node->data.get(),
+    g_sycl_queue.memcpy(host.data(), res.get_data(),
                         sizeof(value_t)).wait();
 
     auto expect = static_cast<value_t>(1) + static_cast<value_t>(2) +
@@ -1125,7 +1125,7 @@ TYPED_TEST(TypedSum, sum_alias_view_tensor)
     Tensor<value_t> res = math::sum<value_t>(alias_view);
 
     std::vector<value_t> host(1);
-    g_sycl_queue.memcpy(host.data(), res.m_node->data.get(),
+    g_sycl_queue.memcpy(host.data(), res.get_data(),
                         sizeof(value_t)).wait();
 
     auto expect = static_cast<value_t>(1) + static_cast<value_t>(3) +
@@ -1162,7 +1162,7 @@ TYPED_TEST(TypedSum, sum_view_tensor_3d_axis1)
     Tensor<value_t> res = math::sum<value_t>(view, std::vector<int64_t>{1});
 
     std::vector<value_t> host(2);
-    g_sycl_queue.memcpy(host.data(), res.m_node->data.get(),
+    g_sycl_queue.memcpy(host.data(), res.get_data(),
                         sizeof(value_t) * host.size()).wait();
 
     auto e0 = static_cast<value_t>(23);
@@ -1204,7 +1204,7 @@ TYPED_TEST(TypedSum, sum_alias_view_tensor_2d_strided)
     Tensor<value_t> res = math::sum<value_t>(alias_view, std::vector<int64_t>{0});
 
     std::vector<value_t> host(3);
-    g_sycl_queue.memcpy(host.data(), res.m_node->data.get(),
+    g_sycl_queue.memcpy(host.data(), res.get_data(),
                         sizeof(value_t) * host.size()).wait();
 
     auto e0 = static_cast<value_t>(9);
@@ -1254,7 +1254,7 @@ TYPED_TEST(TypedSum, sum_alias_view_tensor_overlapping_stride_zero)
     Tensor<value_t> res = math::sum<value_t>(alias_view, std::vector<int64_t>{0});
 
     std::vector<value_t> host(2);
-    g_sycl_queue.memcpy(host.data(), res.m_node->data.get(),
+    g_sycl_queue.memcpy(host.data(), res.get_data(),
                         sizeof(value_t) * host.size()).wait();
 
     auto e0 = static_cast<value_t>(8);
@@ -1333,7 +1333,7 @@ TYPED_TEST(TypedSum, sum_empty)
     res = math::sum<value_t>(t);
 
     std::vector<value_t> host(1);
-    g_sycl_queue.memcpy(host.data(), res.m_node->data.get(),
+    g_sycl_queue.memcpy(host.data(), res.get_data(),
                         sizeof(value_t)).wait();
 
     if constexpr (std::is_floating_point<value_t>::value)
@@ -1371,7 +1371,7 @@ TYPED_TEST(TypedCumsum, cumsum_all_elements_flatten)
     Tensor<value_t> res = math::cumsum<value_t>(t);
 
     std::vector<value_t> host(3);
-    g_sycl_queue.memcpy(host.data(), res.m_node->data.get(),
+    g_sycl_queue.memcpy(host.data(), res.get_data(),
                         3 * sizeof(value_t)).wait();
 
     auto e0 = static_cast<value_t>(1);
@@ -1415,7 +1415,7 @@ TYPED_TEST(TypedCumsum, cumsum_axis0_2D)
     Tensor<value_t> res = math::cumsum<value_t>(t, 0);
 
     std::vector<value_t> host(6);
-    g_sycl_queue.memcpy(host.data(), res.m_node->data.get(),
+    g_sycl_queue.memcpy(host.data(), res.get_data(),
                         6 * sizeof(value_t)).wait();
 
     if constexpr (std::is_floating_point<value_t>::value)
@@ -1463,7 +1463,7 @@ TYPED_TEST(TypedCumsum, cumsum_axis_negative)
     Tensor<value_t> res = math::cumsum<value_t>(t, -2);
 
     std::vector<value_t> host(6);
-    g_sycl_queue.memcpy(host.data(), res.m_node->data.get(),
+    g_sycl_queue.memcpy(host.data(), res.get_data(),
                         6 * sizeof(value_t)).wait();
 
     if constexpr (std::is_floating_point<value_t>::value)
@@ -1511,7 +1511,7 @@ TYPED_TEST(TypedCumsum, cumsum_axis1_2D)
     Tensor<value_t> res = math::cumsum<value_t>(t, 1);
 
     std::vector<value_t> host(6);
-    g_sycl_queue.memcpy(host.data(), res.m_node->data.get(),
+    g_sycl_queue.memcpy(host.data(), res.get_data(),
                         6 * sizeof(value_t)).wait();
 
     if constexpr (std::is_floating_point<value_t>::value)
@@ -1560,7 +1560,7 @@ TYPED_TEST(TypedCumsum, cumsum_flatten_3D)
     Tensor<value_t> res = math::cumsum<value_t>(t);
 
     std::vector<value_t> host(8);
-    g_sycl_queue.memcpy(host.data(), res.m_node->data.get(),
+    g_sycl_queue.memcpy(host.data(), res.get_data(),
                         8 * sizeof(value_t)).wait();
 
     std::vector<value_t> expected = {
@@ -1621,7 +1621,7 @@ TYPED_TEST(TypedCumsum, cumsum_view_flatten)
     Tensor<value_t> res = math::cumsum<value_t>(view);
 
     std::vector<value_t> host(4);
-    g_sycl_queue.memcpy(host.data(), res.m_node->data.get(),
+    g_sycl_queue.memcpy(host.data(), res.get_data(),
                         4 * sizeof(value_t)).wait();
 
     auto e0 = static_cast<value_t>(11);
@@ -1673,7 +1673,7 @@ TYPED_TEST(TypedCumsum, cumsum_alias_view_strided)
     Tensor<value_t> res = math::cumsum<value_t>(alias_view);
 
     std::vector<value_t> host(3);
-    g_sycl_queue.memcpy(host.data(), res.m_node->data.get(),
+    g_sycl_queue.memcpy(host.data(), res.get_data(),
                         3 * sizeof(value_t)).wait();
 
     auto e0 = static_cast<value_t>(1);
@@ -1723,7 +1723,7 @@ TYPED_TEST(TypedCumsum, cumsum_alias_view_overlapping_stride_zero)
     Tensor<value_t> res = math::cumsum<value_t>(alias_view, 0);
 
     std::vector<value_t> host(4);
-    g_sycl_queue.memcpy(host.data(), res.m_node->data.get(),
+    g_sycl_queue.memcpy(host.data(), res.get_data(),
                         4 * sizeof(value_t)).wait();
 
     auto e0 = static_cast<value_t>(4);
@@ -1771,13 +1771,13 @@ TYPED_TEST(TypedCumsum, cumsum_alias_view_weird_strides)
     Tensor<value_t> view(owner, {0, 0}, {3, 4}, {13, 4});
 
     Tensor<value_t> view2 = math::cumsum<value_t>(view, 1);
-    EXPECT_EQ(view2.m_node->dimensions, (std::vector<uint64_t>{3, 4}));
-    EXPECT_EQ(view2.m_node->strides, (std::vector<uint64_t>{4, 1}));
+    EXPECT_EQ(view2.get_dimensions(), (std::vector<uint64_t>{3, 4}));
+    EXPECT_EQ(view2.get_strides(), (std::vector<uint64_t>{4, 1}));
 
     Tensor<value_t> host = view2.clone();
 
     std::vector<value_t> out(12);
-    g_sycl_queue.memcpy(out.data(), host.m_node->data.get(),
+    g_sycl_queue.memcpy(out.data(), host.get_data(),
                         sizeof(value_t) * 12).wait();
 
     std::vector<value_t> expected = {
@@ -1882,7 +1882,7 @@ TYPED_TEST(TypedCumsum, cumsum_empty)
     res = math::cumsum<value_t>(t, -1);
 
     std::vector<value_t> host(1);
-    g_sycl_queue.memcpy(host.data(), res.m_node->data.get(),
+    g_sycl_queue.memcpy(host.data(), res.get_data(),
                         sizeof(value_t)).wait();
 
     if constexpr (std::is_floating_point<value_t>::value)
@@ -1917,15 +1917,15 @@ TYPED_TEST(TypedTranspose, transpose_noargs_reverse_axes)
 
     Tensor<value_t> t_rev = math::transpose<value_t>(t);
 
-    EXPECT_EQ(t_rev.m_node->dimensions,
+    EXPECT_EQ(t_rev.get_dimensions(),
               (std::vector<uint64_t>{4, 3, 2}));
-    EXPECT_EQ(t_rev.m_node->strides,
-        (std::vector<uint64_t>{t.m_node->strides[2], t.m_node->strides[1],
-                               t.m_node->strides[0]}));
+    EXPECT_EQ(t_rev.get_strides(),
+        (std::vector<uint64_t>{t.get_strides()[2], t.get_strides()[1],
+                               t.get_strides()[0]}));
 
     Tensor<value_t> host = t_rev.clone();
     std::vector<value_t> out(24);
-    g_sycl_queue.memcpy(out.data(), host.m_node->data.get(),
+    g_sycl_queue.memcpy(out.data(), host.get_data(),
                         sizeof(value_t) * 24).wait();
 
     if constexpr (std::is_floating_point<value_t>::value)
@@ -1956,15 +1956,15 @@ TYPED_TEST(TypedTranspose, transpose_explicit_axes)
 
     Tensor<value_t> perm = math::transpose<value_t>(t, {2, 1, 0});
 
-    EXPECT_EQ(perm.m_node->dimensions,
+    EXPECT_EQ(perm.get_dimensions(),
               (std::vector<uint64_t>{4, 3, 2}));
-    EXPECT_EQ(perm.m_node->strides,
-        (std::vector<uint64_t>{t.m_node->strides[2], t.m_node->strides[1],
-                               t.m_node->strides[0]}));
+    EXPECT_EQ(perm.get_strides(),
+        (std::vector<uint64_t>{t.get_strides()[2], t.get_strides()[1],
+                               t.get_strides()[0]}));
 
     Tensor<value_t> host = perm.clone();
     std::vector<value_t> out(24);
-    g_sycl_queue.memcpy(out.data(), host.m_node->data.get(),
+    g_sycl_queue.memcpy(out.data(), host.get_data(),
                         sizeof(value_t) * 24).wait();
 
     if constexpr (std::is_floating_point<value_t>::value)
@@ -1995,15 +1995,15 @@ TYPED_TEST(TypedTranspose, transpose_explicit_axes_negative)
 
     Tensor<value_t> perm = math::transpose<value_t>(t, {-1, 1, -3});
 
-    EXPECT_EQ(perm.m_node->dimensions,
+    EXPECT_EQ(perm.get_dimensions(),
               (std::vector<uint64_t>{4, 3, 2}));
-    EXPECT_EQ(perm.m_node->strides,
-        (std::vector<uint64_t>{t.m_node->strides[2], t.m_node->strides[1],
-                               t.m_node->strides[0]}));
+    EXPECT_EQ(perm.get_strides(),
+        (std::vector<uint64_t>{t.get_strides()[2], t.get_strides()[1],
+                               t.get_strides()[0]}));
 
     Tensor<value_t> host = perm.clone();
     std::vector<value_t> out(24);
-    g_sycl_queue.memcpy(out.data(), host.m_node->data.get(),
+    g_sycl_queue.memcpy(out.data(), host.get_data(),
                         sizeof(value_t) * 24).wait();
 
     if constexpr (std::is_floating_point<value_t>::value)
@@ -2038,13 +2038,13 @@ TYPED_TEST(TypedTranspose, transpose_2d)
 
     Tensor<value_t> t_T = math::transpose<value_t>(t);
 
-    EXPECT_EQ(t_T.m_node->dimensions, (std::vector<uint64_t>{3, 2}));
-    EXPECT_EQ(t_T.m_node->strides,
-        (std::vector<uint64_t>{t.m_node->strides[1], t.m_node->strides[0]}));
+    EXPECT_EQ(t_T.get_dimensions(), (std::vector<uint64_t>{3, 2}));
+    EXPECT_EQ(t_T.get_strides(),
+        (std::vector<uint64_t>{t.get_strides()[1], t.get_strides()[0]}));
 
     Tensor<value_t> host = t_T.clone();
     std::vector<value_t> out(6);
-    g_sycl_queue.memcpy(out.data(), host.m_node->data.get(),
+    g_sycl_queue.memcpy(out.data(), host.get_data(),
                         sizeof(value_t) * 6).wait();
 
     std::vector<value_t> expected = {
@@ -2093,7 +2093,7 @@ TYPED_TEST(TypedTranspose, transpose_mutation_reflects)
 
     Tensor<value_t> host = t.clone();
     std::vector<value_t> out(6);
-    g_sycl_queue.memcpy(out.data(), host.m_node->data.get(),
+    g_sycl_queue.memcpy(out.data(), host.get_data(),
                         sizeof(value_t) * 6).wait();
 
     if constexpr (std::is_floating_point<value_t>::value)
@@ -2145,12 +2145,12 @@ TYPED_TEST(TypedTranspose, transpose_1d)
     t = init;
 
     Tensor<value_t> t_tr = math::transpose<value_t>(t);
-    EXPECT_EQ(t_tr.m_node->dimensions, t.m_node->dimensions);
-    EXPECT_EQ(t_tr.m_node->strides, t.m_node->strides);
+    EXPECT_EQ(t_tr.get_dimensions(), t.get_dimensions());
+    EXPECT_EQ(t_tr.get_strides(), t.get_strides());
 
     Tensor<value_t> host = t_tr.clone();
     std::vector<value_t> out(5);
-    g_sycl_queue.memcpy(out.data(), host.m_node->data.get(),
+    g_sycl_queue.memcpy(out.data(), host.get_data(),
                         sizeof(value_t) * 5).wait();
 
     for (uint64_t i = 0; i < 5; ++i)
@@ -2588,7 +2588,7 @@ TYPED_TEST(TypedPad, pad_4d_tensor_preserves_batches)
     }
 
     std::vector<value_t> host(out_elems);
-    g_sycl_queue.memcpy(host.data(), out.m_node->data.get(),
+    g_sycl_queue.memcpy(host.data(), out.get_data(),
                         host.size() * sizeof(value_t)).wait();
 
     for (uint64_t i = 0; i < out_elems; ++i)
@@ -3166,7 +3166,7 @@ TYPED_TEST(TypedArgsort, argsort_flattened_ascending)
     ASSERT_EQ(N, static_cast<uint64_t>(5));
 
     std::vector<uint64_t> host(N);
-    g_sycl_queue.memcpy(host.data(), res.m_node->data.get(),
+    g_sycl_queue.memcpy(host.data(), res.get_data(),
                         sizeof(uint64_t) * N).wait();
 
     std::vector<bool> seen(N, false);
@@ -3209,7 +3209,7 @@ TYPED_TEST(TypedArgsort, argsort_flattened_descending)
     ASSERT_EQ(N, static_cast<uint64_t>(5));
 
     std::vector<uint64_t> host(N);
-    g_sycl_queue.memcpy(host.data(), res.m_node->data.get(),
+    g_sycl_queue.memcpy(host.data(), res.get_data(),
                         sizeof(uint64_t) * N).wait();
 
     for (uint64_t i = 1; i < N; ++i)
@@ -3254,7 +3254,7 @@ TYPED_TEST(TypedArgsort, argsort_axis0_2d)
     ASSERT_EQ(res.get_num_elements(), axis_size * slices);
 
     std::vector<uint64_t> host(axis_size * slices);
-    g_sycl_queue.memcpy(host.data(), res.m_node->data.get(),
+    g_sycl_queue.memcpy(host.data(), res.get_data(),
                         sizeof(uint64_t) * host.size()).wait();
 
     const auto strides = res.get_strides();
@@ -3310,7 +3310,7 @@ TYPED_TEST(TypedArgsort, argsort_axis1_2d)
     ASSERT_EQ(res.get_num_elements(), axis_size * slices);
 
     std::vector<uint64_t> host(axis_size * slices);
-    g_sycl_queue.memcpy(host.data(), res.m_node->data.get(),
+    g_sycl_queue.memcpy(host.data(), res.get_data(),
                         sizeof(uint64_t) * host.size()).wait();
 
     const auto strides = res.get_strides();
@@ -3385,7 +3385,7 @@ TYPED_TEST(TypedArgsort, argsort_nan_behavior)
     Tensor<uint64_t> res = math::argsort<value_t>(t, std::nullopt, false);
     const uint64_t N = res.get_num_elements();
     std::vector<uint64_t> host(N);
-    g_sycl_queue.memcpy(host.data(), res.m_node->data.get(),
+    g_sycl_queue.memcpy(host.data(), res.get_data(),
                         sizeof(uint64_t) * N).wait();
 
     EXPECT_EQ(host[N - 1], 1u);
@@ -3411,7 +3411,7 @@ TYPED_TEST(TypedArgsort, argsort_tie_stability)
     ASSERT_EQ(N, static_cast<uint64_t>(5));
 
     std::vector<uint64_t> host(N);
-    g_sycl_queue.memcpy(host.data(), res.m_node->data.get(),
+    g_sycl_queue.memcpy(host.data(), res.get_data(),
                         sizeof(uint64_t) * N).wait();
 
     std::vector<uint64_t> expected = {1u, 3u, 0u, 2u, 4u};
@@ -3439,7 +3439,7 @@ TYPED_TEST(TypedArgsort, argsort_alias_view_strided)
     ASSERT_EQ(res.get_num_elements(), static_cast<uint64_t>(3));
 
     std::vector<uint64_t> host(3);
-    g_sycl_queue.memcpy(host.data(), res.m_node->data.get(),
+    g_sycl_queue.memcpy(host.data(), res.get_data(),
                         sizeof(uint64_t) * 3).wait();
 
     EXPECT_EQ(host[0], 0u);
@@ -3473,7 +3473,7 @@ TYPED_TEST(TypedArgsort, argsort_3d_axis0)
     ASSERT_EQ(res.get_num_elements(), axis_size * slice_count);
 
     std::vector<uint64_t> host(axis_size * slice_count);
-    g_sycl_queue.memcpy(host.data(), res.m_node->data.get(),
+    g_sycl_queue.memcpy(host.data(), res.get_data(),
                         sizeof(uint64_t) * host.size()).wait();
 
     // get strides for res (rank = 3)
@@ -3545,7 +3545,7 @@ TYPED_TEST(TypedArgsort, argsort_3d_axis1)
     ASSERT_EQ(res.get_num_elements(), axis_size * slice_count);
 
     std::vector<uint64_t> host(axis_size * slice_count);
-    g_sycl_queue.memcpy(host.data(), res.m_node->data.get(),
+    g_sycl_queue.memcpy(host.data(), res.get_data(),
                         sizeof(uint64_t) * host.size()).wait();
 
     const auto strides = res.get_strides();
@@ -3600,7 +3600,7 @@ TYPED_TEST(TypedArgsort, argsort_3d_axis_flattened)
     ASSERT_EQ(res.get_num_elements(), axis_size * slice_count);
 
     std::vector<uint64_t> host(axis_size);
-    g_sycl_queue.memcpy(host.data(), res.m_node->data.get(),
+    g_sycl_queue.memcpy(host.data(), res.get_data(),
                         sizeof(uint64_t) * host.size()).wait();
 
     for (uint64_t r = 0; r < axis_size; ++r)
@@ -4121,7 +4121,7 @@ TEST(LINSPACE, scalar_endpoint_true)
 
     std::vector<float> host(total);
     g_sycl_queue.memcpy
-        (host.data(), out.m_node->data.get(), sizeof(float) * total).wait();
+        (host.data(), out.get_data(), sizeof(float) * total).wait();
 
     for (uint64_t i = 0; i < num; ++i)
     {
@@ -4147,13 +4147,13 @@ TEST(LINSPACE, num_one_returns_start_and_zero_step)
 
     std::vector<float> host_out(1);
     g_sycl_queue.memcpy
-        (host_out.data(), out.m_node->data.get(), sizeof(float)).wait();
+        (host_out.data(), out.get_data(), sizeof(float)).wait();
     EXPECT_FLOAT_EQ(host_out[0], 7.5f);
 
     ASSERT_EQ(step_out.get_num_elements(), 1u);
     std::vector<float> host_step(1);
     g_sycl_queue.memcpy
-        (host_step.data(), step_out.m_node->data.get(), sizeof(float)).wait();
+        (host_step.data(), step_out.get_data(), sizeof(float)).wait();
     EXPECT_FLOAT_EQ(host_step[0], 0.0f);
 }
 
@@ -4180,7 +4180,7 @@ TEST(LINSPACE, broadcast_2x1_and_1x3_axis2_endpoint_true)
 
     std::vector<float> host(B0 * B1 * N);
     g_sycl_queue.memcpy
-        (host.data(), out.m_node->data.get(), host.size() * sizeof(float)).wait();
+        (host.data(), out.get_data(), host.size() * sizeof(float)).wait();
 
     std::vector<float> expected;
     expected.reserve(B0 * B1 * N);
@@ -4231,7 +4231,7 @@ TEST(LINSPACE, linspace_axis_negative)
 
     std::vector<float> host(B0 * B1 * N);
     g_sycl_queue.memcpy
-        (host.data(), out.m_node->data.get(), host.size() * sizeof(float)).wait();
+        (host.data(), out.get_data(), host.size() * sizeof(float)).wait();
 
     std::vector<float> expected;
     expected.reserve(B0 * B1 * N);
@@ -4311,7 +4311,7 @@ TEST(LINSPACE, step_out_broadcast_matches_values)
 
     std::vector<float> host_steps(6);
     g_sycl_queue.memcpy(host_steps.data(),
-        step_out.m_node->data.get(), sizeof(float) * host_steps.size()).wait();
+        step_out.get_data(), sizeof(float) * host_steps.size()).wait();
 
     std::vector<float> expected_steps;
     expected_steps.reserve(6);
@@ -4394,7 +4394,7 @@ TEST(LINSPACE, scalar_vs_array_broadcast_front_axis)
 
     std::vector<float> host(num * 2);
     g_sycl_queue.memcpy(host.data(),
-        out.m_node->data.get(), sizeof(float) * host.size()).wait();
+        out.get_data(), sizeof(float) * host.size()).wait();
 
     std::vector<float> expected;
     expected.reserve(num * 2);
@@ -4439,9 +4439,9 @@ TEST(LINSPACE, num_zero_returns_scalar_like)
 
     std::vector<float> host_out(1), host_step(1);
     g_sycl_queue.memcpy(host_out.data(),
-        out.m_node->data.get(), sizeof(float)).wait();
+        out.get_data(), sizeof(float)).wait();
     g_sycl_queue.memcpy(host_step.data(),
-        step_out.m_node->data.get(), sizeof(float)).wait();
+        step_out.get_data(), sizeof(float)).wait();
 
     EXPECT_FALSE(std::isnan(host_out[0]));
     EXPECT_TRUE(std::isfinite(host_step[0]));
@@ -4466,7 +4466,7 @@ TEST(LINSPACE, scalar_endpoint_false)
 
     ASSERT_EQ(out.get_num_elements(), num);
     std::vector<float> host(num);
-    g_sycl_queue.memcpy(host.data(), out.m_node->data.get(), sizeof(float) * num).wait();
+    g_sycl_queue.memcpy(host.data(), out.get_data(), sizeof(float) * num).wait();
 
     EXPECT_FLOAT_EQ(host[0], 0.0f);
     EXPECT_FLOAT_EQ(host[1], 0.25f);
@@ -4493,7 +4493,7 @@ TEST(LINSPACE, decreasing_range_step_negative)
 
     std::vector<float> host(out.get_num_elements());
     g_sycl_queue.memcpy(host.data(),
-        out.m_node->data.get(), sizeof(float)*host.size()).wait();
+        out.get_data(), sizeof(float)*host.size()).wait();
     for (uint64_t i = 0; i < num; ++i)
     {
         EXPECT_FLOAT_EQ(host[i], 5.0f - static_cast<float>(i));
@@ -4502,7 +4502,7 @@ TEST(LINSPACE, decreasing_range_step_negative)
     ASSERT_EQ(step_out.get_num_elements(), 1u);
     std::vector<float> hs(1);
     g_sycl_queue.memcpy(hs.data(),
-        step_out.m_node->data.get(), sizeof(float)).wait();
+        step_out.get_data(), sizeof(float)).wait();
     EXPECT_FLOAT_EQ(hs[0], -1.0f);
 }
 
@@ -4525,7 +4525,7 @@ TEST(LINSPACE, start_equals_stop_zero_step)
 
     std::vector<float> host(out.get_num_elements());
     g_sycl_queue.memcpy(host.data(),
-        out.m_node->data.get(), host.size()*sizeof(float)).wait();
+        out.get_data(), host.size()*sizeof(float)).wait();
     for (auto v : host)
     {
         EXPECT_FLOAT_EQ(v, 2.0f);
@@ -4533,7 +4533,7 @@ TEST(LINSPACE, start_equals_stop_zero_step)
 
     std::vector<float> hs(step_out.get_num_elements());
     g_sycl_queue.memcpy(hs.data(),
-        step_out.m_node->data.get(), hs.size()*sizeof(float)).wait();
+        step_out.get_data(), hs.size()*sizeof(float)).wait();
     for (auto s : hs)
     {
         EXPECT_FLOAT_EQ(s, 0.0f);
@@ -4573,10 +4573,10 @@ TEST(LINSPACE, view_constructor_broadcast)
 
     std::vector<float> host(out.get_num_elements());
     g_sycl_queue.memcpy
-        (host.data(), out.m_node->data.get(), host.size() * sizeof(float)).wait();
+        (host.data(), out.get_data(), host.size() * sizeof(float)).wait();
 
     std::vector<float> host_steps(step_out.get_num_elements());
-    g_sycl_queue.memcpy(host_steps.data(), step_out.m_node->data.get(),
+    g_sycl_queue.memcpy(host_steps.data(), step_out.get_data(),
         host_steps.size() * sizeof(float)).wait();
 
     const std::array<float,2> start_vals = {0.0f, 10.0f};
@@ -4651,11 +4651,11 @@ TEST(LINSPACE, alias_view_stride_every_other)
 
     std::vector<float> host(out.get_num_elements());
     g_sycl_queue.memcpy
-        (host.data(), out.m_node->data.get(), host.size() * sizeof(float)).wait();
+        (host.data(), out.get_data(), host.size() * sizeof(float)).wait();
 
     std::vector<float> host_steps(3);
     g_sycl_queue.memcpy(host_steps.data(),
-        step_out.m_node->data.get(), sizeof(float) * host_steps.size()).wait();
+        step_out.get_data(), sizeof(float) * host_steps.size()).wait();
 
     std::vector<float> expected = {0.0f, 2.0f, 4.0f, 10.0f, 20.0f, 30.0f};
     for (size_t k = 0; k < host.size(); ++k)
@@ -4689,7 +4689,7 @@ TEST(LINSPACE, scalar_overload_endpoint_true_with_step_out)
 
     std::vector<float> host(num);
     g_sycl_queue.memcpy(host.data(),
-        out.m_node->data.get(), sizeof(float) * num).wait();
+        out.get_data(), sizeof(float) * num).wait();
 
     for (uint64_t i = 0; i < num; ++i)
     {
@@ -4699,7 +4699,7 @@ TEST(LINSPACE, scalar_overload_endpoint_true_with_step_out)
     ASSERT_EQ(step_out.get_num_elements(), 1u);
     std::vector<float> host_step(1);
     g_sycl_queue.memcpy(host_step.data(),
-        step_out.m_node->data.get(), sizeof(float)).wait();
+        step_out.get_data(), sizeof(float)).wait();
     EXPECT_FLOAT_EQ(host_step[0], (stop - start) / static_cast<float>(num - 1));
 }
 
@@ -4724,7 +4724,7 @@ TYPED_TEST(TypedArange, basic_positive_step)
     ASSERT_EQ(out.get_num_elements(), 5u);
 
     std::vector<value_t> host(5);
-    g_sycl_queue.memcpy(host.data(), out.m_node->data.get(),
+    g_sycl_queue.memcpy(host.data(), out.get_data(),
                         5 * sizeof(value_t)).wait();
 
     std::vector<value_t> expected = {
@@ -4761,7 +4761,7 @@ TYPED_TEST(TypedArange, basic_negative_step)
     ASSERT_EQ(out.get_num_elements(), 5u);
 
     std::vector<value_t> host(5);
-    g_sycl_queue.memcpy(host.data(), out.m_node->data.get(),
+    g_sycl_queue.memcpy(host.data(), out.get_data(),
                         5 * sizeof(value_t)).wait();
 
     std::vector<value_t> expected = {
@@ -4835,7 +4835,7 @@ TYPED_TEST(TypedArange, stop_only)
     ASSERT_EQ(out.get_num_elements(), 4u);
 
     std::vector<value_t> host(4);
-    g_sycl_queue.memcpy(host.data(), out.m_node->data.get(),
+    g_sycl_queue.memcpy(host.data(), out.get_data(),
                         4 * sizeof(value_t)).wait();
 
     std::vector<value_t> expected = {
@@ -4901,7 +4901,7 @@ TYPED_TEST(TypedArange, floating_point_step)
     ASSERT_EQ(out.get_num_elements(), 5u);
 
     std::vector<value_t> host(5);
-    g_sycl_queue.memcpy(host.data(), out.m_node->data.get(),
+    g_sycl_queue.memcpy(host.data(), out.get_data(),
                         5 * sizeof(value_t)).wait();
 
     std::vector<value_t> expected = {
@@ -4932,12 +4932,12 @@ TYPED_TEST(TypedZeros, device)
 
     Tensor<value_t> z = math::zeros<value_t>(shape, MemoryLocation::DEVICE);
 
-    ASSERT_NE(z.m_node->data.get(), nullptr);
+    ASSERT_NE(z.get_data(), nullptr);
 
     uint64_t total = z.get_num_elements();
 
     std::vector<value_t> host(total);
-    g_sycl_queue.memcpy(host.data(), z.m_node->data.get(),
+    g_sycl_queue.memcpy(host.data(), z.get_data(),
                         total * sizeof(value_t)).wait();
 
     for (uint64_t i = 0; i < total; ++i)
@@ -4961,12 +4961,12 @@ TYPED_TEST(TypedZeros, host)
 
     Tensor<value_t> z = math::zeros<value_t>(shape, MemoryLocation::HOST);
 
-    ASSERT_NE(z.m_node->data.get(), nullptr);
+    ASSERT_NE(z.get_data(), nullptr);
 
     uint64_t total = z.get_num_elements();
 
     std::vector<value_t> host(total);
-    g_sycl_queue.memcpy(host.data(), z.m_node->data.get(),
+    g_sycl_queue.memcpy(host.data(), z.get_data(),
                         total * sizeof(value_t)).wait();
 
     for (uint64_t i = 0; i < total; ++i)
@@ -5003,12 +5003,12 @@ TYPED_TEST(TypedFull, device)
     Tensor<value_t> out =
         math::full<value_t>(shape, fill, MemoryLocation::DEVICE);
 
-    ASSERT_NE(out.m_node->data.get(), nullptr);
+    ASSERT_NE(out.get_data(), nullptr);
 
     uint64_t total = out.get_num_elements();
 
     std::vector<value_t> host(total);
-    g_sycl_queue.memcpy(host.data(), out.m_node->data.get(),
+    g_sycl_queue.memcpy(host.data(), out.get_data(),
                         total * sizeof(value_t)).wait();
 
     for (uint64_t i = 0; i < total; ++i)
@@ -5036,12 +5036,12 @@ TYPED_TEST(TypedFull, host)
     Tensor<value_t> out =
         math::full<value_t>(shape, fill, MemoryLocation::HOST);
 
-    ASSERT_NE(out.m_node->data.get(), nullptr);
+    ASSERT_NE(out.get_data(), nullptr);
 
     uint64_t total = out.get_num_elements();
 
     std::vector<value_t> host(total);
-    g_sycl_queue.memcpy(host.data(), out.m_node->data.get(),
+    g_sycl_queue.memcpy(host.data(), out.get_data(),
                         total * sizeof(value_t)).wait();
 
     for (uint64_t i = 0; i < total; ++i)
@@ -5080,7 +5080,7 @@ TYPED_TEST(TypedFull, from_normal_view)
         math::full<value_t>({2, 3}, fill_view, MemoryLocation::DEVICE);
 
     std::vector<value_t> host(6);
-    g_sycl_queue.memcpy(host.data(), out.m_node->data.get(),
+    g_sycl_queue.memcpy(host.data(), out.get_data(),
                         host.size() * sizeof(value_t)).wait();
 
     std::vector<value_t> expected = {
@@ -5129,7 +5129,7 @@ TYPED_TEST(TypedFull, from_alias_view)
         math::full<value_t>({2, 3}, fill_alias, MemoryLocation::DEVICE);
 
     std::vector<value_t> host(6);
-    g_sycl_queue.memcpy(host.data(), out.m_node->data.get(),
+    g_sycl_queue.memcpy(host.data(), out.get_data(),
                         host.size() * sizeof(value_t)).wait();
 
     std::vector<value_t> expected = {
@@ -5200,11 +5200,11 @@ TYPED_TEST(TypedOnes, device)
     std::vector<uint64_t> shape = {2, 4};
 
     Tensor<value_t> out = math::ones<value_t>(shape, MemoryLocation::DEVICE);
-    ASSERT_NE(out.m_node->data.get(), nullptr);
+    ASSERT_NE(out.get_data(), nullptr);
 
     uint64_t total = out.get_num_elements();
     std::vector<value_t> host(total);
-    g_sycl_queue.memcpy(host.data(), out.m_node->data.get(),
+    g_sycl_queue.memcpy(host.data(), out.get_data(),
                         total * sizeof(value_t)).wait();
 
     for (uint64_t i = 0; i < total; ++i)
@@ -5227,11 +5227,11 @@ TYPED_TEST(TypedOnes, host)
     std::vector<uint64_t> shape = {3};
 
     Tensor<value_t> out = math::ones<value_t>(shape, MemoryLocation::HOST);
-    ASSERT_NE(out.m_node->data.get(), nullptr);
+    ASSERT_NE(out.get_data(), nullptr);
 
     uint64_t total = out.get_num_elements();
     std::vector<value_t> host(total);
-    g_sycl_queue.memcpy(host.data(), out.m_node->data.get(),
+    g_sycl_queue.memcpy(host.data(), out.get_data(),
                         total * sizeof(value_t)).wait();
 
     for (uint64_t i = 0; i < total; ++i)
@@ -5359,7 +5359,7 @@ TYPED_TEST(TypedFactorial, basic_values)
     ASSERT_EQ(N, 6u);
 
     std::vector<value_t> host(N);
-    g_sycl_queue.memcpy(host.data(), out.m_node->data.get(),
+    g_sycl_queue.memcpy(host.data(), out.get_data(),
         sizeof(value_t) * N).wait();
 
     const std::vector<value_t> expected = {
@@ -5400,7 +5400,7 @@ TYPED_TEST(TypedFactorial, alias_view_strided)
 
     ASSERT_EQ(out.get_num_elements(), 3u);
     std::vector<value_t> host(3);
-    g_sycl_queue.memcpy(host.data(), out.m_node->data.get(),
+    g_sycl_queue.memcpy(host.data(), out.get_data(),
                         sizeof(value_t) * 3).wait();
 
     const std::array<uint64_t,3> expected_i = {6u, 720u, 120u};
@@ -5551,7 +5551,7 @@ TYPED_TEST(TypedFactorial, zero_and_one)
 
     ASSERT_EQ(out.get_num_elements(), 2u);
     std::vector<value_t> host(2);
-    g_sycl_queue.memcpy(host.data(), out.m_node->data.get(),
+    g_sycl_queue.memcpy(host.data(), out.get_data(),
                         sizeof(value_t) * 2).wait();
 
     if constexpr (std::is_floating_point<value_t>::value)
@@ -5584,7 +5584,7 @@ TEST(LOG, basic_values)
 
     std::vector<float> host(N);
     g_sycl_queue.memcpy(host.data(),
-        out.m_node->data.get(), sizeof(float) * N).wait();
+        out.get_data(), sizeof(float) * N).wait();
 
     EXPECT_FLOAT_EQ(host[0], std::log(1.0f));
     EXPECT_FLOAT_EQ(host[1], std::log(static_cast<float>(M_E)));
@@ -5611,7 +5611,7 @@ TEST(LOG, alias_view_strided)
     ASSERT_EQ(out.get_num_elements(), 3u);
     std::vector<float> host(3);
     g_sycl_queue.memcpy(host.data(),
-        out.m_node->data.get(), sizeof(float) * 3).wait();
+        out.get_data(), sizeof(float) * 3).wait();
 
     EXPECT_FLOAT_EQ(host[0], std::log(1.0f));
     EXPECT_FLOAT_EQ(host[1], std::log(2.0f));
@@ -5684,7 +5684,7 @@ TEST(LOG, scalar)
     ASSERT_EQ(out.get_num_elements(), 1u);
 
     std::vector<float> host(1);
-    g_sycl_queue.memcpy(host.data(), out.m_node->data.get(), sizeof(float)).wait();
+    g_sycl_queue.memcpy(host.data(), out.get_data(), sizeof(float)).wait();
     EXPECT_NEAR(host[0], 1.0f, 1e-6f);
 }
 
@@ -5701,7 +5701,7 @@ TEST(MEAN, mean_all_elements)
     Tensor<float> res = math::mean(t);
 
     std::vector<float> host(1);
-    g_sycl_queue.memcpy(host.data(), res.m_node->data.get(), sizeof(float)).wait();
+    g_sycl_queue.memcpy(host.data(), res.get_data(), sizeof(float)).wait();
     EXPECT_FLOAT_EQ(host[0], 2.0f);
 }
 
@@ -5720,7 +5720,7 @@ TEST(MEAN, mean_axis0)
 
     std::vector<float> host(3);
     g_sycl_queue.memcpy(host.data(),
-        res.m_node->data.get(), 3 * sizeof(float)).wait();
+        res.get_data(), 3 * sizeof(float)).wait();
 
     EXPECT_FLOAT_EQ(host[0], 2.5f);
     EXPECT_FLOAT_EQ(host[1], 3.5f);
@@ -5742,7 +5742,7 @@ TEST(MEAN, mean_axis1)
 
     std::vector<float> host(2);
     g_sycl_queue.memcpy(host.data(),
-        res.m_node->data.get(), 2 * sizeof(float)).wait();
+        res.get_data(), 2 * sizeof(float)).wait();
 
     EXPECT_FLOAT_EQ(host[0], 2.0f);
     EXPECT_FLOAT_EQ(host[1], 5.0f);
@@ -5765,7 +5765,7 @@ TEST(MEAN, mean_axis0_3D)
 
     std::vector<float> host(4);
     g_sycl_queue.memcpy(host.data(),
-        res.m_node->data.get(), 4 * sizeof(float)).wait();
+        res.get_data(), 4 * sizeof(float)).wait();
 
     EXPECT_FLOAT_EQ(host[0], (1.0f + 5.0f) / 2.0f);
     EXPECT_FLOAT_EQ(host[1], (2.0f + 6.0f) / 2.0f);
@@ -5790,7 +5790,7 @@ TEST(MEAN, mean_axis1_3D)
 
     std::vector<float> host(4);
     g_sycl_queue.memcpy(host.data(),
-        res.m_node->data.get(), 4 * sizeof(float)).wait();
+        res.get_data(), 4 * sizeof(float)).wait();
 
     EXPECT_FLOAT_EQ(host[0], (1.0f + 3.0f) / 2.0f);
     EXPECT_FLOAT_EQ(host[1], (2.0f + 4.0f) / 2.0f);
@@ -5815,7 +5815,7 @@ TEST(MEAN, mean_axis2_3D)
 
     std::vector<float> host(4);
     g_sycl_queue.memcpy(host.data(),
-        res.m_node->data.get(), 4 * sizeof(float)).wait();
+        res.get_data(), 4 * sizeof(float)).wait();
 
     EXPECT_FLOAT_EQ(host[0], (1.0f + 2.0f) / 2.0f);
     EXPECT_FLOAT_EQ(host[1], (3.0f + 4.0f) / 2.0f);
@@ -5840,7 +5840,7 @@ TEST(MEAN, mean_axis_negative)
 
     std::vector<float> host(4);
     g_sycl_queue.memcpy(host.data(),
-        res.m_node->data.get(), 4 * sizeof(float)).wait();
+        res.get_data(), 4 * sizeof(float)).wait();
 
     EXPECT_FLOAT_EQ(host[0], (1.0f + 2.0f) / 2.0f);
     EXPECT_FLOAT_EQ(host[1], (3.0f + 4.0f) / 2.0f);
@@ -5867,7 +5867,7 @@ TEST(MEAN, mean_view_tensor)
     Tensor<float> res = math::mean(view);
 
     std::vector<float> host(1);
-    g_sycl_queue.memcpy(host.data(), res.m_node->data.get(), sizeof(float)).wait();
+    g_sycl_queue.memcpy(host.data(), res.get_data(), sizeof(float)).wait();
 
     EXPECT_FLOAT_EQ(host[0], (1.0f + 2.0f + 3.0f) / 3.0f);
 }
@@ -5891,7 +5891,7 @@ TEST(MEAN, mean_alias_view_tensor)
     Tensor<float> res = math::mean(alias_view);
 
     std::vector<float> host(1);
-    g_sycl_queue.memcpy(host.data(), res.m_node->data.get(), sizeof(float)).wait();
+    g_sycl_queue.memcpy(host.data(), res.get_data(), sizeof(float)).wait();
 
     // elements: 1,3,5 -> mean = 3.0
     EXPECT_FLOAT_EQ(host[0], 3.0f);
@@ -5919,7 +5919,7 @@ TEST(MEAN, mean_view_tensor_3d_axis1)
 
     std::vector<float> host(2);
     g_sycl_queue.memcpy(host.data(),
-        res.m_node->data.get(), sizeof(float) * host.size()).wait();
+        res.get_data(), sizeof(float) * host.size()).wait();
 
     EXPECT_FLOAT_EQ(host[0], 23.0f / 2.0f);
     EXPECT_FLOAT_EQ(host[1], 27.0f / 2.0f);
@@ -5948,7 +5948,7 @@ TEST(MEAN, mean_alias_view_tensor_2d_strided)
 
     std::vector<float> host(3);
     g_sycl_queue.memcpy(host.data(),
-        res.m_node->data.get(), sizeof(float) * host.size()).wait();
+        res.get_data(), sizeof(float) * host.size()).wait();
 
     // previous sum expected [9,13,17] -> divide by axis0 length (2)
     EXPECT_FLOAT_EQ(host[0], 9.0f / 2.0f);
@@ -5976,7 +5976,7 @@ TEST(MEAN, mean_alias_view_tensor_overlapping_stride_zero)
 
     std::vector<float> host(2);
     g_sycl_queue.memcpy(host.data(),
-        res.m_node->data.get(), sizeof(float) * host.size()).wait();
+        res.get_data(), sizeof(float) * host.size()).wait();
 
     // previous sum expected [8,10] -> divide by axis0 length (2)
     EXPECT_FLOAT_EQ(host[0], 8.0f / 2.0f);
@@ -6034,7 +6034,7 @@ TEST(VAR, var_all_elements)
 
     Tensor<float> res = math::var(t, std::nullopt, 0);
     std::vector<float> host(1);
-    g_sycl_queue.memcpy(host.data(), res.m_node->data.get(), sizeof(float)).wait();
+    g_sycl_queue.memcpy(host.data(), res.get_data(), sizeof(float)).wait();
 
     EXPECT_FLOAT_EQ(host[0], 2.0f/3.0f);
 }
@@ -6050,7 +6050,7 @@ TEST(VAR, var_ddof_1_sample)
 
     Tensor<float> res = math::var(t, std::nullopt, 1);
     std::vector<float> host(1);
-    g_sycl_queue.memcpy(host.data(), res.m_node->data.get(), sizeof(float)).wait();
+    g_sycl_queue.memcpy(host.data(), res.get_data(), sizeof(float)).wait();
 
     EXPECT_FLOAT_EQ(host[0], 1.0f);
 }
@@ -6066,7 +6066,7 @@ TEST(VAR, var_axis0)
 
     Tensor<float> res = math::var(t, 0, 0);
     std::vector<float> host(3);
-    g_sycl_queue.memcpy(host.data(), res.m_node->data.get(), 3*sizeof(float)).wait();
+    g_sycl_queue.memcpy(host.data(), res.get_data(), 3*sizeof(float)).wait();
 
     EXPECT_FLOAT_EQ(host[0], 2.25f);
     EXPECT_FLOAT_EQ(host[1], 2.25f);
@@ -6084,7 +6084,7 @@ TEST(VAR, var_axis_negative)
 
     Tensor<float> res = math::var(t, -2, 0);
     std::vector<float> host(3);
-    g_sycl_queue.memcpy(host.data(), res.m_node->data.get(), 3*sizeof(float)).wait();
+    g_sycl_queue.memcpy(host.data(), res.get_data(), 3*sizeof(float)).wait();
 
     EXPECT_FLOAT_EQ(host[0], 2.25f);
     EXPECT_FLOAT_EQ(host[1], 2.25f);
@@ -6107,7 +6107,7 @@ TEST(VAR, var_view_and_alias)
 
     Tensor<float> v1 = math::var(view, std::nullopt, 0);
     std::vector<float> h1(1);
-    g_sycl_queue.memcpy(h1.data(), v1.m_node->data.get(), sizeof(float)).wait();
+    g_sycl_queue.memcpy(h1.data(), v1.get_data(), sizeof(float)).wait();
     EXPECT_FLOAT_EQ(h1[0], 2.0f/3.0f);
 
     std::vector<uint64_t> start = {0ull, 0ull};
@@ -6116,7 +6116,7 @@ TEST(VAR, var_view_and_alias)
     Tensor<float> alias(owner, start, dims, strides);
     Tensor<float> v2 = math::var(alias, std::nullopt, 0);
     std::vector<float> h2(1);
-    g_sycl_queue.memcpy(h2.data(), v2.m_node->data.get(), sizeof(float)).wait();
+    g_sycl_queue.memcpy(h2.data(), v2.get_data(), sizeof(float)).wait();
     EXPECT_FLOAT_EQ(h2[0], 8.0f/3.0f);
 }
 
@@ -6809,7 +6809,7 @@ TEST(STDDEV, stddev_basic)
 
     Tensor<float> res = math::stddev(t, std::nullopt, 0);
     std::vector<float> host(1);
-    g_sycl_queue.memcpy(host.data(), res.m_node->data.get(), sizeof(float)).wait();
+    g_sycl_queue.memcpy(host.data(), res.get_data(), sizeof(float)).wait();
 
     EXPECT_FLOAT_EQ(host[0], std::sqrt(2.0f/3.0f));
 }
@@ -6825,7 +6825,7 @@ TEST(STDDEV, stddev_ddof1)
 
     Tensor<float> res = math::stddev(t, std::nullopt, 1);
     std::vector<float> host(1);
-    g_sycl_queue.memcpy(host.data(), res.m_node->data.get(), sizeof(float)).wait();
+    g_sycl_queue.memcpy(host.data(), res.get_data(), sizeof(float)).wait();
 
     EXPECT_FLOAT_EQ(host[0], 1.0f);
 }
@@ -6842,7 +6842,7 @@ TEST(STDDEV, stddev_axis0_2D)
     Tensor<float> res = math::stddev(t, 0, 0);
     std::vector<float> host(3);
     g_sycl_queue.memcpy
-        (host.data(), res.m_node->data.get(), 3 * sizeof(float)).wait();
+        (host.data(), res.get_data(), 3 * sizeof(float)).wait();
 
     EXPECT_FLOAT_EQ(host[0], 1.5f);
     EXPECT_FLOAT_EQ(host[1], 1.5f);
@@ -6861,7 +6861,7 @@ TEST(STDDEV, stddev_axis1_2D)
     Tensor<float> res = math::stddev(t, 1, 0);
     std::vector<float> host(2);
     g_sycl_queue.memcpy
-        (host.data(), res.m_node->data.get(), 2 * sizeof(float)).wait();
+        (host.data(), res.get_data(), 2 * sizeof(float)).wait();
 
     EXPECT_FLOAT_EQ(host[0], std::sqrt(2.0f/3.0f));
     EXPECT_FLOAT_EQ(host[1], std::sqrt(2.0f/3.0f));
@@ -6882,7 +6882,7 @@ TEST(STDDEV, stddev_axis_negative)
     Tensor<float> res = math::stddev(t, -3, 0);
     std::vector<float> host(4);
     g_sycl_queue.memcpy
-        (host.data(), res.m_node->data.get(), 4 * sizeof(float)).wait();
+        (host.data(), res.get_data(), 4 * sizeof(float)).wait();
 
     EXPECT_FLOAT_EQ(host[0], 2.0f);
     EXPECT_FLOAT_EQ(host[1], 2.0f);
@@ -6909,7 +6909,7 @@ TEST(STDDEV, stddev_alias_stride14)
         vals[i] = static_cast<float>(i);
     }
     g_sycl_queue.memcpy
-        (owner.m_node->data.get(), vals.data(), sizeof(float) * 100).wait();
+        (owner.get_data(), vals.data(), sizeof(float) * 100).wait();
 
     std::vector<uint64_t> start;
     start.push_back(0ull);
@@ -6927,7 +6927,7 @@ TEST(STDDEV, stddev_alias_stride14)
 
     Tensor<float> r = math::stddev(alias, std::nullopt, 0);
     std::vector<float> host_val(1);
-    g_sycl_queue.memcpy(host_val.data(), r.m_node->data.get(), sizeof(float)).wait();
+    g_sycl_queue.memcpy(host_val.data(), r.get_data(), sizeof(float)).wait();
 
     std::vector<float> data;
     data.resize(12);
@@ -7021,7 +7021,7 @@ TEST(SQRT, sqrt_basic_positive)
 
     std::vector<float> host(5);
     g_sycl_queue.memcpy(host.data(),
-        res.m_node->data.get(), 5 * sizeof(float)).wait();
+        res.get_data(), 5 * sizeof(float)).wait();
 
     EXPECT_FLOAT_EQ(host[0], 0.0f);
     EXPECT_FLOAT_EQ(host[1], 1.0f);
@@ -7061,7 +7061,7 @@ TYPED_TEST(TypedPow, basic_elementwise)
     Tensor<value_t> R = math::pow<value_t>(A, B);
 
     std::vector<value_t> host(4);
-    g_sycl_queue.memcpy(host.data(), R.m_node->data.get(),
+    g_sycl_queue.memcpy(host.data(), R.get_data(),
                         host.size() * sizeof(value_t)).wait();
 
     std::vector<value_t> expected(4);
@@ -7109,7 +7109,7 @@ TYPED_TEST(TypedPow, scalar_broadcast)
     Tensor<value_t> R = math::pow<value_t>(A, B);
 
     std::vector<value_t> host(6);
-    g_sycl_queue.memcpy(host.data(), R.m_node->data.get(),
+    g_sycl_queue.memcpy(host.data(), R.get_data(),
                         host.size() * sizeof(value_t)).wait();
 
     for (size_t i = 0; i < host.size(); ++i)
@@ -7160,7 +7160,7 @@ TYPED_TEST(TypedPow, broadcast_dims)
 
     const uint64_t out_elems = R.get_num_elements();
     std::vector<value_t> host(out_elems);
-    g_sycl_queue.memcpy(host.data(), R.m_node->data.get(),
+    g_sycl_queue.memcpy(host.data(), R.get_data(),
                         host.size() * sizeof(value_t)).wait();
 
     for (uint64_t b0 = 0; b0 < 2; ++b0)
@@ -7281,7 +7281,7 @@ TYPED_TEST(TypedPow, negative_exponent_float)
     Tensor<value_t> R = math::pow<value_t>(A, B);
 
     std::vector<value_t> host(2);
-    g_sycl_queue.memcpy(host.data(), R.m_node->data.get(),
+    g_sycl_queue.memcpy(host.data(), R.get_data(),
                         host.size() * sizeof(value_t)).wait();
 
     for (size_t i = 0; i < host.size(); ++i)
@@ -7327,7 +7327,7 @@ TYPED_TEST(TypedPow, alias_views_noncontiguous_strides)
     Tensor<value_t> R = math::pow<value_t>(A_view, B_view);
 
     std::vector<value_t> host(R.get_num_elements());
-    g_sycl_queue.memcpy(host.data(), R.m_node->data.get(),
+    g_sycl_queue.memcpy(host.data(), R.get_data(),
                         host.size() * sizeof(value_t)).wait();
 
     const uint64_t base_cols = 6;
@@ -7997,7 +7997,7 @@ TEST(SQRT, sqrt_zero_and_subnormal)
 
     std::vector<float> host(3);
     g_sycl_queue.memcpy
-        (host.data(), res.m_node->data.get(), 3 * sizeof(float)).wait();
+        (host.data(), res.get_data(), 3 * sizeof(float)).wait();
 
     EXPECT_FLOAT_EQ(host[0], 0.0f);
 
@@ -8026,7 +8026,7 @@ TEST(SQRT, sqrt_large_values)
 
     std::vector<float> host(2);
     g_sycl_queue.memcpy
-        (host.data(), res.m_node->data.get(), 2 * sizeof(float)).wait();
+        (host.data(), res.get_data(), 2 * sizeof(float)).wait();
 
     EXPECT_TRUE(std::isfinite(host[0]));
     EXPECT_TRUE(std::isfinite(host[1]));
@@ -8096,7 +8096,7 @@ TEST(SQRT, sqrt_view_and_alias)
                        std::vector<uint64_t>{1ull});
     Tensor<float> r1 = math::sqrt(view);
     std::vector<float> h1(3);
-    g_sycl_queue.memcpy(h1.data(), r1.m_node->data.get(), 3 * sizeof(float)).wait();
+    g_sycl_queue.memcpy(h1.data(), r1.get_data(), 3 * sizeof(float)).wait();
     EXPECT_FLOAT_EQ(h1[0], 1.0f);
     EXPECT_FLOAT_EQ(h1[1], 2.0f);
     EXPECT_FLOAT_EQ(h1[2], 3.0f);
@@ -8107,7 +8107,7 @@ TEST(SQRT, sqrt_view_and_alias)
     Tensor<float> alias(owner, start, dims, strides);
     Tensor<float> r2 = math::sqrt(alias);
     std::vector<float> h2(3);
-    g_sycl_queue.memcpy(h2.data(), r2.m_node->data.get(), 3 * sizeof(float)).wait();
+    g_sycl_queue.memcpy(h2.data(), r2.get_data(), 3 * sizeof(float)).wait();
     EXPECT_FLOAT_EQ(h2[0], 1.0f);
     EXPECT_FLOAT_EQ(h2[1], 3.0f);
     EXPECT_FLOAT_EQ(h2[2], 5.0f);
@@ -8126,7 +8126,7 @@ TEST(EXP, exp_basic)
 
     std::vector<float> host(3);
     g_sycl_queue.memcpy(host.data(),
-        res.m_node->data.get(), 3 * sizeof(float)).wait();
+        res.get_data(), 3 * sizeof(float)).wait();
 
     const double tol = 1e-6;
     EXPECT_NEAR(static_cast<double>(host[0]),
@@ -8152,7 +8152,7 @@ TEST(EXP, exp_view_and_alias)
                        std::vector<uint64_t>{1ull});
     Tensor<float> r1 = math::exp(view);
     std::vector<float> h1(3);
-    g_sycl_queue.memcpy(h1.data(), r1.m_node->data.get(), 3 * sizeof(float)).wait();
+    g_sycl_queue.memcpy(h1.data(), r1.get_data(), 3 * sizeof(float)).wait();
     EXPECT_NEAR(static_cast<double>(h1[0]),
         static_cast<double>(std::exp(0.0f)), 1e-6);
     EXPECT_NEAR(static_cast<double>(h1[1]),
@@ -8167,7 +8167,7 @@ TEST(EXP, exp_view_and_alias)
     Tensor<float> r2 = math::exp(alias);
     std::vector<float> h2(3);
     g_sycl_queue.memcpy(h2.data(),
-        r2.m_node->data.get(), 3 * sizeof(float)).wait();
+        r2.get_data(), 3 * sizeof(float)).wait();
     EXPECT_NEAR(static_cast<double>(h2[0]),
         static_cast<double>(std::exp(0.0f)), 1e-6);
     EXPECT_NEAR(static_cast<double>(h2[1]),

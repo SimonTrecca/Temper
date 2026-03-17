@@ -76,8 +76,10 @@ class Tensor
 
 private:
     /// Stable internal tensor identity used for graph references.
-    std::shared_ptr<TensorNode<value_t>> m_node {
-        std::make_shared<TensorNode<value_t>>()};
+    std::shared_ptr<TensorNode<value_t>> m_node{nullptr};
+
+    /// Ensure node exists before mutating metadata/storage handles.
+    void ensure_node() noexcept;
 
     /**
      * @brief Sets the logical data pointer for this tensor.
@@ -147,20 +149,11 @@ private:
     /**
      * @brief Sets the gradient storage handle for this tensor.
      *
-     * Rebinds gradient pointer metadata used by autograd.
+     * Rebinds gradient tensor metadata used by autograd.
      *
-     * @param grad Shared pointer to gradient storage, or nullptr.
+     * @param grad Gradient tensor.
      */
-    void set_gradient(const std::shared_ptr<value_t>& grad) noexcept;
-
-    /**
-     * @brief Returns the shared gradient handle for this tensor.
-     *
-     * Exposes the control block needed for aliasing gradient views.
-     *
-     * @return const std::shared_ptr<value_t>& Shared gradient handle.
-     */
-    const std::shared_ptr<value_t>& get_gradient_handle() const noexcept;
+    void set_gradient(const Tensor<value_t>& grad) noexcept;
 
     /**
      * @brief Computes strides using dimensions.
@@ -1238,28 +1231,18 @@ public:
     std::shared_ptr<FunctionEdge<value_t>> get_source_function() const noexcept;
 
     /**
-     * @brief Returns a pointer to the gradient tensor associated with this tensor.
+     * @brief Returns the gradient tensor associated with this tensor.
      *
-     * If this tensor is an output of a function and requires gradients, returns
-     * a pointer to the gradient tensor that will hold the computed gradients
-     * during backpropagation. If no gradients are required or if this tensor is
-     * an input, returns nullptr.
-     *
-     * @return value_t* Pointer to the gradient tensor or nullptr.
+     * @return Tensor<value_t>& Gradient tensor.
      */
-    value_t* get_gradient() noexcept;
+    Tensor<value_t>& get_gradient() noexcept;
 
     /**
-    * @brief Returns a const pointer to the gradient tensor associated with this tensor.
+    * @brief Returns the const gradient tensor associated with this tensor.
     *
-    * If this tensor is an output of a function and requires gradients, returns
-    * a const pointer to the gradient tensor that will hold the computed gradients
-    * during backpropagation. If no gradients are required or if this tensor is
-    * an input, returns nullptr.
-    *
-    * @return const value_t* Const pointer to the gradient tensor or nullptr.
+    * @return const Tensor<value_t>& Const gradient tensor.
     */
-    const value_t* get_gradient() const noexcept;
+    const Tensor<value_t>& get_gradient() const noexcept;
 
     /**
      * @brief Checks if this tensor requires gradients for backpropagation.

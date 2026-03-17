@@ -172,7 +172,7 @@ struct AutogradMeta
     std::shared_ptr<FunctionEdge<value_t>> fn{nullptr};
 
     /// Pointer to the gradient tensor data.
-    std::shared_ptr<value_t> grad{nullptr};
+    Tensor<value_t> grad;
 
     /// Flag indicating whether this tensor requires gradient.
     bool requires_grad{false};

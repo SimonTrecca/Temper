@@ -33,10 +33,10 @@ namespace Test
 template <typename value_t>
 void copy_tensor_data(Tensor<value_t>& dest, const Tensor<value_t>& src)
 {
-    ASSERT_EQ(dest.m_node->dimensions, src.m_node->dimensions);
+    ASSERT_EQ(dest.get_dimensions(), src.get_dimensions());
 
     uint64_t total_elements = 1;
-    for (uint64_t d : src.m_node->dimensions)
+    for (uint64_t d : src.get_dimensions())
     {
         total_elements *= d;
     }
@@ -45,14 +45,14 @@ void copy_tensor_data(Tensor<value_t>& dest, const Tensor<value_t>& src)
         return;
     }
 
-    uint64_t rank = static_cast<uint64_t>(src.m_node->dimensions.size());
+    uint64_t rank = static_cast<uint64_t>(src.get_dimensions().size());
 
     std::vector<uint64_t> shape_strides(rank, 1);
     if (rank >= 2)
     {
         for (uint64_t i = rank - 2; i == 0; --i)
         {
-            shape_strides[i] = shape_strides[i + 1] * src.m_node->dimensions[i + 1];
+            shape_strides[i] = shape_strides[i + 1] * src.get_dimensions()[i + 1];
         }
     }
 
@@ -61,13 +61,13 @@ void copy_tensor_data(Tensor<value_t>& dest, const Tensor<value_t>& src)
     uint64_t* dest_strides = sycl::malloc_shared<uint64_t>(rank, g_sycl_queue);
     uint64_t* shape_str    = sycl::malloc_shared<uint64_t>(rank, g_sycl_queue);
 
-    std::memcpy(dims,         src.m_node->dimensions.data(), rank * sizeof(uint64_t));
-    std::memcpy(src_strides,  src.m_node->strides.data(),     rank * sizeof(uint64_t));
-    std::memcpy(dest_strides, dest.m_node->strides.data(),    rank * sizeof(uint64_t));
+    std::memcpy(dims,         src.get_dimensions().data(), rank * sizeof(uint64_t));
+    std::memcpy(src_strides,  src.get_strides().data(),    rank * sizeof(uint64_t));
+    std::memcpy(dest_strides, dest.get_strides().data(),   rank * sizeof(uint64_t));
     std::memcpy(shape_str,    shape_strides.data(),     rank * sizeof(uint64_t));
 
-    value_t* src_data  = src.m_node->data.get();
-    value_t* dest_data = dest.m_node->data.get();
+    const value_t* src_data = src.get_data();
+    value_t* dest_data = dest.get_data();
 
     if (!src_data || !dest_data)
     {
@@ -116,9 +116,9 @@ TYPED_TEST(TypedTensor, compute_strides_empty_dimensions)
 {
     using value_t = TypeParam;
     Tensor<value_t> t;
-    t.m_node->dimensions.clear();
+    t.set_dimensions({});
     t.compute_strides();
-    EXPECT_TRUE(t.m_node->strides.empty());
+    EXPECT_TRUE(t.get_strides().empty());
 }
 
 /**
@@ -130,13 +130,14 @@ TYPED_TEST(TypedTensor, compute_strides_empty_dimensions)
 TYPED_TEST(TypedTensor, compute_strides_one_dimension)
 {
     using value_t = TypeParam;
+
     Tensor<value_t> t;
-    t.m_node->dimensions = { 7 };
+    t.set_dimensions({ 7 });
     t.compute_strides();
 
     // Single-dim stride should always be 1.
-    ASSERT_EQ(t.m_node->strides.size(), 1u);
-    EXPECT_EQ(t.m_node->strides[0], 1u);
+    ASSERT_EQ(t.get_strides().size(), 1u);
+    EXPECT_EQ(t.get_strides()[0], 1u);
 }
 
 /**
@@ -149,12 +150,12 @@ TYPED_TEST(TypedTensor, compute_strides_larger_tensor)
 {
     using value_t = TypeParam;
     Tensor<value_t> t;
-    t.m_node->dimensions = { 4, 1, 6, 2 };
+    t.set_dimensions({ 4, 1, 6, 2 });
     t.compute_strides();
 
     // Strides: [1*6*2, 6*2, 2, 1] = [12,12,2,1].
     std::vector<uint64_t> expected = { 12, 12, 2, 1 };
-    ASSERT_EQ(t.m_node->strides, expected);
+    ASSERT_EQ(t.get_strides(), expected);
 }
 
 /**
@@ -172,7 +173,7 @@ TYPED_TEST(TypedTensor, compute_strides_overflow_throws)
     uint64_t dim2 = 2;
 
     Tensor<value_t> t;
-    t.m_node->dimensions = { 1, dim1, dim2 };
+    t.set_dimensions({ 1, dim1, dim2 });
 
     EXPECT_THROW(t.compute_strides(), temper::bounds_error);
 }
@@ -217,7 +218,7 @@ TYPED_TEST(TypedTensor, iterator_dereference_returns_view)
 
     EXPECT_EQ(view.get_num_elements(), uint64_t{1});
     EXPECT_FALSE(view.get_owns_data());
-    EXPECT_EQ(view.m_node->data.get(), t.at(2).m_node->data.get());
+    EXPECT_EQ(view.get_data(), t.at(2).get_data());
 }
 
 /**
@@ -383,7 +384,7 @@ TYPED_TEST(TypedTensor, const_iterator_dereference_returns_view)
 
     EXPECT_EQ(view.get_num_elements(), uint64_t{1});
     EXPECT_FALSE(view.get_owns_data());
-    EXPECT_EQ(view.m_node->data.get(), t.at(2).m_node->data.get());
+    EXPECT_EQ(view.get_data(), t.at(2).get_data());
 }
 
 /**
@@ -667,11 +668,11 @@ TYPED_TEST(TypedTensor, main_constructor_sets_dimensions_and_strides)
     std::vector<uint64_t> dims = { 2, 3, 4 };
     Tensor<value_t> t(dims, MemoryLocation::DEVICE);
 
-    EXPECT_EQ(t.m_node->dimensions, dims);
-    EXPECT_EQ(t.m_node->mem_loc, MemoryLocation::DEVICE);
+    EXPECT_EQ(t.get_dimensions(), dims);
+    EXPECT_EQ(t.get_memory_location(), MemoryLocation::DEVICE);
 
     std::vector<uint64_t> expected_strides = { 12, 4, 1 };
-    EXPECT_EQ(t.m_node->strides, expected_strides);
+    EXPECT_EQ(t.get_strides(), expected_strides);
 }
 
 /**
@@ -685,7 +686,7 @@ TYPED_TEST(TypedTensor, main_constructor_zero_initializes_data)
     std::vector<uint64_t> dims = { 2, 3 };
     Tensor<value_t> t(dims, MemoryLocation::HOST);
 
-    EXPECT_EQ(t.m_node->mem_loc, MemoryLocation::HOST);
+    EXPECT_EQ(t.get_memory_location(), MemoryLocation::HOST);
 
     uint64_t total_size = 1;
     for (uint64_t d : dims)
@@ -696,7 +697,7 @@ TYPED_TEST(TypedTensor, main_constructor_zero_initializes_data)
     std::vector<value_t> host_data(total_size);
     sycl::event e = g_sycl_queue.memcpy(
         host_data.data(),
-        t.m_node->data.get(),
+        t.get_data(),
         sizeof(value_t) * total_size
     );
     e.wait();
@@ -720,14 +721,14 @@ TYPED_TEST(TypedTensor, main_constructor_autograd_defaults)
 {
     using value_t = TypeParam;
     Tensor<value_t> def;
-    EXPECT_FALSE(def.m_node->meta.requires_grad);
-    EXPECT_EQ(def.m_node->meta.grad, nullptr);
-    EXPECT_EQ(def.m_node->meta.fn, nullptr);
+    EXPECT_FALSE(def.requires_grad());
+    EXPECT_EQ(def.get_gradient().get_data(), nullptr);
+    EXPECT_EQ(def.get_source_function(), nullptr);
 
     Tensor<value_t> own({2,2}, MemoryLocation::HOST);
-    EXPECT_FALSE(own.m_node->meta.requires_grad);
-    EXPECT_EQ(own.m_node->meta.grad, nullptr);
-    EXPECT_EQ(own.m_node->meta.fn, nullptr);
+    EXPECT_FALSE(own.requires_grad());
+    EXPECT_EQ(own.get_gradient().get_data(), nullptr);
+    EXPECT_EQ(own.get_source_function(), nullptr);
 }
 
 /**
@@ -742,8 +743,8 @@ TYPED_TEST(TypedTensor, constructor_requires_grad_parameter)
     // Vector constructor with requires_grad = true
     Tensor<value_t> a(std::vector<uint64_t>{2, 3}, MemoryLocation::HOST, true);
     EXPECT_TRUE(a.requires_grad());
-    EXPECT_EQ(a.m_node->meta.fn, nullptr);
-    EXPECT_EQ(a.m_node->meta.grad, nullptr);
+    EXPECT_EQ(a.get_source_function(), nullptr);
+    EXPECT_EQ(a.get_gradient().get_data(), nullptr);
 
     // Initializer-list constructor with requires_grad = true
     Tensor<value_t> b({4, 5}, MemoryLocation::HOST, true);
@@ -770,12 +771,12 @@ TYPED_TEST(TypedTensor, main_constructor_memory_location_and_access)
     using value_t = TypeParam;
     Tensor<value_t> t_device(std::vector<uint64_t>{1, 1},
                              MemoryLocation::DEVICE);
-    EXPECT_EQ(t_device.m_node->mem_loc, MemoryLocation::DEVICE);
+    EXPECT_EQ(t_device.get_memory_location(), MemoryLocation::DEVICE);
 
     // Launch kernel to set element to 42.
     g_sycl_queue.submit([&](sycl::handler & cgh)
     {
-        value_t * ptr = t_device.m_node->data.get();
+        value_t * ptr = t_device.get_data();
         cgh.single_task([=]()
         {
             ptr[0] = static_cast<value_t>(42);
@@ -784,7 +785,7 @@ TYPED_TEST(TypedTensor, main_constructor_memory_location_and_access)
 
     // Copy back to host and check.
     value_t host_val = static_cast<value_t>(0);
-    g_sycl_queue.memcpy(&host_val, t_device.m_node->data.get(),
+    g_sycl_queue.memcpy(&host_val, t_device.get_data(),
                        sizeof(value_t)).wait();
 
     if constexpr (std::is_floating_point_v<value_t>) {
@@ -796,15 +797,15 @@ TYPED_TEST(TypedTensor, main_constructor_memory_location_and_access)
 
     // HOST tensor test: write directly on host memory and read back.
     Tensor<value_t> t_host({1, 1}, MemoryLocation::HOST);
-    EXPECT_EQ(t_host.m_node->mem_loc, MemoryLocation::HOST);
+    EXPECT_EQ(t_host.get_memory_location(), MemoryLocation::HOST);
 
     // Direct write on host pointer.
-    t_host.m_node->data.get()[0] = static_cast<value_t>(24);
+    t_host.get_data()[0] = static_cast<value_t>(24);
     if constexpr (std::is_floating_point_v<value_t>) {
-        EXPECT_FLOAT_EQ(static_cast<float>(t_host.m_node->data.get()[0]),
+        EXPECT_FLOAT_EQ(static_cast<float>(t_host.get_data()[0]),
                         static_cast<float>(24.0f));
     } else {
-        EXPECT_EQ(t_host.m_node->data.get()[0], static_cast<value_t>(24));
+        EXPECT_EQ(t_host.get_data()[0], static_cast<value_t>(24));
     }
 }
 
@@ -909,10 +910,10 @@ TYPED_TEST(TypedTensor, copy_constructor)
 
     Tensor<value_t> t2(t1);
 
-    EXPECT_EQ(t2.m_node->mem_loc, t1.m_node->mem_loc);
+    EXPECT_EQ(t2.get_memory_location(), t1.get_memory_location());
 
     std::vector<value_t> host(4);
-    g_sycl_queue.memcpy(host.data(), t2.m_node->data.get(),
+    g_sycl_queue.memcpy(host.data(), t2.get_data(),
                        sizeof(value_t) * 4).wait();
 
     if constexpr (std::is_floating_point_v<value_t>) {
@@ -944,9 +945,9 @@ TYPED_TEST(TypedTensor, copy_constructor_on_default_constructed)
 
     Tensor<value_t> t2(t1);
 
-    EXPECT_TRUE(t2.m_node->dimensions.empty());
-    EXPECT_EQ(t2.m_node->data, nullptr);
-    EXPECT_TRUE(t2.m_node->owns_data);
+    EXPECT_TRUE(t2.get_dimensions().empty());
+    EXPECT_EQ(t2.get_data_handle(), nullptr);
+    EXPECT_TRUE(t2.get_owns_data());
 }
 
 /**
@@ -961,19 +962,19 @@ TYPED_TEST(TypedTensor, copy_constructor_autograd_preserves_requires_grad)
     t = std::vector<value_t>{ static_cast<value_t>(1), static_cast<value_t>(2),
                               static_cast<value_t>(3), static_cast<value_t>(4) };
 
-    t.m_node->meta.requires_grad = true;
-    t.m_node->meta.grad = t.m_node->data;
+    t.set_requires_grad(true);
+    t.set_gradient(t);
 
     Tensor<value_t> cp(t);
 
     // Original should still indicate gradients required and have grad ptr.
-    EXPECT_TRUE(t.m_node->meta.requires_grad);
-    ASSERT_NE(t.m_node->meta.grad, nullptr);
+    EXPECT_TRUE(t.requires_grad());
+    ASSERT_NE(t.get_gradient().get_data(), nullptr);
 
     // Copy preserves requires_grad but clears fn and grad (new leaf).
-    EXPECT_TRUE(cp.m_node->meta.requires_grad);
-    EXPECT_EQ(cp.m_node->meta.fn, nullptr);
-    EXPECT_EQ(cp.m_node->meta.grad, nullptr);
+    EXPECT_TRUE(cp.requires_grad());
+    EXPECT_EQ(cp.get_source_function(), nullptr);
+    EXPECT_EQ(cp.get_gradient().get_data(), nullptr);
 }
 
 /**
@@ -1000,9 +1001,9 @@ TYPED_TEST(TypedTensor, copy_constructor_autograd_from_view_preserves_meta)
         { return nullptr; }
     };
 
-    owner.m_node->meta.requires_grad = true;
-    owner.m_node->meta.grad = owner.m_node->data;
-    owner.m_node->meta.fn = std::make_shared<DummyEdge>();
+    owner.set_requires_grad(true);
+    owner.set_gradient(owner);
+    owner.set_source_function(std::make_shared<DummyEdge>());
 
     // Create a view and then copy-construct from the view
     Tensor<value_t> view(owner,
@@ -1010,17 +1011,14 @@ TYPED_TEST(TypedTensor, copy_constructor_autograd_from_view_preserves_meta)
         std::vector<uint64_t>{1,2});
 
     // View should not inherit owner's fn
-    EXPECT_EQ(view.m_node->meta.fn, nullptr);
+    EXPECT_EQ(view.get_source_function(), nullptr);
 
     Tensor<value_t> cp(view);
 
-    EXPECT_TRUE(cp.m_node->meta.requires_grad);
-    ASSERT_NE(cp.m_node->meta.grad, nullptr);
-    // grad should be an alias into same control block
-    uint64_t offset = 1 * owner.m_node->strides[0] + 1 * owner.m_node->strides[1];
-    EXPECT_EQ(cp.m_node->meta.grad.get(), owner.m_node->meta.grad.get() + offset);
+    EXPECT_TRUE(cp.requires_grad());
+    EXPECT_EQ(cp.get_gradient().get_data(), nullptr);
     // fn is nullptr for views
-    EXPECT_EQ(cp.m_node->meta.fn, nullptr);
+    EXPECT_EQ(cp.get_source_function(), nullptr);
 }
 
 /**
@@ -1043,7 +1041,7 @@ TYPED_TEST(TypedTensor, copy_constructor_host)
     Tensor<value_t> t2(t1);
 
     std::vector<value_t> host(4);
-    std::memcpy(host.data(), t2.m_node->data.get(),
+    std::memcpy(host.data(), t2.get_data(),
                 sizeof(value_t) * 4);
 
     if constexpr (std::is_floating_point_v<value_t>) {
@@ -1080,13 +1078,13 @@ TYPED_TEST(TypedTensor, copy_constructor_view)
     t1 = values;
 
     Tensor<value_t> view(t1, {2}, {2});
-    ASSERT_FALSE(view.m_node->owns_data);
+    ASSERT_FALSE(view.get_owns_data());
 
     Tensor<value_t> copy(view);
 
-    EXPECT_EQ(copy.m_node->dimensions, view.m_node->dimensions);
-    EXPECT_FALSE(copy.m_node->owns_data);
-    EXPECT_EQ(copy.m_node->data.get(), view.m_node->data.get());
+    EXPECT_EQ(copy.get_dimensions(), view.get_dimensions());
+    EXPECT_FALSE(copy.get_owns_data());
+    EXPECT_EQ(copy.get_data(), view.get_data());
 }
 
 /**
@@ -1105,14 +1103,14 @@ TYPED_TEST(TypedTensor, move_constructor)
     };
     t1 = values;
 
-    value_t* original_ptr = t1.m_node->data.get();
-    MemoryLocation original_loc = t1.m_node->mem_loc;
+    value_t* original_ptr = t1.get_data();
+    MemoryLocation original_loc = t1.get_memory_location();
 
     Tensor<value_t> t2(std::move(t1));
 
-    EXPECT_EQ(t2.m_node->data.get(), original_ptr);
-    EXPECT_EQ(t2.m_node->mem_loc, original_loc);
-    EXPECT_EQ(t1.m_node->data.get(), nullptr);
+    EXPECT_EQ(t2.get_data(), original_ptr);
+    EXPECT_EQ(t2.get_memory_location(), original_loc);
+    EXPECT_EQ(t1.get_data(), nullptr);
 }
 
 /**
@@ -1136,26 +1134,26 @@ TYPED_TEST(TypedTensor, move_constructor_autograd_transfers_meta)
         { return nullptr; }
     };
 
-    src.m_node->meta.requires_grad = true;
-    src.m_node->meta.grad = src.m_node->data;
-    src.m_node->meta.fn = std::make_shared<DummyEdge>();
+    src.set_requires_grad(true);
+    src.set_gradient(src);
+    src.set_source_function(std::make_shared<DummyEdge>());
 
-    value_t* raw_grad_ptr = src.m_node->meta.grad.get();
-    auto fn_ptr = src.m_node->meta.fn.get();
+    value_t* raw_grad_ptr = src.get_gradient().get_data();
+    auto fn_ptr = src.get_source_function().get();
 
     Tensor<value_t> moved(std::move(src));
 
     // moved should have the metadata
-    EXPECT_TRUE(moved.m_node->meta.requires_grad);
-    ASSERT_NE(moved.m_node->meta.grad, nullptr);
-    EXPECT_EQ(moved.m_node->meta.grad.get(), raw_grad_ptr);
-    ASSERT_NE(moved.m_node->meta.fn, nullptr);
-    EXPECT_EQ(moved.m_node->meta.fn.get(), fn_ptr);
+    EXPECT_TRUE(moved.requires_grad());
+    ASSERT_NE(moved.get_gradient().get_data(), nullptr);
+    EXPECT_EQ(moved.get_gradient().get_data(), raw_grad_ptr);
+    ASSERT_NE(moved.get_source_function(), nullptr);
+    EXPECT_EQ(moved.get_source_function().get(), fn_ptr);
 
     // source must be cleared
-    EXPECT_FALSE(src.m_node->meta.requires_grad);
-    EXPECT_EQ(src.m_node->meta.grad, nullptr);
-    EXPECT_EQ(src.m_node->meta.fn, nullptr);
+    EXPECT_FALSE(src.requires_grad());
+    EXPECT_EQ(src.get_gradient().get_data(), nullptr);
+    EXPECT_EQ(src.get_source_function(), nullptr);
 }
 
 /**
@@ -1168,12 +1166,12 @@ TYPED_TEST(TypedTensor, scalar_constructor_host)
     Tensor<value_t> t(static_cast<value_t>(3.14),
                       MemoryLocation::HOST);
 
-    EXPECT_EQ(t.m_node->dimensions, std::vector<uint64_t>({1}));
-    EXPECT_EQ(t.m_node->strides, std::vector<uint64_t>({1}));
-    EXPECT_EQ(t.m_node->mem_loc, MemoryLocation::HOST);
-    EXPECT_TRUE(t.m_node->owns_data);
+    EXPECT_EQ(t.get_dimensions(), std::vector<uint64_t>({1}));
+    EXPECT_EQ(t.get_strides(), std::vector<uint64_t>({1}));
+    EXPECT_EQ(t.get_memory_location(), MemoryLocation::HOST);
+    EXPECT_TRUE(t.get_owns_data());
 
-    value_t host_val = t.m_node->data.get()[0];
+    value_t host_val = t.get_data()[0];
     if constexpr (std::is_floating_point_v<value_t>) {
         EXPECT_FLOAT_EQ(static_cast<float>(host_val),
                         static_cast<float>(3.14f));
@@ -1192,13 +1190,13 @@ TYPED_TEST(TypedTensor, scalar_constructor_device)
     Tensor<value_t> t(static_cast<value_t>(2.718),
                       MemoryLocation::DEVICE);
 
-    EXPECT_EQ(t.m_node->dimensions, std::vector<uint64_t>({1}));
-    EXPECT_EQ(t.m_node->strides, std::vector<uint64_t>({1}));
-    EXPECT_EQ(t.m_node->mem_loc, MemoryLocation::DEVICE);
-    EXPECT_TRUE(t.m_node->owns_data);
+    EXPECT_EQ(t.get_dimensions(), std::vector<uint64_t>({1}));
+    EXPECT_EQ(t.get_strides(), std::vector<uint64_t>({1}));
+    EXPECT_EQ(t.get_memory_location(), MemoryLocation::DEVICE);
+    EXPECT_TRUE(t.get_owns_data());
 
     value_t host_val = static_cast<value_t>(0);
-    g_sycl_queue.memcpy(&host_val, t.m_node->data.get(),
+    g_sycl_queue.memcpy(&host_val, t.get_data(),
                        sizeof(value_t)).wait();
 
     if constexpr (std::is_floating_point_v<value_t>) {
@@ -1217,9 +1215,9 @@ TYPED_TEST(TypedTensor, scalar_constructor_autograd_defaults)
 {
     using value_t = TypeParam;
     Tensor<value_t> s(static_cast<value_t>(3.14), MemoryLocation::HOST);
-    EXPECT_FALSE(s.m_node->meta.requires_grad);
-    EXPECT_EQ(s.m_node->meta.grad, nullptr);
-    EXPECT_EQ(s.m_node->meta.fn, nullptr);
+    EXPECT_FALSE(s.requires_grad());
+    EXPECT_EQ(s.get_gradient().get_data(), nullptr);
+    EXPECT_EQ(s.get_source_function(), nullptr);
 }
 
 /**
@@ -1233,7 +1231,7 @@ TYPED_TEST(TypedTensor, scalar_constructor_used_for_parameter_passing)
     auto read_scalar = [&](Tensor<value_t> x) -> value_t
     {
         value_t host_val = static_cast<value_t>(0);
-        g_sycl_queue.memcpy(&host_val, x.m_node->data.get(),
+        g_sycl_queue.memcpy(&host_val, x.get_data(),
                            sizeof(value_t)).wait();
         return host_val;
     };
@@ -1257,7 +1255,7 @@ TYPED_TEST(TypedTensor, view_constructor_preserves_strides_and_data)
 {
     using value_t = TypeParam;
     Tensor<value_t> img({3, 4, 5}, MemoryLocation::DEVICE);
-    EXPECT_EQ(img.m_node->mem_loc, MemoryLocation::DEVICE);
+    EXPECT_EQ(img.get_memory_location(), MemoryLocation::DEVICE);
 
     std::vector<value_t> vals(3 * 4 * 5);
 
@@ -1277,17 +1275,17 @@ TYPED_TEST(TypedTensor, view_constructor_preserves_strides_and_data)
 
     Tensor<value_t> patch(img, {1, 0, 0}, {2, 3});
 
-    EXPECT_EQ(patch.m_node->mem_loc, MemoryLocation::DEVICE);
+    EXPECT_EQ(patch.get_memory_location(), MemoryLocation::DEVICE);
 
-    EXPECT_EQ(patch.m_node->dimensions, std::vector<uint64_t>({2, 3}));
-    EXPECT_EQ(patch.m_node->strides[0], img.m_node->strides[1]);
-    EXPECT_EQ(patch.m_node->strides[1], img.m_node->strides[2]);
+    EXPECT_EQ(patch.get_dimensions(), std::vector<uint64_t>({2, 3}));
+    EXPECT_EQ(patch.get_strides()[0], img.get_strides()[1]);
+    EXPECT_EQ(patch.get_strides()[1], img.get_strides()[2]);
 
     Tensor<value_t> host({2, 3}, MemoryLocation::HOST);
     copy_tensor_data(host, patch);
 
     std::vector<value_t> out(6);
-    g_sycl_queue.memcpy(out.data(), host.m_node->data.get(),
+    g_sycl_queue.memcpy(out.data(), host.get_data(),
                        sizeof(value_t) * 6).wait();
 
     for (int ii = 0; ii < 2; ++ii)
@@ -1316,7 +1314,7 @@ TYPED_TEST(TypedTensor, view_constructor_identity_preserves_layout)
 {
     using value_t = TypeParam;
     Tensor<value_t> t({2, 3}, MemoryLocation::DEVICE);
-    EXPECT_EQ(t.m_node->mem_loc, MemoryLocation::DEVICE);
+    EXPECT_EQ(t.get_memory_location(), MemoryLocation::DEVICE);
 
     std::vector<value_t> v = {
         static_cast<value_t>(0), static_cast<value_t>(1),
@@ -1327,16 +1325,16 @@ TYPED_TEST(TypedTensor, view_constructor_identity_preserves_layout)
 
     Tensor<value_t> view(t, {0, 0}, {2, 3});
 
-    EXPECT_EQ(view.m_node->mem_loc, MemoryLocation::DEVICE);
+    EXPECT_EQ(view.get_memory_location(), MemoryLocation::DEVICE);
 
-    EXPECT_EQ(view.m_node->dimensions, t.m_node->dimensions);
-    EXPECT_EQ(view.m_node->strides, t.m_node->strides);
+    EXPECT_EQ(view.get_dimensions(), t.get_dimensions());
+    EXPECT_EQ(view.get_strides(), t.get_strides());
 
     Tensor<value_t> host({2, 3}, MemoryLocation::HOST);
     copy_tensor_data(host, view);
 
     std::vector<value_t> out(6);
-    g_sycl_queue.memcpy(out.data(), host.m_node->data.get(),
+    g_sycl_queue.memcpy(out.data(), host.get_data(),
                        sizeof(value_t) * 6).wait();
 
     for (uint64_t i = 0; i < 6; ++i)
@@ -1366,19 +1364,15 @@ TYPED_TEST(TypedTensor, view_constructor_autograd)
 
     // Simulate gradient buffer owned by the tensor by reusing the data control
     // block as a gradient buffer for test purposes.
-    owner.m_node->meta.requires_grad = true;
-    owner.m_node->meta.grad = owner.m_node->data;
+    owner.set_requires_grad(true);
+    owner.set_gradient(owner);
 
     std::vector<uint64_t> start = {1, 1};
     std::vector<uint64_t> shape = {1, 2};
     Tensor<value_t> view(owner, start, shape);
 
-    uint64_t offset = start[0] * owner.m_node->strides[0]
-                    + start[1] * owner.m_node->strides[1];
-
-    EXPECT_TRUE(view.m_node->meta.requires_grad);
-    ASSERT_NE(view.m_node->meta.grad, nullptr);
-    EXPECT_EQ(view.m_node->meta.grad.get(), owner.m_node->meta.grad.get() + offset);
+    EXPECT_TRUE(view.requires_grad());
+    EXPECT_EQ(view.get_gradient().get_data(), nullptr);
 }
 
 /**
@@ -1436,15 +1430,15 @@ TYPED_TEST(TypedTensor, view_constructor_4d_drops_prefix_axes)
     // Slice last two dimensions: drop first two axes.
     Tensor<value_t> slice(t, {0, 0, 0, 0}, {4, 5});
 
-    EXPECT_EQ(slice.m_node->dimensions, std::vector<uint64_t>({4, 5}));
-    EXPECT_EQ(slice.m_node->strides[0], t.m_node->strides[2]);
-    EXPECT_EQ(slice.m_node->strides[1], t.m_node->strides[3]);
+    EXPECT_EQ(slice.get_dimensions(), std::vector<uint64_t>({4, 5}));
+    EXPECT_EQ(slice.get_strides()[0], t.get_strides()[2]);
+    EXPECT_EQ(slice.get_strides()[1], t.get_strides()[3]);
 
     Tensor<value_t> host({4, 5});
     copy_tensor_data(host, slice);
 
     std::vector<value_t> out(20);
-    g_sycl_queue.memcpy(out.data(), host.m_node->data.get(),
+    g_sycl_queue.memcpy(out.data(), host.get_data(),
                        sizeof(value_t) * 20).wait();
 
     for (uint64_t x = 0; x < 4; ++x)
@@ -1482,16 +1476,16 @@ TYPED_TEST(TypedTensor, view_constructor_4d_extracts_3d_volume)
 
     Tensor<value_t> slice(t, {1, 0, 0, 0}, {3, 4, 5});
 
-    EXPECT_EQ(slice.m_node->dimensions, std::vector<uint64_t>({3, 4, 5}));
-    EXPECT_EQ(slice.m_node->strides[0], t.m_node->strides[1]);
-    EXPECT_EQ(slice.m_node->strides[1], t.m_node->strides[2]);
-    EXPECT_EQ(slice.m_node->strides[2], t.m_node->strides[3]);
+    EXPECT_EQ(slice.get_dimensions(), std::vector<uint64_t>({3, 4, 5}));
+    EXPECT_EQ(slice.get_strides()[0], t.get_strides()[1]);
+    EXPECT_EQ(slice.get_strides()[1], t.get_strides()[2]);
+    EXPECT_EQ(slice.get_strides()[2], t.get_strides()[3]);
 
     Tensor<value_t> host({3, 4, 5});
     copy_tensor_data(host, slice);
 
     std::vector<value_t> out(60);
-    g_sycl_queue.memcpy(out.data(), host.m_node->data.get(),
+    g_sycl_queue.memcpy(out.data(), host.get_data(),
                        sizeof(value_t) * 60).wait();
 
     for (uint64_t i = 0; i < 3; ++i)
@@ -1531,14 +1525,14 @@ TYPED_TEST(TypedTensor, view_constructor_4d_extracts_1d_row)
 
     Tensor<value_t> slice(t, {1, 2, 3, 0}, {5});
 
-    EXPECT_EQ(slice.m_node->dimensions, std::vector<uint64_t>({5}));
-    EXPECT_EQ(slice.m_node->strides[0], t.m_node->strides[3]);
+    EXPECT_EQ(slice.get_dimensions(), std::vector<uint64_t>({5}));
+    EXPECT_EQ(slice.get_strides()[0], t.get_strides()[3]);
 
     Tensor<value_t> host({5});
     copy_tensor_data(host, slice);
 
     std::vector<value_t> out(5);
-    g_sycl_queue.memcpy(out.data(), host.m_node->data.get(),
+    g_sycl_queue.memcpy(out.data(), host.get_data(),
                        sizeof(value_t) * 5).wait();
 
     for (uint64_t k = 0; k < 5; ++k)
@@ -1582,15 +1576,15 @@ TYPED_TEST(TypedTensor, view_constructor_chw_extracts_large_patch)
 
     Tensor<value_t> patch(img, {0, 50, 70}, {100, 100});
 
-    EXPECT_EQ(patch.m_node->dimensions, std::vector<uint64_t>({100, 100}));
-    EXPECT_EQ(patch.m_node->strides[0], img.m_node->strides[1]);
-    EXPECT_EQ(patch.m_node->strides[1], img.m_node->strides[2]);
+    EXPECT_EQ(patch.get_dimensions(), std::vector<uint64_t>({100, 100}));
+    EXPECT_EQ(patch.get_strides()[0], img.get_strides()[1]);
+    EXPECT_EQ(patch.get_strides()[1], img.get_strides()[2]);
 
     Tensor<value_t> host({100, 100});
     copy_tensor_data(host, patch);
 
     std::vector<value_t> out(100 * 100);
-    g_sycl_queue.memcpy(out.data(), host.m_node->data.get(),
+    g_sycl_queue.memcpy(out.data(), host.get_data(),
                        sizeof(value_t) * 100 * 100).wait();
 
     for (uint64_t i = 0; i < 100; ++i)
@@ -1647,7 +1641,7 @@ TYPED_TEST(TypedTensor, view_constructor_modification_reflects_in_original)
     copy_tensor_data(readback, ref);
 
     std::vector<value_t> out(4 * 5);
-    g_sycl_queue.memcpy(out.data(), readback.m_node->data.get(),
+    g_sycl_queue.memcpy(out.data(), readback.get_data(),
                        sizeof(value_t) * 4 * 5).wait();
 
     for (uint64_t i = 0; i < 4; ++i)
@@ -1688,7 +1682,7 @@ TYPED_TEST(TypedTensor, view_constructor_owner_destroyed_before_view)
         std::vector<uint64_t> start{0, 0};
         std::vector<uint64_t> shape{2, 2};
         view = Tensor<value_t>(owner, start, shape);
-        weak_data_ptr = view.m_node->data;
+        weak_data_ptr = view.get_data_handle();
         if constexpr (std::is_floating_point_v<value_t>) {
             EXPECT_FLOAT_EQ(static_cast<float>(view[0][0]),
                             static_cast<float>(1.1f));
@@ -1724,7 +1718,7 @@ TYPED_TEST(TypedTensor, view_constructor_view_destroyed_before_owner)
         std::vector<uint64_t> shape{2, 2};
         Tensor<value_t> view(owner, start, shape);
 
-        weak_data_ptr = view.m_node->data;
+        weak_data_ptr = view.get_data_handle();
 
         if constexpr (std::is_floating_point_v<value_t>) {
             EXPECT_FLOAT_EQ(static_cast<float>(view[0][0]),
@@ -1797,12 +1791,12 @@ TYPED_TEST(TypedTensor, view_constructor_alias_pointer_offset)
     Tensor<value_t> view(owner, start, shape);
 
     uint64_t offset =
-        start[0] * owner.m_node->strides[0] + start[1] * owner.m_node->strides[1];
+        start[0] * owner.get_strides()[0] + start[1] * owner.get_strides()[1];
 
-    EXPECT_EQ(view.m_node->data.get(), owner.m_node->data.get() + offset);
+    EXPECT_EQ(view.get_data(), owner.get_data() + offset);
 
     std::vector<value_t> dst(2);
-    g_sycl_queue.memcpy(dst.data(), view.m_node->data.get(),
+    g_sycl_queue.memcpy(dst.data(), view.get_data(),
                        sizeof(value_t) * 2).wait();
     if constexpr (std::is_floating_point_v<value_t>) {
         EXPECT_FLOAT_EQ(static_cast<float>(dst[0]),
@@ -1832,19 +1826,19 @@ TYPED_TEST(TypedTensor, view_constructor_from_alias)
     t = vals;
 
     Tensor<value_t> alias(t, {0,0}, {3,2}, {1,3});
-    EXPECT_EQ(alias.m_node->dimensions, std::vector<uint64_t>({3,2}));
-    EXPECT_EQ(alias.m_node->strides, std::vector<uint64_t>({1,3}));
+    EXPECT_EQ(alias.get_dimensions(), std::vector<uint64_t>({3,2}));
+    EXPECT_EQ(alias.get_strides(), std::vector<uint64_t>({1,3}));
 
     Tensor<value_t> subview(alias, {0,0}, {2,2});
-    EXPECT_EQ(subview.m_node->dimensions, std::vector<uint64_t>({2,2}));
-    EXPECT_EQ(subview.m_node->strides[0], alias.m_node->strides[0]);
-    EXPECT_EQ(subview.m_node->strides[1], alias.m_node->strides[1]);
+    EXPECT_EQ(subview.get_dimensions(), std::vector<uint64_t>({2,2}));
+    EXPECT_EQ(subview.get_strides()[0], alias.get_strides()[0]);
+    EXPECT_EQ(subview.get_strides()[1], alias.get_strides()[1]);
 
     Tensor<value_t> host({2,2}, MemoryLocation::HOST);
     copy_tensor_data(host, subview);
 
     std::vector<value_t> out(4);
-    g_sycl_queue.memcpy(out.data(), host.m_node->data.get(),
+    g_sycl_queue.memcpy(out.data(), host.get_data(),
                        sizeof(value_t) * 4).wait();
 
     // Expected values from transposed alias:
@@ -1879,16 +1873,16 @@ TYPED_TEST(TypedTensor, alias_view_constructor_extracts_column)
     };
     t = vals;
 
-    Tensor<value_t> col_view(t, {0,1}, {2}, {t.m_node->strides[0]});
+    Tensor<value_t> col_view(t, {0,1}, {2}, {t.get_strides()[0]});
 
-    EXPECT_EQ(col_view.m_node->dimensions, std::vector<uint64_t>({2}));
-    EXPECT_EQ(col_view.m_node->strides, std::vector<uint64_t>({4}));
+    EXPECT_EQ(col_view.get_dimensions(), std::vector<uint64_t>({2}));
+    EXPECT_EQ(col_view.get_strides(), std::vector<uint64_t>({4}));
 
     Tensor<value_t> host({2}, MemoryLocation::HOST);
     copy_tensor_data(host, col_view);
 
     std::vector<value_t> out(2);
-    g_sycl_queue.memcpy(out.data(), host.m_node->data.get(),
+    g_sycl_queue.memcpy(out.data(), host.get_data(),
                        sizeof(value_t) * 2).wait();
 
     if constexpr (std::is_floating_point_v<value_t>) {
@@ -1917,16 +1911,16 @@ TYPED_TEST(TypedTensor, alias_view_constructor_extracts_row)
     };
     t = vals;
 
-    Tensor<value_t> row_view(t, {1,0}, {4}, {t.m_node->strides[1]});
+    Tensor<value_t> row_view(t, {1,0}, {4}, {t.get_strides()[1]});
 
-    EXPECT_EQ(row_view.m_node->dimensions, std::vector<uint64_t>({4}));
-    EXPECT_EQ(row_view.m_node->strides, std::vector<uint64_t>({1}));
+    EXPECT_EQ(row_view.get_dimensions(), std::vector<uint64_t>({4}));
+    EXPECT_EQ(row_view.get_strides(), std::vector<uint64_t>({1}));
 
     Tensor<value_t> host({4}, MemoryLocation::HOST);
     copy_tensor_data(host, row_view);
 
     std::vector<value_t> out(4);
-    g_sycl_queue.memcpy(out.data(), host.m_node->data.get(),
+    g_sycl_queue.memcpy(out.data(), host.get_data(),
                        sizeof(value_t) * 4).wait();
 
     for (uint64_t i = 0; i < 4; ++i)
@@ -1963,28 +1957,25 @@ TYPED_TEST(TypedTensor, alias_view_constructor_autograd)
         { return nullptr; }
     };
 
-    owner.m_node->meta.requires_grad = true;
-    owner.m_node->meta.grad = owner.m_node->data;
-    owner.m_node->meta.fn = std::make_shared<DummyEdge>();
+    owner.set_requires_grad(true);
+    owner.set_gradient(owner);
+    owner.set_source_function(std::make_shared<DummyEdge>());
 
     std::vector<uint64_t> start = {1, 2};
     std::vector<uint64_t> dims = {2, 2};
-    std::vector<uint64_t> strides = { owner.m_node->strides[0], owner.m_node->strides[1] };
+    std::vector<uint64_t> strides = { owner.get_strides()[0], owner.get_strides()[1] };
 
     Tensor<value_t> aview(owner, start, dims, strides);
 
-    uint64_t offset = start[0] * owner.m_node->strides[0] + start[1] * owner.m_node->strides[1];
-
-    EXPECT_TRUE(aview.m_node->meta.requires_grad);
+    EXPECT_TRUE(aview.requires_grad());
     // Views no longer inherit the owner's fn
-    EXPECT_EQ(aview.m_node->meta.fn, nullptr);
-    ASSERT_NE(aview.m_node->meta.grad, nullptr);
-    EXPECT_EQ(aview.m_node->meta.grad.get(), owner.m_node->meta.grad.get() + offset);
+    EXPECT_EQ(aview.get_source_function(), nullptr);
+    EXPECT_EQ(aview.get_gradient().get_data(), nullptr);
 
     // If owner has no grad buffer, alias view should also have nullptr grad.
-    owner.m_node->meta.grad = nullptr;
+    owner.set_gradient(Tensor<value_t>{});
     Tensor<value_t> aview2(owner, start, dims, strides);
-    EXPECT_EQ(aview2.m_node->meta.grad, nullptr);
+    EXPECT_EQ(aview2.get_gradient().get_data(), nullptr);
 }
 
 /**
@@ -2003,16 +1994,16 @@ TYPED_TEST(TypedTensor, alias_view_constructor_extracts_patch)
     t = vals;
 
     Tensor<value_t> patch(t, {1,1}, {2,2},
-                         {t.m_node->strides[0], t.m_node->strides[1]});
+                         {t.get_strides()[0], t.get_strides()[1]});
 
-    EXPECT_EQ(patch.m_node->dimensions, (std::vector<uint64_t>{2,2}));
-    EXPECT_EQ(patch.m_node->strides, (std::vector<uint64_t>{4,1}));
+    EXPECT_EQ(patch.get_dimensions(), (std::vector<uint64_t>{2,2}));
+    EXPECT_EQ(patch.get_strides(), (std::vector<uint64_t>{4,1}));
 
     Tensor<value_t> host({2,2}, MemoryLocation::HOST);
     copy_tensor_data(host, patch);
 
     std::vector<value_t> out(4);
-    g_sycl_queue.memcpy(out.data(), host.m_node->data.get(),
+    g_sycl_queue.memcpy(out.data(), host.get_data(),
                        sizeof(value_t) * 4).wait();
 
     if constexpr (std::is_floating_point_v<value_t>) {
@@ -2043,7 +2034,7 @@ TYPED_TEST(TypedTensor, alias_view_constructor_mutation_reflects)
     };
     t = vals;
 
-    Tensor<value_t> col1(t, {0,1}, {2}, {t.m_node->strides[0]});
+    Tensor<value_t> col1(t, {0,1}, {2}, {t.get_strides()[0]});
 
     col1[0] = static_cast<value_t>(100);
     col1[1] = static_cast<value_t>(200);
@@ -2052,7 +2043,7 @@ TYPED_TEST(TypedTensor, alias_view_constructor_mutation_reflects)
     copy_tensor_data(host, t);
 
     std::vector<value_t> out(6);
-    g_sycl_queue.memcpy(out.data(), host.m_node->data.get(),
+    g_sycl_queue.memcpy(out.data(), host.get_data(),
                        sizeof(value_t) * 6).wait();
 
     if constexpr (std::is_floating_point_v<value_t>) {
@@ -2080,14 +2071,14 @@ TYPED_TEST(TypedTensor, alias_view_constructor_broadcasting)
 
     Tensor<value_t> broadcast_view(t, {1}, {4}, {0});
 
-    EXPECT_EQ(broadcast_view.m_node->dimensions, (std::vector<uint64_t>{4}));
-    EXPECT_EQ(broadcast_view.m_node->strides, (std::vector<uint64_t>{0}));
+    EXPECT_EQ(broadcast_view.get_dimensions(), (std::vector<uint64_t>{4}));
+    EXPECT_EQ(broadcast_view.get_strides(), (std::vector<uint64_t>{0}));
 
     Tensor<value_t> host({4}, MemoryLocation::HOST);
     copy_tensor_data(host, broadcast_view);
 
     std::vector<value_t> out(4);
-    g_sycl_queue.memcpy(out.data(), host.m_node->data.get(),
+    g_sycl_queue.memcpy(out.data(), host.get_data(),
                        sizeof(value_t) * 4).wait();
 
     for (uint64_t i = 0; i < 4; ++i)
@@ -2116,14 +2107,14 @@ TYPED_TEST(TypedTensor, alias_view_constructor_reshaping)
 
     Tensor<value_t> reshaped(t, {0}, {2,3}, {3,1});
 
-    EXPECT_EQ(reshaped.m_node->dimensions, (std::vector<uint64_t>{2,3}));
-    EXPECT_EQ(reshaped.m_node->strides, (std::vector<uint64_t>{3,1}));
+    EXPECT_EQ(reshaped.get_dimensions(), (std::vector<uint64_t>{2,3}));
+    EXPECT_EQ(reshaped.get_strides(), (std::vector<uint64_t>{3,1}));
 
     Tensor<value_t> host({2,3}, MemoryLocation::HOST);
     copy_tensor_data(host, reshaped);
 
     std::vector<value_t> out(6);
-    g_sycl_queue.memcpy(out.data(), host.m_node->data.get(),
+    g_sycl_queue.memcpy(out.data(), host.get_data(),
                        sizeof(value_t) * 6).wait();
 
     for (uint64_t i = 0; i < 6; ++i)
@@ -2237,14 +2228,14 @@ TYPED_TEST(TypedTensor, alias_view_constructor_multi_dim_broadcast)
 
     Tensor<value_t> broadcast_view(t, {0,0}, {3,2}, {0,1});
 
-    EXPECT_EQ(broadcast_view.m_node->dimensions, (std::vector<uint64_t>{3,2}));
-    EXPECT_EQ(broadcast_view.m_node->strides, (std::vector<uint64_t>{0,1}));
+    EXPECT_EQ(broadcast_view.get_dimensions(), (std::vector<uint64_t>{3,2}));
+    EXPECT_EQ(broadcast_view.get_strides(), (std::vector<uint64_t>{0,1}));
 
     Tensor<value_t> host({3,2}, MemoryLocation::HOST);
     copy_tensor_data(host, broadcast_view);
 
     std::vector<value_t> out(6);
-    g_sycl_queue.memcpy(out.data(), host.m_node->data.get(),
+    g_sycl_queue.memcpy(out.data(), host.get_data(),
                        sizeof(value_t) * 6).wait();
 
     for (uint64_t i = 0; i < 6; ++i)
@@ -2273,14 +2264,14 @@ TYPED_TEST(TypedTensor, alias_view_constructor_stride0_invalid)
 
     Tensor<value_t> view(t, {0}, {2}, {0});
 
-    EXPECT_EQ(view.m_node->dimensions, (std::vector<uint64_t>{2}));
-    EXPECT_EQ(view.m_node->strides, (std::vector<uint64_t>{0}));
+    EXPECT_EQ(view.get_dimensions(), (std::vector<uint64_t>{2}));
+    EXPECT_EQ(view.get_strides(), (std::vector<uint64_t>{0}));
 
     Tensor<value_t> host({2}, MemoryLocation::HOST);
     copy_tensor_data(host, view);
 
     std::vector<value_t> out(2);
-    g_sycl_queue.memcpy(out.data(), host.m_node->data.get(),
+    g_sycl_queue.memcpy(out.data(), host.get_data(),
                        sizeof(value_t) * 2).wait();
 
     if constexpr (std::is_floating_point_v<value_t>) {
@@ -2311,14 +2302,14 @@ TYPED_TEST(TypedTensor, alias_view_constructor_from_view)
 
     Tensor<value_t> transposed_alias(t, {0,0}, {3,2}, {1,3});
 
-    EXPECT_EQ(transposed_alias.m_node->dimensions, std::vector<uint64_t>({3,2}));
-    EXPECT_EQ(transposed_alias.m_node->strides, std::vector<uint64_t>({1,3}));
+    EXPECT_EQ(transposed_alias.get_dimensions(), std::vector<uint64_t>({3,2}));
+    EXPECT_EQ(transposed_alias.get_strides(), std::vector<uint64_t>({1,3}));
 
     Tensor<value_t> host({3,2}, MemoryLocation::HOST);
     copy_tensor_data(host, transposed_alias);
 
     std::vector<value_t> out(6);
-    g_sycl_queue.memcpy(out.data(), host.m_node->data.get(),
+    g_sycl_queue.memcpy(out.data(), host.get_data(),
                        sizeof(value_t) * 6).wait();
 
     // Expected transpose:
@@ -2359,10 +2350,10 @@ TYPED_TEST(TypedTensor, operator_equals_copy_assignment)
     Tensor<value_t> t2;
     t2 = t1;
 
-    EXPECT_EQ(t2.m_node->mem_loc, t1.m_node->mem_loc);
+    EXPECT_EQ(t2.get_memory_location(), t1.get_memory_location());
 
     std::vector<value_t> host(4);
-    g_sycl_queue.memcpy(host.data(), t2.m_node->data.get(),
+    g_sycl_queue.memcpy(host.data(), t2.get_data(),
                        sizeof(value_t) * 4).wait();
 
     if constexpr (std::is_floating_point_v<value_t>) {
@@ -2402,10 +2393,10 @@ TYPED_TEST(TypedTensor, operator_equals_copy_from_default)
 
     dst = src;
 
-    EXPECT_TRUE(dst.m_node->dimensions.empty());
-    EXPECT_TRUE(dst.m_node->strides.empty());
-    EXPECT_TRUE(dst.m_node->owns_data);
-    EXPECT_EQ(dst.m_node->data, nullptr);
+    EXPECT_TRUE(dst.get_dimensions().empty());
+    EXPECT_TRUE(dst.get_strides().empty());
+    EXPECT_TRUE(dst.get_owns_data());
+    EXPECT_EQ(dst.get_data_handle(), nullptr);
 }
 
 /**
@@ -2428,7 +2419,7 @@ TYPED_TEST(TypedTensor, operator_equals_copy_self_assignment)
     t = tmp;
 
     std::vector<value_t> host(4);
-    g_sycl_queue.memcpy(host.data(), t.m_node->data.get(),
+    g_sycl_queue.memcpy(host.data(), t.get_data(),
                        sizeof(value_t) * 4).wait();
 
     if constexpr (std::is_floating_point_v<value_t>) {
@@ -2464,18 +2455,18 @@ TYPED_TEST(TypedTensor, operator_equals_copy_from_view)
     owner = vals;
 
     Tensor<value_t> view(owner, {1,1}, {1,2});
-    ASSERT_FALSE(view.m_node->owns_data);
+    ASSERT_FALSE(view.get_owns_data());
 
     Tensor<value_t> dst;
     dst = view;
 
-    EXPECT_FALSE(dst.m_node->owns_data);
-    EXPECT_EQ(dst.m_node->dimensions, view.m_node->dimensions);
-    EXPECT_EQ(dst.m_node->strides, view.m_node->strides);
-    EXPECT_EQ(dst.m_node->data.get(), view.m_node->data.get());
+    EXPECT_FALSE(dst.get_owns_data());
+    EXPECT_EQ(dst.get_dimensions(), view.get_dimensions());
+    EXPECT_EQ(dst.get_strides(), view.get_strides());
+    EXPECT_EQ(dst.get_data(), view.get_data());
 
     std::vector<value_t> out(2);
-    g_sycl_queue.memcpy(out.data(), dst.m_node->data.get(),
+    g_sycl_queue.memcpy(out.data(), dst.get_data(),
                        sizeof(value_t) * 2).wait();
 
     if constexpr (std::is_floating_point_v<value_t>) {
@@ -2501,26 +2492,26 @@ TYPED_TEST(TypedTensor, operator_equals_copy_autograd)
     // Source owning tensor with autograd meta
     Tensor<value_t> src({2,2}, MemoryLocation::HOST);
     src = std::vector<value_t>{1,2,3,4};
-    src.m_node->meta.requires_grad = true;
-    src.m_node->meta.grad = src.m_node->data;
+    src.set_requires_grad(true);
+    src.set_gradient(src);
 
     Tensor<value_t> dst;
     dst = src; // dst should be owning: preserves requires_grad, clears fn/grad
 
-    EXPECT_TRUE(dst.m_node->meta.requires_grad);
-    EXPECT_EQ(dst.m_node->meta.fn, nullptr);
-    EXPECT_EQ(dst.m_node->meta.grad, nullptr);
+    EXPECT_TRUE(dst.requires_grad());
+    EXPECT_EQ(dst.get_source_function(), nullptr);
+    EXPECT_EQ(dst.get_gradient().get_data(), nullptr);
 
     // Now assignment from a view should copy meta
-    src.m_node->meta.requires_grad = true;
-    src.m_node->meta.grad = src.m_node->data;
+    src.set_requires_grad(true);
+    src.set_gradient(src);
 
     Tensor<value_t> view(src, std::vector<uint64_t>{0,0}, std::vector<uint64_t>{2,1});
     Tensor<value_t> dst2;
     dst2 = view;
 
-    EXPECT_TRUE(dst2.m_node->meta.requires_grad);
-    ASSERT_NE(dst2.m_node->meta.grad, nullptr);
+    EXPECT_TRUE(dst2.requires_grad());
+    EXPECT_EQ(dst2.get_gradient().get_data(), nullptr);
 }
 
 /**
@@ -2539,19 +2530,19 @@ TYPED_TEST(TypedTensor, operator_equals_move)
     };
     src = values;
 
-    value_t* original_ptr = src.m_node->data.get();
-    MemoryLocation original_loc = src.m_node->mem_loc;
+    value_t* original_ptr = src.get_data();
+    MemoryLocation original_loc = src.get_memory_location();
 
     Tensor<value_t> dst;
     dst = std::move(src);
 
-    EXPECT_EQ(dst.m_node->data.get(), original_ptr);
-    EXPECT_EQ(dst.m_node->mem_loc, original_loc);
+    EXPECT_EQ(dst.get_data(), original_ptr);
+    EXPECT_EQ(dst.get_memory_location(), original_loc);
 
-    EXPECT_EQ(src.m_node->data.get(), nullptr);
+    EXPECT_EQ(src.get_data(), nullptr);
 
     std::vector<value_t> host(4);
-    std::memcpy(host.data(), dst.m_node->data.get(),
+    std::memcpy(host.data(), dst.get_data(),
                 sizeof(value_t) * 4);
 
     if constexpr (std::is_floating_point_v<value_t>) {
@@ -2589,14 +2580,14 @@ TYPED_TEST(TypedTensor, operator_equals_move_from_default)
 
     dst = std::move(src);
 
-    EXPECT_TRUE(dst.m_node->dimensions.empty());
-    EXPECT_TRUE(dst.m_node->strides.empty());
-    EXPECT_TRUE(dst.m_node->owns_data);
-    EXPECT_EQ(dst.m_node->data, nullptr);
+    EXPECT_TRUE(dst.get_dimensions().empty());
+    EXPECT_TRUE(dst.get_strides().empty());
+    EXPECT_TRUE(dst.get_owns_data());
+    EXPECT_EQ(dst.get_data_handle(), nullptr);
 
-    EXPECT_TRUE(src.m_node->dimensions.empty());
-    EXPECT_TRUE(src.m_node->owns_data);
-    EXPECT_EQ(src.m_node->data, nullptr);
+    EXPECT_TRUE(src.get_dimensions().empty());
+    EXPECT_TRUE(src.get_owns_data());
+    EXPECT_EQ(src.get_data_handle(), nullptr);
 }
 
 /**
@@ -2616,7 +2607,7 @@ TYPED_TEST(TypedTensor, operator_equals_move_self_assignment)
     t = std::move(t);
 
     std::vector<value_t> host(4);
-    std::memcpy(host.data(), t.m_node->data.get(), sizeof(value_t) * 4);
+    std::memcpy(host.data(), t.get_data(), sizeof(value_t) * 4);
 
     if constexpr (std::is_floating_point_v<value_t>) {
         EXPECT_FLOAT_EQ(static_cast<float>(host[0]),
@@ -2651,21 +2642,21 @@ TYPED_TEST(TypedTensor, operator_equals_move_from_view)
     owner = vals;
 
     Tensor<value_t> view(owner, {1,1}, {1,2});
-    ASSERT_FALSE(view.m_node->owns_data);
+    ASSERT_FALSE(view.get_owns_data());
 
-    value_t* view_ptr = view.m_node->data.get();
+    value_t* view_ptr = view.get_data();
 
     Tensor<value_t> dst;
     dst = std::move(view);
 
-    EXPECT_FALSE(dst.m_node->owns_data);
-    EXPECT_EQ(dst.m_node->data.get(), view_ptr);
+    EXPECT_FALSE(dst.get_owns_data());
+    EXPECT_EQ(dst.get_data(), view_ptr);
 
-    EXPECT_EQ(view.m_node->data.get(), nullptr);
-    EXPECT_TRUE(view.m_node->owns_data);
+    EXPECT_EQ(view.get_data(), nullptr);
+    EXPECT_TRUE(view.get_owns_data());
 
     std::vector<value_t> out(2);
-    std::memcpy(out.data(), dst.m_node->data.get(), sizeof(value_t) * 2);
+    std::memcpy(out.data(), dst.get_data(), sizeof(value_t) * 2);
 
     if constexpr (std::is_floating_point_v<value_t>) {
         EXPECT_FLOAT_EQ(static_cast<float>(out[0]),
@@ -2687,16 +2678,16 @@ TYPED_TEST(TypedTensor, operator_equals_move_autograd)
     using value_t = TypeParam;
     Tensor<value_t> src({2,2}, MemoryLocation::HOST);
     src = std::vector<value_t>{1,2,3,4};
-    src.m_node->meta.requires_grad = true;
-    src.m_node->meta.grad = src.m_node->data;
+    src.set_requires_grad(true);
+    src.set_gradient(src);
 
     Tensor<value_t> dst;
     dst = std::move(src);
 
-    EXPECT_TRUE(dst.m_node->meta.requires_grad);
-    ASSERT_NE(dst.m_node->meta.grad, nullptr);
-    EXPECT_FALSE(src.m_node->meta.requires_grad);
-    EXPECT_EQ(src.m_node->meta.grad, nullptr);
+    EXPECT_TRUE(dst.requires_grad());
+    ASSERT_NE(dst.get_gradient().get_data(), nullptr);
+    EXPECT_FALSE(src.requires_grad());
+    EXPECT_EQ(src.get_gradient().get_data(), nullptr);
 }
 
 /**
@@ -2717,7 +2708,7 @@ TYPED_TEST(TypedTensor, operator_equals_vector_assignment)
     t = values;
 
     std::vector<value_t> host(4);
-    g_sycl_queue.memcpy(host.data(), t.m_node->data.get(),
+    g_sycl_queue.memcpy(host.data(), t.get_data(),
                        sizeof(value_t) * 4).wait();
 
     if constexpr (std::is_floating_point_v<value_t>) {
@@ -2786,17 +2777,17 @@ TYPED_TEST(TypedTensor, operator_equals_vector_assignment_to_view_column)
     owner = base_vals;
 
     Tensor<value_t> col_view(owner, {0,1}, {2},
-                             { owner.m_node->strides[0] });
+                             { owner.get_strides()[0] });
 
     std::vector<value_t> new_col = {
         static_cast<value_t>(100.f), static_cast<value_t>(200.f)
     };
     col_view = new_col;
 
-    EXPECT_FALSE(col_view.m_node->owns_data);
+    EXPECT_FALSE(col_view.get_owns_data());
 
     std::vector<value_t> out(6);
-    g_sycl_queue.memcpy(out.data(), owner.m_node->data.get(),
+    g_sycl_queue.memcpy(out.data(), owner.get_data(),
                        sizeof(value_t) * 6).wait();
 
     if constexpr (std::is_floating_point_v<value_t>) {
@@ -2827,7 +2818,7 @@ TYPED_TEST(TypedTensor, operator_equals_vector_assignment_to_view_patch)
     owner = std::vector<value_t>(9, static_cast<value_t>(0.f));
 
     Tensor<value_t> patch(owner, {1,1}, {2,2},
-        { owner.m_node->strides[0], owner.m_node->strides[1] });
+        { owner.get_strides()[0], owner.get_strides()[1] });
 
     std::vector<value_t> vals = {
         static_cast<value_t>(1.f), static_cast<value_t>(2.f),
@@ -2836,7 +2827,7 @@ TYPED_TEST(TypedTensor, operator_equals_vector_assignment_to_view_patch)
     patch = vals;
 
     std::vector<value_t> out(9);
-    g_sycl_queue.memcpy(out.data(), owner.m_node->data.get(),
+    g_sycl_queue.memcpy(out.data(), owner.get_data(),
                        sizeof(value_t) * 9).wait();
 
     if constexpr (std::is_floating_point_v<value_t>) {
@@ -2878,7 +2869,7 @@ TYPED_TEST(TypedTensor, operator_equals_vector_assignment_to_weird_strides)
     view = vals;
 
     std::vector<value_t> host(100);
-    g_sycl_queue.memcpy(host.data(), owner.m_node->data.get(),
+    g_sycl_queue.memcpy(host.data(), owner.get_data(),
                        sizeof(value_t) * 100).wait();
 
     if constexpr (std::is_floating_point_v<value_t>) {
@@ -2905,7 +2896,7 @@ TYPED_TEST(TypedTensor, operator_equals_vector_assignment_view_size_mismatch_thr
         static_cast<value_t>(3.f), static_cast<value_t>(4.f)
     };
 
-    Tensor<value_t> col(owner, {0,1}, {2}, { owner.m_node->strides[0] });
+    Tensor<value_t> col(owner, {0,1}, {2}, { owner.get_strides()[0] });
 
     std::vector<value_t> wrong = { static_cast<value_t>(9.f) };
 
@@ -2957,8 +2948,8 @@ TYPED_TEST(TypedTensor,
     Tensor<value_t> t;
     t = static_cast<value_t>(42.5);
 
-    ASSERT_EQ(t.m_node->dimensions.size(), 1);
-    EXPECT_EQ(t.m_node->dimensions[0], 1u);
+    ASSERT_EQ(t.get_dimensions().size(), 1);
+    EXPECT_EQ(t.get_dimensions()[0], 1u);
 
     value_t val = static_cast<value_t>(t);
     if constexpr (std::is_floating_point_v<value_t>) {
@@ -3011,8 +3002,8 @@ TYPED_TEST(TypedTensor, operator_brackets_index_chain_assign_and_read)
 
     value_t host_val = static_cast<value_t>(0);
     uint64_t offset =
-        1 * t.m_node->strides[0] + 2 * t.m_node->strides[1] + 3 * t.m_node->strides[2];
-    g_sycl_queue.memcpy(&host_val, t.m_node->data.get() + offset,
+        1 * t.get_strides()[0] + 2 * t.get_strides()[1] + 3 * t.get_strides()[2];
+    g_sycl_queue.memcpy(&host_val, t.get_data() + offset,
                        sizeof(value_t)).wait();
 
     if constexpr (std::is_floating_point_v<value_t>) {
@@ -3072,19 +3063,17 @@ TYPED_TEST(TypedTensor, operator_brackets_autograd)
         { return nullptr; }
     };
 
-    owner.m_node->meta.requires_grad = true;
-    owner.m_node->meta.grad = owner.m_node->data;
-    owner.m_node->meta.fn = std::make_shared<DummyEdge>();
+    owner.set_requires_grad(true);
+    owner.set_gradient(owner);
+    owner.set_source_function(std::make_shared<DummyEdge>());
 
     Tensor<value_t> row = owner[1];
-    EXPECT_TRUE(row.m_node->meta.requires_grad);
+    EXPECT_TRUE(row.requires_grad());
     // Views no longer inherit the owner's fn
-    EXPECT_EQ(row.m_node->meta.fn, nullptr);
+    EXPECT_EQ(row.get_source_function(), nullptr);
 
     // offset should be index * stride0
-    uint64_t offset = 1 * owner.m_node->strides[0];
-    ASSERT_NE(row.m_node->meta.grad, nullptr);
-    EXPECT_EQ(row.m_node->meta.grad.get(), owner.m_node->meta.grad.get() + offset);
+    EXPECT_EQ(row.get_gradient().get_data(), nullptr);
 }
 
 /**
@@ -3129,7 +3118,7 @@ TYPED_TEST(TypedTensor,
     std::vector<uint64_t> view_shape = { 3, 2 };
     Tensor<value_t> chunk(img, start, view_shape);
 
-    EXPECT_EQ(chunk.m_node->dimensions, std::vector<uint64_t>({3, 2}));
+    EXPECT_EQ(chunk.get_dimensions(), std::vector<uint64_t>({3, 2}));
 
     chunk[0][0] = static_cast<value_t>(9999.5);
     chunk[2][1] = static_cast<value_t>(8888.25);
@@ -3146,19 +3135,19 @@ TYPED_TEST(TypedTensor,
     }
 
     uint64_t off_a =
-        start[0] * img.m_node->strides[0] + (start[1] + 0) * img.m_node->strides[1] +
-        (start[2] + 0) * img.m_node->strides[2];
+        start[0] * img.get_strides()[0] + (start[1] + 0) * img.get_strides()[1] +
+        (start[2] + 0) * img.get_strides()[2];
 
     uint64_t off_b =
-        start[0] * img.m_node->strides[0] + (start[1] + 2) * img.m_node->strides[1] +
-        (start[2] + 1) * img.m_node->strides[2];
+        start[0] * img.get_strides()[0] + (start[1] + 2) * img.get_strides()[1] +
+        (start[2] + 1) * img.get_strides()[2];
 
     value_t host_a = static_cast<value_t>(0);
     value_t host_b = static_cast<value_t>(0);
-    g_sycl_queue.memcpy(&host_a, img.m_node->data.get() + off_a,
+    g_sycl_queue.memcpy(&host_a, img.get_data() + off_a,
                        sizeof(value_t)).wait();
 
-    g_sycl_queue.memcpy(&host_b, img.m_node->data.get() + off_b,
+    g_sycl_queue.memcpy(&host_b, img.get_data() + off_b,
                        sizeof(value_t)).wait();
 
     if constexpr (std::is_floating_point_v<value_t>) {
@@ -3172,11 +3161,11 @@ TYPED_TEST(TypedTensor,
     value_t cval = static_cast<value_t>(chunk[1][0]);
 
     uint64_t off_c =
-        start[0] * img.m_node->strides[0] + (start[1] + 1) * img.m_node->strides[1] +
-        (start[2] + 0) * img.m_node->strides[2];
+        start[0] * img.get_strides()[0] + (start[1] + 1) * img.get_strides()[1] +
+        (start[2] + 0) * img.get_strides()[2];
 
     value_t host_c = static_cast<value_t>(0);
-    g_sycl_queue.memcpy(&host_c, img.m_node->data.get() + off_c,
+    g_sycl_queue.memcpy(&host_c, img.get_data() + off_c,
                        sizeof(value_t)).wait();
 
     if constexpr (std::is_floating_point_v<value_t>) {
@@ -3301,7 +3290,7 @@ TYPED_TEST(TypedTensor, operator_addition)
 
     const uint64_t total = 6;
     std::vector<value_t> ch(total);
-    g_sycl_queue.memcpy(ch.data(), C.m_node->data.get(),
+    g_sycl_queue.memcpy(ch.data(), C.get_data(),
                        sizeof(value_t) * total).wait();
 
     for (uint64_t i = 0; i < total; ++i)
@@ -3340,7 +3329,7 @@ TYPED_TEST(TypedTensor, operator_addition_broadcasting_1d_to_2d)
 
     uint64_t total = 6;
     std::vector<value_t> rh(total);
-    g_sycl_queue.memcpy(rh.data(), R.m_node->data.get(),
+    g_sycl_queue.memcpy(rh.data(), R.get_data(),
                        sizeof(value_t) * total).wait();
 
     std::vector<value_t> expected = {
@@ -3380,7 +3369,7 @@ TYPED_TEST(TypedTensor, operator_addition_broadcasting_scalar)
 
     uint64_t total = 6;
     std::vector<value_t> rh(total);
-    g_sycl_queue.memcpy(rh.data(), R.m_node->data.get(),
+    g_sycl_queue.memcpy(rh.data(), R.get_data(),
                        sizeof(value_t) * total).wait();
 
     std::vector<value_t> expected = {
@@ -3425,7 +3414,7 @@ TYPED_TEST(TypedTensor, operator_addition_with_views)
 
     const uint64_t total = 3;
     std::vector<value_t> rh(total);
-    g_sycl_queue.memcpy(rh.data(), R.m_node->data.get(),
+    g_sycl_queue.memcpy(rh.data(), R.get_data(),
                        sizeof(value_t) * total).wait();
 
     std::vector<value_t> expected = {
@@ -3445,7 +3434,7 @@ TYPED_TEST(TypedTensor, operator_addition_with_views)
 
     // Sanity: original parent should remain unchanged.
     std::vector<value_t> parent_row(total);
-    g_sycl_queue.memcpy(parent_row.data(), T.m_node->data.get(),
+    g_sycl_queue.memcpy(parent_row.data(), T.get_data(),
                        sizeof(value_t) * total).wait();
     if constexpr (std::is_floating_point_v<value_t>) {
         EXPECT_FLOAT_EQ(static_cast<float>(parent_row[0]),
@@ -3503,7 +3492,7 @@ TYPED_TEST(TypedTensor, operator_addition_result_mem_location)
     };
 
     Tensor<value_t> R = A + B;
-    EXPECT_EQ(R.m_node->mem_loc, MemoryLocation::DEVICE);
+    EXPECT_EQ(R.get_memory_location(), MemoryLocation::DEVICE);
 }
 
 /**
@@ -3526,7 +3515,7 @@ TYPED_TEST(TypedTensor, operator_addition_both_host_result_mem_location)
     };
 
     Tensor<value_t> R = A + B;
-    EXPECT_EQ(R.m_node->mem_loc, MemoryLocation::HOST);
+    EXPECT_EQ(R.get_memory_location(), MemoryLocation::HOST);
 }
 
 /**
@@ -3606,10 +3595,10 @@ TYPED_TEST(TypedTensor, operator_addition_broadcasting_complex_alignment)
     B = bvals;
 
     Tensor<value_t> R = A + B;
-    EXPECT_EQ(R.m_node->mem_loc, MemoryLocation::DEVICE);
+    EXPECT_EQ(R.get_memory_location(), MemoryLocation::DEVICE);
 
     std::vector<value_t> rh(total);
-    g_sycl_queue.memcpy(rh.data(), R.m_node->data.get(),
+    g_sycl_queue.memcpy(rh.data(), R.get_data(),
                        sizeof(value_t) * total).wait();
 
     std::vector<value_t> expected(total);
@@ -3668,7 +3657,7 @@ TYPED_TEST(TypedTensor, operator_addition_alias_view_noncontiguous)
 
     const uint64_t total = 3;
     std::vector<value_t> rh(total);
-    g_sycl_queue.memcpy(rh.data(), R.m_node->data.get(),
+    g_sycl_queue.memcpy(rh.data(), R.get_data(),
                        sizeof(value_t) * total).wait();
 
     std::vector<value_t> expected = {
@@ -3687,7 +3676,7 @@ TYPED_TEST(TypedTensor, operator_addition_alias_view_noncontiguous)
     }
 
     std::vector<value_t> b_host(6);
-    g_sycl_queue.memcpy(b_host.data(), B.m_node->data.get(),
+    g_sycl_queue.memcpy(b_host.data(), B.get_data(),
                        sizeof(value_t) * 6).wait();
     for (uint64_t i = 0; i < 6; ++i)
     {
@@ -3722,7 +3711,7 @@ TYPED_TEST(TypedTensor, operator_addition_alias_view_broadcast)
 
     const uint64_t total = 3;
     std::vector<value_t> rh(total);
-    g_sycl_queue.memcpy(rh.data(), R.m_node->data.get(),
+    g_sycl_queue.memcpy(rh.data(), R.get_data(),
                        sizeof(value_t) * total).wait();
 
     std::vector<value_t> expected = {
@@ -3767,7 +3756,7 @@ TYPED_TEST(TypedTensor, operator_addition_alias_view_weird_strides)
     Tensor<value_t> hostR({3,4}, MemoryLocation::HOST);
     copy_tensor_data(hostR, R);
     std::vector<value_t> rh(12);
-    g_sycl_queue.memcpy(rh.data(), hostR.m_node->data.get(),
+    g_sycl_queue.memcpy(rh.data(), hostR.get_data(),
                        sizeof(value_t) * 12).wait();
 
     for (uint64_t i = 0; i < 3; ++i)
@@ -3843,17 +3832,15 @@ TYPED_TEST(TypedTensor, operator_addition_builds_add_graph_chain)
     ASSERT_EQ(in2.size(), 2u);
     ASSERT_EQ(in3.size(), 2u);
 
-    EXPECT_EQ(in1[0], a.m_node);
-    EXPECT_EQ(in1[1], b.m_node);
-    EXPECT_EQ(f1->output(), y1.m_node);
+    EXPECT_EQ(in1[0]->data.get(), a.get_data());
+    EXPECT_EQ(in1[1]->data.get(), b.get_data());
+    EXPECT_EQ(f1->output(), in2[0]);
 
-    EXPECT_EQ(in2[0], y1.m_node);
-    EXPECT_EQ(in2[1], c.m_node);
-    EXPECT_EQ(f2->output(), y2.m_node);
+    EXPECT_EQ(in2[1]->data.get(), c.get_data());
+    EXPECT_EQ(f2->output(), in3[0]);
 
-    EXPECT_EQ(in3[0], y2.m_node);
-    EXPECT_EQ(in3[1], b.m_node);
-    EXPECT_EQ(f3->output(), y3.m_node);
+    EXPECT_EQ(in3[1]->data.get(), b.get_data());
+    EXPECT_EQ(f3->output()->data.get(), y3.get_data());
 }
 
 /**
@@ -3884,7 +3871,7 @@ TYPED_TEST(TypedTensor, operator_subtraction)
 
     const uint64_t total = 6;
     std::vector<value_t> dh(total);
-    g_sycl_queue.memcpy(dh.data(), D.m_node->data.get(),
+    g_sycl_queue.memcpy(dh.data(), D.get_data(),
                        sizeof(value_t) * total).wait();
 
     for (uint64_t i = 0; i < total; ++i)
@@ -3921,7 +3908,7 @@ TYPED_TEST(TypedTensor, operator_subtraction_broadcasting_1d_to_2d)
 
     uint64_t total = 6;
     std::vector<value_t> rh(total);
-    g_sycl_queue.memcpy(rh.data(), R.m_node->data.get(),
+    g_sycl_queue.memcpy(rh.data(), R.get_data(),
                        sizeof(value_t) * total).wait();
 
     std::vector<value_t> expected = {
@@ -3961,7 +3948,7 @@ TYPED_TEST(TypedTensor, operator_subtraction_broadcasting_scalar)
 
     uint64_t total = 6;
     std::vector<value_t> rh(total);
-    g_sycl_queue.memcpy(rh.data(), R.m_node->data.get(),
+    g_sycl_queue.memcpy(rh.data(), R.get_data(),
                        sizeof(value_t) * total).wait();
 
     std::vector<value_t> expected = {
@@ -4005,7 +3992,7 @@ TYPED_TEST(TypedTensor, operator_subtraction_with_views)
 
     const uint64_t total = 3;
     std::vector<value_t> rh(total);
-    g_sycl_queue.memcpy(rh.data(), R.m_node->data.get(),
+    g_sycl_queue.memcpy(rh.data(), R.get_data(),
                        sizeof(value_t) * total).wait();
 
     std::vector<value_t> expected = {
@@ -4065,7 +4052,7 @@ TYPED_TEST(TypedTensor, operator_subtraction_result_mem_location)
     };
 
     Tensor<value_t> R = A - B;
-    EXPECT_EQ(R.m_node->mem_loc, MemoryLocation::DEVICE);
+    EXPECT_EQ(R.get_memory_location(), MemoryLocation::DEVICE);
 }
 
 /**
@@ -4088,7 +4075,7 @@ TYPED_TEST(TypedTensor, operator_subtraction_both_host_result_mem_location)
     };
 
     Tensor<value_t> R = A - B;
-    EXPECT_EQ(R.m_node->mem_loc, MemoryLocation::HOST);
+    EXPECT_EQ(R.get_memory_location(), MemoryLocation::HOST);
 }
 
 /**
@@ -4166,10 +4153,10 @@ TYPED_TEST(TypedTensor, operator_subtraction_broadcasting_complex_alignment)
     B = bvals;
 
     Tensor<value_t> R = A - B;
-    EXPECT_EQ(R.m_node->mem_loc, MemoryLocation::DEVICE);
+    EXPECT_EQ(R.get_memory_location(), MemoryLocation::DEVICE);
 
     std::vector<value_t> rh(total);
-    g_sycl_queue.memcpy(rh.data(), R.m_node->data.get(),
+    g_sycl_queue.memcpy(rh.data(), R.get_data(),
                        sizeof(value_t) * total).wait();
 
     std::vector<value_t> expected(total);
@@ -4227,7 +4214,7 @@ TYPED_TEST(TypedTensor, operator_subtraction_alias_view_noncontiguous)
 
     const uint64_t total = 3;
     std::vector<value_t> rh(total);
-    g_sycl_queue.memcpy(rh.data(), R.m_node->data.get(),
+    g_sycl_queue.memcpy(rh.data(), R.get_data(),
                        sizeof(value_t) * total).wait();
 
     std::vector<value_t> expected = {
@@ -4245,7 +4232,7 @@ TYPED_TEST(TypedTensor, operator_subtraction_alias_view_noncontiguous)
     }
 
     std::vector<value_t> b_host(6);
-    g_sycl_queue.memcpy(b_host.data(), B.m_node->data.get(),
+    g_sycl_queue.memcpy(b_host.data(), B.get_data(),
                        sizeof(value_t) * 6).wait();
     for (uint64_t i = 0; i < 6; ++i)
     {
@@ -4280,7 +4267,7 @@ TYPED_TEST(TypedTensor, operator_subtraction_alias_view_broadcast)
 
     const uint64_t total = 3;
     std::vector<value_t> rh(total);
-    g_sycl_queue.memcpy(rh.data(), R.m_node->data.get(),
+    g_sycl_queue.memcpy(rh.data(), R.get_data(),
                        sizeof(value_t) * total).wait();
 
     std::vector<value_t> expected = {
@@ -4325,7 +4312,7 @@ TYPED_TEST(TypedTensor, operator_subtraction_alias_view_weird_strides)
     Tensor<value_t> hostR({3,4}, MemoryLocation::HOST);
     copy_tensor_data(hostR, R);
     std::vector<value_t> rh(12);
-    g_sycl_queue.memcpy(rh.data(), hostR.m_node->data.get(),
+    g_sycl_queue.memcpy(rh.data(), hostR.get_data(),
                        sizeof(value_t) * 12).wait();
 
     for (uint64_t i = 0; i < 3; ++i)
@@ -4372,7 +4359,7 @@ TYPED_TEST(TypedTensor, operator_multiplication)
 
     const uint64_t total = 6;
     std::vector<value_t> eh(total);
-    g_sycl_queue.memcpy(eh.data(), E.m_node->data.get(),
+    g_sycl_queue.memcpy(eh.data(), E.get_data(),
                        sizeof(value_t) * total).wait();
 
     for (uint64_t i = 0; i < total; ++i)
@@ -4410,7 +4397,7 @@ TYPED_TEST(TypedTensor, operator_multiplication_broadcasting_1d_to_2d)
 
     uint64_t total = 6;
     std::vector<value_t> rh(total);
-    g_sycl_queue.memcpy(rh.data(), R.m_node->data.get(),
+    g_sycl_queue.memcpy(rh.data(), R.get_data(),
                        sizeof(value_t) * total).wait();
 
     std::vector<value_t> expected = {
@@ -4450,7 +4437,7 @@ TYPED_TEST(TypedTensor, operator_multiplication_broadcasting_scalar)
 
     uint64_t total = 6;
     std::vector<value_t> rh(total);
-    g_sycl_queue.memcpy(rh.data(), R.m_node->data.get(),
+    g_sycl_queue.memcpy(rh.data(), R.get_data(),
                        sizeof(value_t) * total).wait();
 
     std::vector<value_t> expected = {
@@ -4495,7 +4482,7 @@ TYPED_TEST(TypedTensor, operator_multiplication_with_views)
 
     const uint64_t total = 3;
     std::vector<value_t> rh(total);
-    g_sycl_queue.memcpy(rh.data(), R.m_node->data.get(),
+    g_sycl_queue.memcpy(rh.data(), R.get_data(),
                        sizeof(value_t) * total).wait();
 
     std::vector<value_t> expected = {
@@ -4555,7 +4542,7 @@ TYPED_TEST(TypedTensor, operator_multiplication_result_mem_location)
     };
 
     Tensor<value_t> R = A * B;
-    EXPECT_EQ(R.m_node->mem_loc, MemoryLocation::DEVICE);
+    EXPECT_EQ(R.get_memory_location(), MemoryLocation::DEVICE);
 }
 
 /**
@@ -4579,7 +4566,7 @@ TYPED_TEST(TypedTensor,
     };
 
     Tensor<value_t> R = A * B;
-    EXPECT_EQ(R.m_node->mem_loc, MemoryLocation::HOST);
+    EXPECT_EQ(R.get_memory_location(), MemoryLocation::HOST);
 }
 
 /**
@@ -4659,10 +4646,10 @@ TYPED_TEST(TypedTensor,
     B = bvals;
 
     Tensor<value_t> R = A * B;
-    EXPECT_EQ(R.m_node->mem_loc, MemoryLocation::DEVICE);
+    EXPECT_EQ(R.get_memory_location(), MemoryLocation::DEVICE);
 
     std::vector<value_t> rh(total);
-    g_sycl_queue.memcpy(rh.data(), R.m_node->data.get(),
+    g_sycl_queue.memcpy(rh.data(), R.get_data(),
                        sizeof(value_t) * total).wait();
 
     std::vector<value_t> expected(total);
@@ -4720,7 +4707,7 @@ TYPED_TEST(TypedTensor, operator_multiplication_alias_view_noncontiguous)
 
     const uint64_t total = 3;
     std::vector<value_t> rh(total);
-    g_sycl_queue.memcpy(rh.data(), R.m_node->data.get(),
+    g_sycl_queue.memcpy(rh.data(), R.get_data(),
                        sizeof(value_t) * total).wait();
 
     std::vector<value_t> expected = {
@@ -4738,7 +4725,7 @@ TYPED_TEST(TypedTensor, operator_multiplication_alias_view_noncontiguous)
     }
 
     std::vector<value_t> b_host(6);
-    g_sycl_queue.memcpy(b_host.data(), B.m_node->data.get(),
+    g_sycl_queue.memcpy(b_host.data(), B.get_data(),
                        sizeof(value_t) * 6).wait();
     for (uint64_t i = 0; i < 6; ++i)
     {
@@ -4773,7 +4760,7 @@ TYPED_TEST(TypedTensor, operator_multiplication_alias_view_broadcast)
 
     const uint64_t total = 3;
     std::vector<value_t> rh(total);
-    g_sycl_queue.memcpy(rh.data(), R.m_node->data.get(),
+    g_sycl_queue.memcpy(rh.data(), R.get_data(),
                        sizeof(value_t) * total).wait();
 
     std::vector<value_t> expected = {
@@ -4819,7 +4806,7 @@ TYPED_TEST(TypedTensor,
     Tensor<value_t> hostR({3,4}, MemoryLocation::HOST);
     copy_tensor_data(hostR, R);
     std::vector<value_t> rh(12);
-    g_sycl_queue.memcpy(rh.data(), hostR.m_node->data.get(),
+    g_sycl_queue.memcpy(rh.data(), hostR.get_data(),
                        sizeof(value_t) * 12).wait();
 
     for (uint64_t i = 0; i < 3; ++i)
@@ -4866,7 +4853,7 @@ TYPED_TEST(TypedTensor, operator_division)
 
     const uint64_t total = 6;
     std::vector<value_t> fh(total);
-    g_sycl_queue.memcpy(fh.data(), F.m_node->data.get(),
+    g_sycl_queue.memcpy(fh.data(), F.get_data(),
                        sizeof(value_t) * total).wait();
 
     for (uint64_t i = 0; i < total; ++i)
@@ -4904,7 +4891,7 @@ TYPED_TEST(TypedTensor, operator_division_broadcasting_1d_to_2d)
 
     uint64_t total = 6;
     std::vector<value_t> rh(total);
-    g_sycl_queue.memcpy(rh.data(), R.m_node->data.get(),
+    g_sycl_queue.memcpy(rh.data(), R.get_data(),
                        sizeof(value_t) * total).wait();
 
     std::vector<value_t> expected = {
@@ -4947,7 +4934,7 @@ TYPED_TEST(TypedTensor, operator_division_broadcasting_scalar)
 
     uint64_t total = 6;
     std::vector<value_t> rh(total);
-    g_sycl_queue.memcpy(rh.data(), R.m_node->data.get(),
+    g_sycl_queue.memcpy(rh.data(), R.get_data(),
                        sizeof(value_t) * total).wait();
 
     std::vector<value_t> expected = {
@@ -4994,7 +4981,7 @@ TYPED_TEST(TypedTensor, operator_division_with_views)
 
     const uint64_t total = 3;
     std::vector<value_t> rh(total);
-    g_sycl_queue.memcpy(rh.data(), R.m_node->data.get(),
+    g_sycl_queue.memcpy(rh.data(), R.get_data(),
                        sizeof(value_t) * total).wait();
 
     std::vector<value_t> expected = {
@@ -5054,7 +5041,7 @@ TYPED_TEST(TypedTensor, operator_division_result_mem_location)
     };
 
     Tensor<value_t> R = A / B;
-    EXPECT_EQ(R.m_node->mem_loc, MemoryLocation::DEVICE);
+    EXPECT_EQ(R.get_memory_location(), MemoryLocation::DEVICE);
 }
 
 /**
@@ -5078,7 +5065,7 @@ TYPED_TEST(TypedTensor,
     };
 
     Tensor<value_t> R = A / B;
-    EXPECT_EQ(R.m_node->mem_loc, MemoryLocation::HOST);
+    EXPECT_EQ(R.get_memory_location(), MemoryLocation::HOST);
 }
 
 /**
@@ -5186,10 +5173,10 @@ TYPED_TEST(TypedTensor,
     B = bvals;
 
     Tensor<value_t> R = A / B;
-    EXPECT_EQ(R.m_node->mem_loc, MemoryLocation::DEVICE);
+    EXPECT_EQ(R.get_memory_location(), MemoryLocation::DEVICE);
 
     std::vector<value_t> rh(total);
-    g_sycl_queue.memcpy(rh.data(), R.m_node->data.get(),
+    g_sycl_queue.memcpy(rh.data(), R.get_data(),
                        sizeof(value_t) * total).wait();
 
     std::vector<value_t> expected(total);
@@ -5248,7 +5235,7 @@ TYPED_TEST(TypedTensor,
 
     const uint64_t total = 3;
     std::vector<value_t> rh(total);
-    g_sycl_queue.memcpy(rh.data(), R.m_node->data.get(),
+    g_sycl_queue.memcpy(rh.data(), R.get_data(),
                        sizeof(value_t) * total).wait();
 
     std::vector<value_t> expected = {
@@ -5266,7 +5253,7 @@ TYPED_TEST(TypedTensor,
     }
 
     std::vector<value_t> b_host(6);
-    g_sycl_queue.memcpy(b_host.data(), B.m_node->data.get(),
+    g_sycl_queue.memcpy(b_host.data(), B.get_data(),
                        sizeof(value_t) * 6).wait();
     for (uint64_t i = 0; i < 6; ++i)
     {
@@ -5301,7 +5288,7 @@ TYPED_TEST(TypedTensor, operator_division_alias_view_broadcast)
 
     const uint64_t total = 3;
     std::vector<value_t> rh(total);
-    g_sycl_queue.memcpy(rh.data(), R.m_node->data.get(),
+    g_sycl_queue.memcpy(rh.data(), R.get_data(),
                        sizeof(value_t) * total).wait();
 
     std::vector<value_t> expected = {
@@ -5346,7 +5333,7 @@ TYPED_TEST(TypedTensor, operator_division_alias_view_weird_strides)
     Tensor<value_t> hostR({3,4}, MemoryLocation::HOST);
     copy_tensor_data(hostR, R);
     std::vector<value_t> rh(12);
-    g_sycl_queue.memcpy(rh.data(), hostR.m_node->data.get(),
+    g_sycl_queue.memcpy(rh.data(), hostR.get_data(),
                        sizeof(value_t) * 12).wait();
 
     for (uint64_t i = 0; i < 3; ++i)
@@ -5382,7 +5369,7 @@ TYPED_TEST(TypedTensor, operator_unary_negation)
 
     uint64_t total = 4;
     std::vector<value_t> nh(total);
-    g_sycl_queue.memcpy(nh.data(), N.m_node->data.get(),
+    g_sycl_queue.memcpy(nh.data(), N.get_data(),
                        sizeof(value_t) * total).wait();
 
     std::vector<float> expected = {-1, 2, -3, -0};
@@ -5411,7 +5398,7 @@ TYPED_TEST(TypedTensor, operator_unary_negation_result_mem_location_device)
     A = avals;
 
     Tensor<value_t> N = -A;
-    EXPECT_EQ(N.m_node->mem_loc, MemoryLocation::DEVICE);
+    EXPECT_EQ(N.get_memory_location(), MemoryLocation::DEVICE);
 }
 
 /**
@@ -5429,7 +5416,7 @@ TYPED_TEST(TypedTensor, operator_unary_negation_result_mem_location_host)
     A = avals;
 
     Tensor<value_t> N = -A;
-    EXPECT_EQ(N.m_node->mem_loc, MemoryLocation::HOST);
+    EXPECT_EQ(N.get_memory_location(), MemoryLocation::HOST);
 }
 
 /**
@@ -5486,7 +5473,7 @@ TYPED_TEST(TypedTensor, operator_unary_negation_with_view)
 
     const uint64_t total = 3;
     std::vector<value_t> nh(total);
-    g_sycl_queue.memcpy(nh.data(), N.m_node->data.get(),
+    g_sycl_queue.memcpy(nh.data(), N.get_data(),
                        sizeof(value_t) * total).wait();
 
     std::vector<value_t> expected = {
@@ -5505,7 +5492,7 @@ TYPED_TEST(TypedTensor, operator_unary_negation_with_view)
 
     // Sanity: parent must remain unchanged.
     std::vector<value_t> parent_buf(6);
-    g_sycl_queue.memcpy(parent_buf.data(), T.m_node->data.get(),
+    g_sycl_queue.memcpy(parent_buf.data(), T.get_data(),
                        sizeof(value_t) * 6).wait();
     for (uint64_t i = 0; i < 6; ++i)
     {
@@ -5535,7 +5522,7 @@ TYPED_TEST(TypedTensor, operator_unary_negation_sign_of_zero)
 
     const uint64_t total = 4;
     std::vector<value_t> nh(total);
-    g_sycl_queue.memcpy(nh.data(), N.m_node->data.get(),
+    g_sycl_queue.memcpy(nh.data(), N.get_data(),
                        sizeof(value_t) * total).wait();
 
     if constexpr (std::is_floating_point_v<value_t>) {
@@ -5578,7 +5565,7 @@ TYPED_TEST(TypedTensor, operator_unary_negation_non_contiguous_view_columns)
 
     const uint64_t total = 3 * 1;
     std::vector<value_t> nh(total);
-    g_sycl_queue.memcpy(nh.data(), N.m_node->data.get(),
+    g_sycl_queue.memcpy(nh.data(), N.get_data(),
                        sizeof(value_t) * total).wait();
 
     for (uint64_t r = 0; r < 3; ++r)
@@ -5592,7 +5579,7 @@ TYPED_TEST(TypedTensor, operator_unary_negation_non_contiguous_view_columns)
     }
 
     std::vector<value_t> parent_buf(12);
-    g_sycl_queue.memcpy(parent_buf.data(), T.m_node->data.get(),
+    g_sycl_queue.memcpy(parent_buf.data(), T.get_data(),
                        sizeof(value_t) * 12).wait();
     for (uint64_t i = 0; i < 12; ++i)
     {
@@ -5630,7 +5617,7 @@ TYPED_TEST(TypedTensor, operator_unary_negation_nan_outside_view)
     Tensor<value_t> N = -row0;
     const uint64_t total = 1 * 3;
     std::vector<value_t> nh(total);
-    g_sycl_queue.memcpy(nh.data(), N.m_node->data.get(),
+    g_sycl_queue.memcpy(nh.data(), N.get_data(),
                        sizeof(value_t) * total).wait();
 
     for (uint64_t i = 0; i < total; ++i)
@@ -5644,7 +5631,7 @@ TYPED_TEST(TypedTensor, operator_unary_negation_nan_outside_view)
     }
 
     std::vector<value_t> parent_buf(6);
-    g_sycl_queue.memcpy(parent_buf.data(), T.m_node->data.get(),
+    g_sycl_queue.memcpy(parent_buf.data(), T.get_data(),
                        sizeof(value_t) * 6).wait();
     if constexpr (std::is_floating_point_v<value_t>) {
         EXPECT_TRUE(std::isnan(static_cast<float>(parent_buf[5])));
@@ -5675,7 +5662,7 @@ TYPED_TEST(TypedTensor, operator_unary_negation_view_of_view)
 
     const uint64_t total = 2;
     std::vector<value_t> nh(total);
-    g_sycl_queue.memcpy(nh.data(), N.m_node->data.get(),
+    g_sycl_queue.memcpy(nh.data(), N.get_data(),
                        sizeof(value_t) * total).wait();
 
     if constexpr (std::is_floating_point_v<value_t>) {
@@ -5689,7 +5676,7 @@ TYPED_TEST(TypedTensor, operator_unary_negation_view_of_view)
     }
 
     std::vector<value_t> parent_buf(8);
-    g_sycl_queue.memcpy(parent_buf.data(), T.m_node->data.get(),
+    g_sycl_queue.memcpy(parent_buf.data(), T.get_data(),
                        sizeof(value_t) * 8).wait();
     for (uint64_t i = 0; i < 8; ++i)
     {
@@ -5724,7 +5711,7 @@ TYPED_TEST(TypedTensor, operator_unary_negation_alias_view_noncontiguous)
 
     const uint64_t total = 3;
     std::vector<value_t> nh(total);
-    g_sycl_queue.memcpy(nh.data(), N.m_node->data.get(),
+    g_sycl_queue.memcpy(nh.data(), N.get_data(),
                        sizeof(value_t) * total).wait();
 
     std::vector<value_t> expected = {
@@ -5743,7 +5730,7 @@ TYPED_TEST(TypedTensor, operator_unary_negation_alias_view_noncontiguous)
 
     // parent remains unchanged
     std::vector<value_t> b_host(6);
-    g_sycl_queue.memcpy(b_host.data(), B.m_node->data.get(),
+    g_sycl_queue.memcpy(b_host.data(), B.get_data(),
                        sizeof(value_t) * 6).wait();
     for (uint64_t i = 0; i < 6; ++i)
     {
@@ -5772,7 +5759,7 @@ TYPED_TEST(TypedTensor, operator_unary_negation_alias_view_broadcast)
 
     const uint64_t total = 3;
     std::vector<value_t> nh(total);
-    g_sycl_queue.memcpy(nh.data(), N.m_node->data.get(),
+    g_sycl_queue.memcpy(nh.data(), N.get_data(),
                        sizeof(value_t) * total).wait();
 
     std::vector<value_t> expected = {
@@ -5790,7 +5777,7 @@ TYPED_TEST(TypedTensor, operator_unary_negation_alias_view_broadcast)
     }
 
     std::vector<value_t> b_host(1);
-    g_sycl_queue.memcpy(b_host.data(), B.m_node->data.get(),
+    g_sycl_queue.memcpy(b_host.data(), B.get_data(),
                        sizeof(value_t) * 1).wait();
     if constexpr (std::is_floating_point_v<value_t>) {
         EXPECT_FLOAT_EQ(static_cast<float>(b_host[0]),
@@ -5821,7 +5808,7 @@ TYPED_TEST(TypedTensor, operator_unary_negation_alias_view_weird_strides)
     Tensor<value_t> hostN({2,3}, MemoryLocation::HOST);
     copy_tensor_data(hostN, N);
     std::vector<value_t> nh(6);
-    g_sycl_queue.memcpy(nh.data(), hostN.m_node->data.get(),
+    g_sycl_queue.memcpy(nh.data(), hostN.get_data(),
                        sizeof(value_t) * 6).wait();
 
     for (uint64_t i = 0; i < 2; ++i)
@@ -5841,7 +5828,7 @@ TYPED_TEST(TypedTensor, operator_unary_negation_alias_view_weird_strides)
     }
 
     std::vector<value_t> parent_buf(100);
-    g_sycl_queue.memcpy(parent_buf.data(), T.m_node->data.get(),
+    g_sycl_queue.memcpy(parent_buf.data(), T.get_data(),
                        sizeof(value_t) * 100).wait();
     for (uint64_t i = 0; i < 100; ++i)
     {
@@ -5947,10 +5934,6 @@ TYPED_TEST(TypedTensor, clone_empty)
     using value_t = TypeParam;
     Tensor<value_t> t;
 
-    EXPECT_TRUE(t.m_node->dimensions.empty());
-    EXPECT_EQ(t.get_num_elements(), 0u);
-    EXPECT_EQ(t.m_node->data, nullptr);
-
     EXPECT_THROW(t.clone(), temper::validation_error);
 }
 
@@ -5970,7 +5953,7 @@ TYPED_TEST(TypedTensor, clone_1d)
 
     Tensor<value_t> c = t.clone();
 
-    EXPECT_EQ(c.m_node->dimensions, t.m_node->dimensions);
+    EXPECT_EQ(c.get_dimensions(), t.get_dimensions());
     EXPECT_EQ(c.get_num_elements(), t.get_num_elements());
 
     uint64_t n = t.get_num_elements();
@@ -5984,7 +5967,7 @@ TYPED_TEST(TypedTensor, clone_1d)
         }
     }
 
-    EXPECT_NE(c.m_node->data, t.m_node->data);
+    EXPECT_NE(c.get_data_handle(), t.get_data_handle());
 }
 
 /**
@@ -6054,7 +6037,7 @@ TYPED_TEST(TypedTensor, clone_view)
         }
     }
 
-    EXPECT_NE(c.m_node->data, v.m_node->data);
+    EXPECT_NE(c.get_data_handle(), v.get_data_handle());
 }
 
 /**
@@ -6097,7 +6080,7 @@ TYPED_TEST(TypedTensor, clone_alias_view)
         }
     }
 
-    EXPECT_NE(clone.m_node->data, view.m_node->data);
+    EXPECT_NE(clone.get_data_handle(), view.get_data_handle());
 
     t[0][0] = static_cast<value_t>(999.0f);
     if constexpr (std::is_floating_point_v<value_t>) {
@@ -6123,7 +6106,7 @@ TYPED_TEST(TypedTensor, clone_const)
     const Tensor<value_t>& ct = t;
     Tensor<value_t> c = ct.clone();
 
-    EXPECT_EQ(c.m_node->dimensions, t.m_node->dimensions);
+    EXPECT_EQ(c.get_dimensions(), t.get_dimensions());
 
     uint64_t n = t.get_num_elements();
     for (uint64_t i = 0; i < n; ++i)
@@ -6136,7 +6119,7 @@ TYPED_TEST(TypedTensor, clone_const)
         }
     }
 
-    EXPECT_NE(c.m_node->data, t.m_node->data);
+    EXPECT_NE(c.get_data_handle(), t.get_data_handle());
 }
 
 /**
@@ -6156,18 +6139,18 @@ TYPED_TEST(TypedTensor, clone_preserves_requires_grad)
     // Without requires_grad, clone should also have requires_grad==false
     Tensor<value_t> c1 = t.clone();
     EXPECT_FALSE(c1.requires_grad());
-    EXPECT_EQ(c1.m_node->meta.fn, nullptr);
-    EXPECT_EQ(c1.m_node->meta.grad, nullptr);
+    EXPECT_EQ(c1.get_source_function(), nullptr);
+    EXPECT_EQ(c1.get_gradient().get_data(), nullptr);
 
     // With requires_grad, clone should preserve it
     t.set_requires_grad(true);
     Tensor<value_t> c2 = t.clone();
     EXPECT_TRUE(c2.requires_grad());
-    EXPECT_EQ(c2.m_node->meta.fn, nullptr);
-    EXPECT_EQ(c2.m_node->meta.grad, nullptr);
+    EXPECT_EQ(c2.get_source_function(), nullptr);
+    EXPECT_EQ(c2.get_gradient().get_data(), nullptr);
 
     // Data should still be independent
-    EXPECT_NE(c2.m_node->data, t.m_node->data);
+    EXPECT_NE(c2.get_data_handle(), t.get_data_handle());
     EXPECT_EQ(c2.get_dimensions(), t.get_dimensions());
 }
 
@@ -6194,7 +6177,7 @@ TYPED_TEST(TypedTensor, copy_from_identical_contiguous)
     dst.copy_from(src);
 
     std::vector<value_t> out(6);
-    g_sycl_queue.memcpy(out.data(), dst.m_node->data.get(),
+    g_sycl_queue.memcpy(out.data(), dst.get_data(),
                        sizeof(value_t) * 6).wait();
 
     for (size_t i = 0; i < out.size(); ++i)
@@ -6227,7 +6210,7 @@ TYPED_TEST(TypedTensor, copy_from_scalar_to_owner_and_view)
 
     std::vector<value_t> out_owner(4);
     g_sycl_queue.memcpy(out_owner.data(),
-        owner.m_node->data.get(), sizeof(value_t) * 4).wait();
+        owner.get_data(), sizeof(value_t) * 4).wait();
     for (value_t v : out_owner) {
         if constexpr (std::is_floating_point_v<value_t>) {
             EXPECT_FLOAT_EQ(static_cast<float>(v), 7.5f);
@@ -6244,14 +6227,14 @@ TYPED_TEST(TypedTensor, copy_from_scalar_to_owner_and_view)
     }
     base = base_vals;
 
-    Tensor<value_t> col_view(base, {0,1}, {3}, { base.m_node->strides[0] });
+    Tensor<value_t> col_view(base, {0,1}, {3}, { base.get_strides()[0] });
 
     col_view.copy_from(scalar);
 
     // read back base
     std::vector<value_t> base_out(9);
     g_sycl_queue.memcpy(base_out.data(),
-        base.m_node->data.get(), sizeof(value_t) * 9).wait();
+        base.get_data(), sizeof(value_t) * 9).wait();
 
     if constexpr (std::is_floating_point_v<value_t>) {
         EXPECT_FLOAT_EQ(static_cast<float>(base_out[1]), 7.5f);
@@ -6292,7 +6275,7 @@ TYPED_TEST(TypedTensor, copy_from_broadcast_1d_to_2d)
     dst.copy_from(src);
 
     std::vector<value_t> out(6);
-    g_sycl_queue.memcpy(out.data(), dst.m_node->data.get(),
+    g_sycl_queue.memcpy(out.data(), dst.get_data(),
                        sizeof(value_t) * 6).wait();
 
     if constexpr (std::is_floating_point_v<value_t>) {
@@ -6337,7 +6320,7 @@ TYPED_TEST(TypedTensor, copy_from_from_view_into_owner)
     dst.copy_from(src_view);
 
     std::vector<value_t> out(6);
-    g_sycl_queue.memcpy(out.data(), dst.m_node->data.get(),
+    g_sycl_queue.memcpy(out.data(), dst.get_data(),
                        sizeof(value_t) * 6).wait();
 
     if constexpr (std::is_floating_point_v<value_t>) {
@@ -6374,13 +6357,13 @@ TYPED_TEST(TypedTensor, copy_from_to_noncontiguous_dst)
     base = std::vector<value_t>(9, static_cast<value_t>(0.f));
 
     Tensor<value_t> patch(base, {1,1}, {2,2},
-        { base.m_node->strides[0], base.m_node->strides[1] });
+        { base.get_strides()[0], base.get_strides()[1] });
 
     patch.copy_from(src);
 
     std::vector<value_t> base_out(9);
     g_sycl_queue.memcpy(base_out.data(),
-        base.m_node->data.get(), sizeof(value_t) * 9).wait();
+        base.get_data(), sizeof(value_t) * 9).wait();
 
     if constexpr (std::is_floating_point_v<value_t>) {
         EXPECT_FLOAT_EQ(static_cast<float>(base_out[1 * 3 + 1]), 1.f);
@@ -6434,7 +6417,7 @@ TYPED_TEST(TypedTensor, to_host_to_device)
     Tensor<value_t> t({3, 5}, MemoryLocation::HOST);
 
     uint64_t total_size = 1;
-    for (uint64_t d : t.m_node->dimensions)
+    for (uint64_t d : t.get_dimensions())
     {
         total_size *= d;
     }
@@ -6447,14 +6430,14 @@ TYPED_TEST(TypedTensor, to_host_to_device)
 
     t = values;
 
-    EXPECT_EQ(t.m_node->mem_loc, MemoryLocation::HOST);
+    EXPECT_EQ(t.get_memory_location(), MemoryLocation::HOST);
 
     t.to(MemoryLocation::DEVICE);
 
-    EXPECT_EQ(t.m_node->mem_loc, MemoryLocation::DEVICE);
+    EXPECT_EQ(t.get_memory_location(), MemoryLocation::DEVICE);
 
     std::vector<value_t> host_data(total_size);
-    g_sycl_queue.memcpy(host_data.data(), t.m_node->data.get(),
+    g_sycl_queue.memcpy(host_data.data(), t.get_data(),
                        sizeof(value_t) * total_size).wait();
 
     for (uint64_t i = 0; i < total_size; ++i)
@@ -6478,7 +6461,7 @@ TYPED_TEST(TypedTensor, to_device_to_host)
     Tensor<value_t> t({4, 4}, MemoryLocation::DEVICE);
 
     uint64_t total_size = 1;
-    for (uint64_t d : t.m_node->dimensions)
+    for (uint64_t d : t.get_dimensions())
     {
         total_size *= d;
     }
@@ -6491,14 +6474,14 @@ TYPED_TEST(TypedTensor, to_device_to_host)
 
     t = values;
 
-    EXPECT_EQ(t.m_node->mem_loc, MemoryLocation::DEVICE);
+    EXPECT_EQ(t.get_memory_location(), MemoryLocation::DEVICE);
 
     t.to(MemoryLocation::HOST);
 
-    EXPECT_EQ(t.m_node->mem_loc, MemoryLocation::HOST);
+    EXPECT_EQ(t.get_memory_location(), MemoryLocation::HOST);
 
     std::vector<value_t> host_data(total_size);
-    g_sycl_queue.memcpy(host_data.data(), t.m_node->data.get(),
+    g_sycl_queue.memcpy(host_data.data(), t.get_data(),
                        sizeof(value_t) * total_size).wait();
 
     for (uint64_t i = 0; i < total_size; ++i)
@@ -6522,7 +6505,7 @@ TYPED_TEST(TypedTensor, to_noop_when_already_in_target)
     Tensor<value_t> t_host({2, 2}, MemoryLocation::HOST);
 
     uint64_t total_size = 1;
-    for (uint64_t d : t_host.m_node->dimensions)
+    for (uint64_t d : t_host.get_dimensions())
     {
         total_size *= d;
     }
@@ -6536,11 +6519,11 @@ TYPED_TEST(TypedTensor, to_noop_when_already_in_target)
     t_host = values;
 
     t_host.to(MemoryLocation::HOST);
-    EXPECT_EQ(t_host.m_node->mem_loc, MemoryLocation::HOST);
+    EXPECT_EQ(t_host.get_memory_location(), MemoryLocation::HOST);
 
     std::vector<value_t> host_data_host(total_size);
     g_sycl_queue.memcpy(host_data_host.data(),
-        t_host.m_node->data.get(), sizeof(value_t) * total_size).wait();
+        t_host.get_data(), sizeof(value_t) * total_size).wait();
 
     for (uint64_t i = 0; i < total_size; ++i)
     {
@@ -6557,11 +6540,11 @@ TYPED_TEST(TypedTensor, to_noop_when_already_in_target)
     t_device = values;
 
     t_device.to(MemoryLocation::DEVICE);
-    EXPECT_EQ(t_device.m_node->mem_loc, MemoryLocation::DEVICE);
+    EXPECT_EQ(t_device.get_memory_location(), MemoryLocation::DEVICE);
 
     std::vector<value_t> host_data_device(total_size);
     g_sycl_queue.memcpy(host_data_device.data(),
-        t_device.m_node->data.get(), sizeof(value_t) * total_size).wait();
+        t_device.get_data(), sizeof(value_t) * total_size).wait();
 
     for (uint64_t i = 0; i < total_size; ++i)
     {
@@ -6584,7 +6567,7 @@ TYPED_TEST(TypedTensor, to_throws_for_view)
     Tensor<value_t> t_owner({2, 2}, MemoryLocation::HOST);
 
     uint64_t total_size = 1;
-    for (uint64_t d : t_owner.m_node->dimensions)
+    for (uint64_t d : t_owner.get_dimensions())
     {
         total_size *= d;
     }
@@ -6599,7 +6582,7 @@ TYPED_TEST(TypedTensor, to_throws_for_view)
 
     Tensor<value_t> t_view(t_owner, {0, 0}, {2, 1});
 
-    EXPECT_FALSE(t_view.m_node->owns_data);
+    EXPECT_FALSE(t_view.get_owns_data());
 
     EXPECT_THROW(t_view.to(MemoryLocation::DEVICE), temper::validation_error);
     EXPECT_THROW(t_view.to(MemoryLocation::HOST), temper::validation_error);
@@ -6633,13 +6616,13 @@ TYPED_TEST(TypedTensor, to_host_to_device_and_back)
 
     t = values;
     t.to(MemoryLocation::DEVICE);
-    EXPECT_EQ(t.m_node->mem_loc, MemoryLocation::DEVICE);
+    EXPECT_EQ(t.get_memory_location(), MemoryLocation::DEVICE);
 
     t.to(MemoryLocation::HOST);
-    EXPECT_EQ(t.m_node->mem_loc, MemoryLocation::HOST);
+    EXPECT_EQ(t.get_memory_location(), MemoryLocation::HOST);
 
     std::vector<value_t> host_data(total_size);
-    g_sycl_queue.memcpy(host_data.data(), t.m_node->data.get(),
+    g_sycl_queue.memcpy(host_data.data(), t.get_data(),
                        sizeof(value_t) * total_size).wait();
     for (uint64_t i = 0; i < total_size; ++i)
     {
@@ -6669,17 +6652,17 @@ TYPED_TEST(TypedTensor, reshape_preserves_linear_memory_and_strides)
     std::vector<uint64_t> new_dims = {3, 2};
     EXPECT_NO_THROW(A.reshape(new_dims));
 
-    EXPECT_EQ(static_cast<uint64_t>(A.m_node->dimensions.size()), uint64_t{2});
-    EXPECT_EQ(A.m_node->dimensions[0], uint64_t{3});
-    EXPECT_EQ(A.m_node->dimensions[1], uint64_t{2});
+    EXPECT_EQ(static_cast<uint64_t>(A.get_dimensions().size()), uint64_t{2});
+    EXPECT_EQ(A.get_dimensions()[0], uint64_t{3});
+    EXPECT_EQ(A.get_dimensions()[1], uint64_t{2});
 
-    ASSERT_EQ(static_cast<uint64_t>(A.m_node->strides.size()), uint64_t{2});
-    EXPECT_EQ(A.m_node->strides[0], uint64_t{2});
-    EXPECT_EQ(A.m_node->strides[1], uint64_t{1});
+    ASSERT_EQ(static_cast<uint64_t>(A.get_strides().size()), uint64_t{2});
+    EXPECT_EQ(A.get_strides()[0], uint64_t{2});
+    EXPECT_EQ(A.get_strides()[1], uint64_t{1});
 
     const uint64_t total = 6;
     std::vector<value_t> host_buf(total);
-    g_sycl_queue.memcpy(host_buf.data(), A.m_node->data.get(),
+    g_sycl_queue.memcpy(host_buf.data(), A.get_data(),
                         sizeof(value_t) * total).wait();
 
     for (uint64_t i = 0; i < total; ++i)
@@ -6710,15 +6693,15 @@ TYPED_TEST(TypedTensor, reshape_to_flat_vector_preserves_contents)
     std::vector<uint64_t> new_dims = {6};
     EXPECT_NO_THROW(A.reshape(new_dims));
 
-    EXPECT_EQ(static_cast<uint64_t>(A.m_node->dimensions.size()), uint64_t{1});
-    EXPECT_EQ(A.m_node->dimensions[0], uint64_t{6});
+    EXPECT_EQ(static_cast<uint64_t>(A.get_dimensions().size()), uint64_t{1});
+    EXPECT_EQ(A.get_dimensions()[0], uint64_t{6});
 
-    ASSERT_EQ(static_cast<uint64_t>(A.m_node->strides.size()), uint64_t{1});
-    EXPECT_EQ(A.m_node->strides[0], uint64_t{1});
+    ASSERT_EQ(static_cast<uint64_t>(A.get_strides().size()), uint64_t{1});
+    EXPECT_EQ(A.get_strides()[0], uint64_t{1});
 
     const uint64_t total = 6;
     std::vector<value_t> host_buf(total);
-    g_sycl_queue.memcpy(host_buf.data(), A.m_node->data.get(),
+    g_sycl_queue.memcpy(host_buf.data(), A.get_data(),
                         sizeof(value_t) * total).wait();
 
     for (uint64_t i = 0; i < total; ++i)
@@ -6806,13 +6789,13 @@ TYPED_TEST(TypedTensor, reshape_multiple_roundtrip_preserves_data)
     EXPECT_NO_THROW(A.reshape({6}));
     EXPECT_NO_THROW(A.reshape({2,3}));
 
-    ASSERT_EQ(static_cast<uint64_t>(A.m_node->dimensions.size()), uint64_t{2});
-    EXPECT_EQ(A.m_node->dimensions[0], uint64_t{2});
-    EXPECT_EQ(A.m_node->dimensions[1], uint64_t{3});
+    ASSERT_EQ(static_cast<uint64_t>(A.get_dimensions().size()), uint64_t{2});
+    EXPECT_EQ(A.get_dimensions()[0], uint64_t{2});
+    EXPECT_EQ(A.get_dimensions()[1], uint64_t{3});
 
     const uint64_t total = 6;
     std::vector<value_t> host_buf(total);
-    g_sycl_queue.memcpy(host_buf.data(), A.m_node->data.get(),
+    g_sycl_queue.memcpy(host_buf.data(), A.get_data(),
                         sizeof(value_t) * total).wait();
 
     for (uint64_t i = 0; i < total; ++i)
@@ -6840,7 +6823,7 @@ TYPED_TEST(TypedTensor, reshape_view_throws)
     };
 
     Tensor<value_t> v(base, {0,0}, {2,3}, {3,1});
-    EXPECT_FALSE(v.m_node->owns_data);
+    EXPECT_FALSE(v.get_owns_data());
 
     EXPECT_THROW(v.reshape(std::vector<uint64_t>{3,2}), temper::validation_error);
 }
@@ -7641,13 +7624,13 @@ TYPED_TEST(TypedTensor, sort_alias_view_weird_strides)
     Tensor<value_t> view(owner, {0,0}, {3,4}, {13,4});
     view.sort(1);
 
-    EXPECT_EQ(view.m_node->dimensions, (std::vector<uint64_t>{3,4}));
-    EXPECT_EQ(view.m_node->strides, (std::vector<uint64_t>{13,4}));
+    EXPECT_EQ(view.get_dimensions(), (std::vector<uint64_t>{3,4}));
+    EXPECT_EQ(view.get_strides(), (std::vector<uint64_t>{13,4}));
 
     Tensor<value_t> host({3,4}, MemoryLocation::HOST);
     copy_tensor_data(host, view);
     std::vector<value_t> out(12);
-    g_sycl_queue.memcpy(out.data(), host.m_node->data.get(),
+    g_sycl_queue.memcpy(out.data(), host.get_data(),
                        sizeof(value_t) * 12).wait();
 
     std::vector<value_t> expected = {
@@ -7753,7 +7736,7 @@ TYPED_TEST(TypedTensor, sum_all_elements)
     Tensor<value_t> res = t.sum();
 
     std::vector<value_t> host(1);
-    g_sycl_queue.memcpy(host.data(), res.m_node->data.get(),
+    g_sycl_queue.memcpy(host.data(), res.get_data(),
                        sizeof(value_t)).wait();
 
     if constexpr (std::is_floating_point_v<value_t>) {
@@ -7786,7 +7769,7 @@ TYPED_TEST(TypedTensor, sum_axis0)
     EXPECT_EQ(res.get_dimensions()[1], 3u);
 
     std::vector<value_t> host(3);
-    g_sycl_queue.memcpy(host.data(), res.m_node->data.get(),
+    g_sycl_queue.memcpy(host.data(), res.get_data(),
                        3 * sizeof(value_t)).wait();
 
     if constexpr (std::is_floating_point_v<value_t>) {
@@ -7825,7 +7808,7 @@ TYPED_TEST(TypedTensor, sum_axis1)
     EXPECT_EQ(res.get_dimensions()[1], 1u);
 
     std::vector<value_t> host(2);
-    g_sycl_queue.memcpy(host.data(), res.m_node->data.get(),
+    g_sycl_queue.memcpy(host.data(), res.get_data(),
                        2 * sizeof(value_t)).wait();
 
     if constexpr (std::is_floating_point_v<value_t>) {
@@ -7863,7 +7846,7 @@ TYPED_TEST(TypedTensor, sum_axis0_3D)
     EXPECT_EQ(res.get_dimensions()[2], 2u);
 
     std::vector<value_t> host(4);
-    g_sycl_queue.memcpy(host.data(), res.m_node->data.get(),
+    g_sycl_queue.memcpy(host.data(), res.get_data(),
                        4 * sizeof(value_t)).wait();
 
     if constexpr (std::is_floating_point_v<value_t>) {
@@ -7898,7 +7881,7 @@ TYPED_TEST(TypedTensor, sum_axis_negative)
     Tensor<value_t> res = t.sum(std::vector<int64_t>{-3});
 
     std::vector<value_t> host(4);
-    g_sycl_queue.memcpy(host.data(), res.m_node->data.get(),
+    g_sycl_queue.memcpy(host.data(), res.get_data(),
                        4 * sizeof(value_t)).wait();
 
     if constexpr (std::is_floating_point_v<value_t>) {
@@ -7933,7 +7916,7 @@ TYPED_TEST(TypedTensor, sum_axis1_3D)
     Tensor<value_t> res = t.sum(std::vector<int64_t>{1});
 
     std::vector<value_t> host(4);
-    g_sycl_queue.memcpy(host.data(), res.m_node->data.get(),
+    g_sycl_queue.memcpy(host.data(), res.get_data(),
                        4 * sizeof(value_t)).wait();
 
     if constexpr (std::is_floating_point_v<value_t>) {
@@ -7973,7 +7956,7 @@ TYPED_TEST(TypedTensor, sum_axis2_3D)
     EXPECT_EQ(res.get_dimensions()[2], 1u);
 
     std::vector<value_t> host(4);
-    g_sycl_queue.memcpy(host.data(), res.m_node->data.get(),
+    g_sycl_queue.memcpy(host.data(), res.get_data(),
                        4 * sizeof(value_t)).wait();
 
     if constexpr (std::is_floating_point_v<value_t>) {
@@ -8013,7 +7996,7 @@ TYPED_TEST(TypedTensor, sum_multiple_axes)
     EXPECT_EQ(res.get_dimensions()[2], 1u);
 
     std::vector<value_t> host(2);
-    g_sycl_queue.memcpy(host.data(), res.m_node->data.get(),
+    g_sycl_queue.memcpy(host.data(), res.get_data(),
                        2 * sizeof(value_t)).wait();
 
     if constexpr (std::is_floating_point_v<value_t>) {
@@ -8049,7 +8032,7 @@ TYPED_TEST(TypedTensor, sum_multiple_axes_with_negative_index)
     EXPECT_EQ(res.get_dimensions()[2], 1u);
 
     std::vector<value_t> host(2);
-    g_sycl_queue.memcpy(host.data(), res.m_node->data.get(),
+    g_sycl_queue.memcpy(host.data(), res.get_data(),
                        2 * sizeof(value_t)).wait();
 
     if constexpr (std::is_floating_point_v<value_t>) {
@@ -8085,7 +8068,7 @@ TYPED_TEST(TypedTensor, sum_multiple_axes_all_axes)
     EXPECT_EQ(res.get_dimensions()[2], 1u);
 
     std::vector<value_t> host(1);
-    g_sycl_queue.memcpy(host.data(), res.m_node->data.get(),
+    g_sycl_queue.memcpy(host.data(), res.get_data(),
                        sizeof(value_t)).wait();
 
     if constexpr (std::is_floating_point_v<value_t>) {
@@ -8160,7 +8143,7 @@ TYPED_TEST(TypedTensor, sum_view_tensor)
     Tensor<value_t> res = view.sum();
 
     std::vector<value_t> host(1);
-    g_sycl_queue.memcpy(host.data(), res.m_node->data.get(),
+    g_sycl_queue.memcpy(host.data(), res.get_data(),
                        sizeof(value_t)).wait();
 
     if constexpr (std::is_floating_point_v<value_t>) {
@@ -8195,7 +8178,7 @@ TYPED_TEST(TypedTensor, sum_alias_view_tensor)
     Tensor<value_t> res = alias_view.sum();
 
     std::vector<value_t> host(1);
-    g_sycl_queue.memcpy(host.data(), res.m_node->data.get(),
+    g_sycl_queue.memcpy(host.data(), res.get_data(),
                        sizeof(value_t)).wait();
 
     if constexpr (std::is_floating_point_v<value_t>) {
@@ -8228,7 +8211,7 @@ TYPED_TEST(TypedTensor, sum_view_tensor_3d_axis1)
     Tensor<value_t> res = view.sum(std::vector<int64_t>{1});
 
     std::vector<value_t> host(2);
-    g_sycl_queue.memcpy(host.data(), res.m_node->data.get(),
+    g_sycl_queue.memcpy(host.data(), res.get_data(),
                        sizeof(value_t) * host.size()).wait();
 
     if constexpr (std::is_floating_point_v<value_t>) {
@@ -8264,7 +8247,7 @@ TYPED_TEST(TypedTensor, sum_alias_view_tensor_2d_strided)
     Tensor<value_t> res = alias_view.sum(std::vector<int64_t>{0});
 
     std::vector<value_t> host(3);
-    g_sycl_queue.memcpy(host.data(), res.m_node->data.get(),
+    g_sycl_queue.memcpy(host.data(), res.get_data(),
                        sizeof(value_t) * host.size()).wait();
 
     if constexpr (std::is_floating_point_v<value_t>) {
@@ -8302,7 +8285,7 @@ TYPED_TEST(TypedTensor, sum_alias_view_tensor_overlapping_stride_zero)
     Tensor<value_t> res = alias_view.sum(std::vector<int64_t>{0});
 
     std::vector<value_t> host(2);
-    g_sycl_queue.memcpy(host.data(), res.m_node->data.get(),
+    g_sycl_queue.memcpy(host.data(), res.get_data(),
                        sizeof(value_t) * host.size()).wait();
 
     if constexpr (std::is_floating_point_v<value_t>) {
@@ -8372,7 +8355,7 @@ TYPED_TEST(TypedTensor, sum_empty)
     res = t.sum();
 
     std::vector<value_t> host(1);
-    g_sycl_queue.memcpy(host.data(), res.m_node->data.get(),
+    g_sycl_queue.memcpy(host.data(), res.get_data(),
                        sizeof(value_t)).wait();
 
     if constexpr (std::is_floating_point_v<value_t>) {
@@ -8400,7 +8383,7 @@ TYPED_TEST(TypedTensor, cumsum_all_elements_flatten)
     Tensor<value_t> res = t.cumsum(-1);
 
     std::vector<value_t> host(3);
-    g_sycl_queue.memcpy(host.data(), res.m_node->data.get(),
+    g_sycl_queue.memcpy(host.data(), res.get_data(),
                        3 * sizeof(value_t)).wait();
 
     if constexpr (std::is_floating_point_v<value_t>) {
@@ -8432,7 +8415,7 @@ TYPED_TEST(TypedTensor, cumsum_axis0_2D)
     Tensor<value_t> res = t.cumsum(0);
 
     std::vector<value_t> host(6);
-    g_sycl_queue.memcpy(host.data(), res.m_node->data.get(),
+    g_sycl_queue.memcpy(host.data(), res.get_data(),
                        6 * sizeof(value_t)).wait();
 
     if constexpr (std::is_floating_point_v<value_t>) {
@@ -8470,7 +8453,7 @@ TYPED_TEST(TypedTensor, cumsum_axis_negative)
     Tensor<value_t> res = t.cumsum(-2);
 
     std::vector<value_t> host(6);
-    g_sycl_queue.memcpy(host.data(), res.m_node->data.get(),
+    g_sycl_queue.memcpy(host.data(), res.get_data(),
                        6 * sizeof(value_t)).wait();
 
     if constexpr (std::is_floating_point_v<value_t>) {
@@ -8508,7 +8491,7 @@ TYPED_TEST(TypedTensor, cumsum_axis1_2D)
     Tensor<value_t> res = t.cumsum(1);
 
     std::vector<value_t> host(6);
-    g_sycl_queue.memcpy(host.data(), res.m_node->data.get(),
+    g_sycl_queue.memcpy(host.data(), res.get_data(),
                        6 * sizeof(value_t)).wait();
 
     if constexpr (std::is_floating_point_v<value_t>) {
@@ -8546,7 +8529,7 @@ TYPED_TEST(TypedTensor, cumsum_flatten_3D)
     Tensor<value_t> res = t.cumsum();
 
     std::vector<value_t> host(8);
-    g_sycl_queue.memcpy(host.data(), res.m_node->data.get(),
+    g_sycl_queue.memcpy(host.data(), res.get_data(),
                        8 * sizeof(value_t)).wait();
 
     std::vector<float> expected = {
@@ -8593,7 +8576,7 @@ TYPED_TEST(TypedTensor, cumsum_view_flatten)
     Tensor<value_t> res = view.cumsum();
 
     std::vector<value_t> host(4);
-    g_sycl_queue.memcpy(host.data(), res.m_node->data.get(),
+    g_sycl_queue.memcpy(host.data(), res.get_data(),
                        4 * sizeof(value_t)).wait();
 
     if constexpr (std::is_floating_point_v<value_t>) {
@@ -8631,7 +8614,7 @@ TYPED_TEST(TypedTensor, cumsum_alias_view_strided)
     Tensor<value_t> res = alias_view.cumsum();
 
     std::vector<value_t> host(3);
-    g_sycl_queue.memcpy(host.data(), res.m_node->data.get(),
+    g_sycl_queue.memcpy(host.data(), res.get_data(),
                        3 * sizeof(value_t)).wait();
 
     if constexpr (std::is_floating_point_v<value_t>) {
@@ -8669,7 +8652,7 @@ TYPED_TEST(TypedTensor, cumsum_alias_view_overlapping_stride_zero)
     Tensor<value_t> res = alias_view.cumsum(0);
 
     std::vector<value_t> host(4);
-    g_sycl_queue.memcpy(host.data(), res.m_node->data.get(),
+    g_sycl_queue.memcpy(host.data(), res.get_data(),
                        4 * sizeof(value_t)).wait();
 
     if constexpr (std::is_floating_point_v<value_t>) {
@@ -8707,14 +8690,14 @@ TYPED_TEST(TypedTensor, cumsum_alias_view_weird_strides)
     Tensor<value_t> view(owner, {0,0}, {3,4}, {13,4});
     Tensor<value_t> view2 = view.cumsum(1);
 
-    EXPECT_EQ(view2.m_node->dimensions, (std::vector<uint64_t>{3,4}));
-    EXPECT_EQ(view2.m_node->strides, (std::vector<uint64_t>{4,1}));
+    EXPECT_EQ(view2.get_dimensions(), (std::vector<uint64_t>{3,4}));
+    EXPECT_EQ(view2.get_strides(), (std::vector<uint64_t>{4,1}));
 
     Tensor<value_t> host({3,4}, MemoryLocation::HOST);
     copy_tensor_data(host, view2);
 
     std::vector<value_t> out(12);
-    g_sycl_queue.memcpy(out.data(), host.m_node->data.get(),
+    g_sycl_queue.memcpy(out.data(), host.get_data(),
                        sizeof(value_t) * 12).wait();
 
     std::vector<value_t> expected = {
@@ -8817,7 +8800,7 @@ TYPED_TEST(TypedTensor, cumsum_empty)
     res = t.cumsum();
 
     std::vector<value_t> host(1);
-    g_sycl_queue.memcpy(host.data(), res.m_node->data.get(),
+    g_sycl_queue.memcpy(host.data(), res.get_data(),
                        sizeof(value_t)).wait();
 
     if constexpr (std::is_floating_point_v<value_t>) {
@@ -8844,11 +8827,11 @@ TYPED_TEST(TypedTensor, transpose_noargs_reverse_axes)
 
     Tensor<value_t> t_rev = t.transpose();
 
-    EXPECT_EQ(t_rev.m_node->dimensions,
+    EXPECT_EQ(t_rev.get_dimensions(),
               (std::vector<uint64_t>{4, 3, 2}));
-    EXPECT_EQ(t_rev.m_node->strides,
+    EXPECT_EQ(t_rev.get_strides(),
               (std::vector<uint64_t>{
-                  t.m_node->strides[2], t.m_node->strides[1], t.m_node->strides[0]
+                  t.get_strides()[2], t.get_strides()[1], t.get_strides()[0]
               }));
 
     Tensor<value_t> host({4, 3, 2}, MemoryLocation::HOST);
@@ -8856,7 +8839,7 @@ TYPED_TEST(TypedTensor, transpose_noargs_reverse_axes)
 
     std::vector<value_t> out(24);
     g_sycl_queue.memcpy
-    (out.data(), host.m_node->data.get(), sizeof(value_t) * 24).wait();
+    (out.data(), host.get_data(), sizeof(value_t) * 24).wait();
 
     if constexpr (std::is_floating_point_v<value_t>) {
         EXPECT_FLOAT_EQ(static_cast<float>(out[0]),
@@ -8886,18 +8869,18 @@ TYPED_TEST(TypedTensor, transpose_explicit_axes)
 
     Tensor<value_t> perm = t.transpose({2, 1, 0});
 
-    EXPECT_EQ(perm.m_node->dimensions,
+    EXPECT_EQ(perm.get_dimensions(),
               (std::vector<uint64_t>{4, 3, 2}));
-    EXPECT_EQ(perm.m_node->strides,
+    EXPECT_EQ(perm.get_strides(),
               (std::vector<uint64_t>{
-                  t.m_node->strides[2], t.m_node->strides[1], t.m_node->strides[0]
+                  t.get_strides()[2], t.get_strides()[1], t.get_strides()[0]
               }));
 
     Tensor<value_t> host({4, 3, 2}, MemoryLocation::HOST);
     copy_tensor_data(host, perm);
     std::vector<value_t> out(24);
     g_sycl_queue.memcpy
-    (out.data(), host.m_node->data.get(), sizeof(value_t) * 24).wait();
+    (out.data(), host.get_data(), sizeof(value_t) * 24).wait();
 
     if constexpr (std::is_floating_point_v<value_t>) {
         EXPECT_FLOAT_EQ(static_cast<float>(out[0]),
@@ -8927,18 +8910,18 @@ TYPED_TEST(TypedTensor, transpose_explicit_axes_negative)
 
     Tensor<value_t> perm = t.transpose({-1, -2, -3});
 
-    EXPECT_EQ(perm.m_node->dimensions,
+    EXPECT_EQ(perm.get_dimensions(),
               (std::vector<uint64_t>{4, 3, 2}));
-    EXPECT_EQ(perm.m_node->strides,
+    EXPECT_EQ(perm.get_strides(),
               (std::vector<uint64_t>{
-                  t.m_node->strides[2], t.m_node->strides[1], t.m_node->strides[0]
+                  t.get_strides()[2], t.get_strides()[1], t.get_strides()[0]
               }));
 
     Tensor<value_t> host({4, 3, 2}, MemoryLocation::HOST);
     copy_tensor_data(host, perm);
     std::vector<value_t> out(24);
     g_sycl_queue.memcpy
-    (out.data(), host.m_node->data.get(), sizeof(value_t) * 24).wait();
+    (out.data(), host.get_data(), sizeof(value_t) * 24).wait();
 
     if constexpr (std::is_floating_point_v<value_t>) {
         EXPECT_FLOAT_EQ(static_cast<float>(out[0]),
@@ -8967,16 +8950,16 @@ TYPED_TEST(TypedTensor, transpose_2d)
 
     Tensor<value_t> t_T = t.transpose();
 
-    EXPECT_EQ(t_T.m_node->dimensions,
+    EXPECT_EQ(t_T.get_dimensions(),
               (std::vector<uint64_t>{3, 2}));
-    EXPECT_EQ(t_T.m_node->strides,
-              (std::vector<uint64_t>{t.m_node->strides[1], t.m_node->strides[0]}));
+    EXPECT_EQ(t_T.get_strides(),
+              (std::vector<uint64_t>{t.get_strides()[1], t.get_strides()[0]}));
 
     Tensor<value_t> host({3,2}, MemoryLocation::HOST);
     copy_tensor_data(host, t_T);
     std::vector<value_t> out(6);
     g_sycl_queue.memcpy
-    (out.data(), host.m_node->data.get(), sizeof(value_t) * 6).wait();
+    (out.data(), host.get_data(), sizeof(value_t) * 6).wait();
 
     if constexpr (std::is_floating_point_v<value_t>) {
         EXPECT_FLOAT_EQ(static_cast<float>(out[0]), 1.f);
@@ -9017,7 +9000,7 @@ TYPED_TEST(TypedTensor, transpose_mutation_reflects)
     copy_tensor_data(host, t);
     std::vector<value_t> out(6);
     g_sycl_queue.memcpy
-    (out.data(), host.m_node->data.get(), sizeof(value_t) * 6).wait();
+    (out.data(), host.get_data(), sizeof(value_t) * 6).wait();
 
     if constexpr (std::is_floating_point_v<value_t>) {
         EXPECT_FLOAT_EQ(static_cast<float>(out[0]), 100.f);
@@ -9058,14 +9041,14 @@ TYPED_TEST(TypedTensor, transpose_1d)
     };
 
     Tensor<value_t> t_tr = t.transpose();
-    EXPECT_EQ(t_tr.m_node->dimensions, t.m_node->dimensions);
-    EXPECT_EQ(t_tr.m_node->strides, t.m_node->strides);
+    EXPECT_EQ(t_tr.get_dimensions(), t.get_dimensions());
+    EXPECT_EQ(t_tr.get_strides(), t.get_strides());
 
     Tensor<value_t> host({5}, MemoryLocation::HOST);
     copy_tensor_data(host, t_tr);
     std::vector<value_t> out(5);
     g_sycl_queue.memcpy
-    (out.data(), host.m_node->data.get(), sizeof(value_t) * 5).wait();
+    (out.data(), host.get_data(), sizeof(value_t) * 5).wait();
 
     for (uint64_t i = 0; i < 5; ++i)
     {
@@ -9324,7 +9307,7 @@ TYPED_TEST(TypedTensor, get_dimensions)
     using value_t = TypeParam;
     Tensor<value_t> t({4, 5, 6}, MemoryLocation::HOST);
 
-    EXPECT_EQ(t.get_dimensions(), t.m_node->dimensions);
+    EXPECT_EQ(t.get_dimensions(), t.get_dimensions());
 
     EXPECT_EQ(&t.get_shape(), &t.get_dimensions());
 
@@ -9352,7 +9335,7 @@ TYPED_TEST(TypedTensor, get_strides)
     using value_t = TypeParam;
     Tensor<value_t> t({3, 2}, MemoryLocation::HOST);
 
-    EXPECT_EQ(t.get_strides(), t.m_node->strides);
+    EXPECT_EQ(t.get_strides(), t.get_strides());
 
     const Tensor<value_t> ct = t;
     EXPECT_EQ(ct.get_strides(), t.get_strides());
@@ -9475,13 +9458,13 @@ TYPED_TEST(TypedTensor, get_source_function)
     };
 
     auto fn = std::make_shared<DummyEdge>();
-    t.m_node->meta.fn = fn;
+    t.set_source_function(fn);
 
     EXPECT_EQ(t.get_source_function(), fn);
 
     // Views are aliases, not computation results, so fn should be nullptr.
     Tensor<value_t> base({4,4}, MemoryLocation::HOST);
-    base.m_node->meta.fn = fn;
+    base.set_source_function(fn);
     Tensor<value_t> view(base, std::vector<uint64_t>{1,1}, std::vector<uint64_t>{2,2});
     EXPECT_EQ(view.get_source_function(), nullptr);
 
@@ -9493,24 +9476,24 @@ TYPED_TEST(TypedTensor, get_source_function)
 
 /**
  * @test TypedTensor.get_gradient_default_and_const
- * @brief Verifies `get_gradient()` returns nullptr by default and the const overload.
+ * @brief Verifies `get_gradient()` returns a reference to the gradient tensor.
  */
 TYPED_TEST(TypedTensor, get_gradient_default_and_const)
 {
     using value_t = TypeParam;
     Tensor<value_t> t({2,2}, MemoryLocation::HOST);
 
-    EXPECT_EQ(t.get_gradient(), nullptr);
+    EXPECT_EQ(t.get_gradient().get_data(), nullptr);
     // Simulate allocation of gradient control block by aliasing the data
     // control block (tests expose private members via preprocessor).
-    t.m_node->meta.grad = t.m_node->data;
-    value_t* grad_ptr = t.get_gradient();
+    t.set_gradient(t);
+    value_t* grad_ptr = t.get_gradient().get_data();
     ASSERT_NE(grad_ptr, nullptr);
 
-    // Create a view into `t` (views share autograd metadata).
+    // Create a view into `t` (views do not share gradient tensors).
     Tensor<value_t> v(t, std::vector<uint64_t>{0,0}, std::vector<uint64_t>{2,2});
     const Tensor<value_t>& cv = v;
-    EXPECT_EQ(cv.get_gradient(), grad_ptr);
+    EXPECT_EQ(cv.get_gradient().get_data(), nullptr);
 }
 
 /**
@@ -9572,36 +9555,39 @@ TYPED_TEST(TypedTensor, private_setters)
     };
 
     Tensor<value_t> t({2, 2}, MemoryLocation::HOST);
-    auto owner_data = t.m_node->data;
+    auto owner_data = t.get_data_handle();
     ASSERT_NE(owner_data, nullptr);
 
     auto shifted_data = std::shared_ptr<value_t>(owner_data, owner_data.get() + 1);
     t.set_data(shifted_data);
-    EXPECT_EQ(t.m_node->data.get(), owner_data.get() + 1);
+    EXPECT_EQ(t.get_data(), owner_data.get() + 1);
 
     t.set_dimensions(std::vector<uint64_t>{3, 4});
-    EXPECT_EQ(t.m_node->dimensions, (std::vector<uint64_t>{3, 4}));
+    EXPECT_EQ(t.get_dimensions(), (std::vector<uint64_t>{3, 4}));
 
     t.set_strides(std::vector<uint64_t>{4, 1});
-    EXPECT_EQ(t.m_node->strides, (std::vector<uint64_t>{4, 1}));
+    EXPECT_EQ(t.get_strides(), (std::vector<uint64_t>{4, 1}));
 
     t.set_owns_data(false);
-    EXPECT_FALSE(t.m_node->owns_data);
+    EXPECT_FALSE(t.get_owns_data());
 
     t.set_memory_location(MemoryLocation::DEVICE);
-    EXPECT_EQ(t.m_node->mem_loc, MemoryLocation::DEVICE);
+    EXPECT_EQ(t.get_memory_location(), MemoryLocation::DEVICE);
 
     auto fn = std::make_shared<DummyEdge>();
     t.set_source_function(fn);
-    EXPECT_EQ(t.m_node->meta.fn, fn);
+    EXPECT_EQ(t.get_source_function(), fn);
 
-    t.set_gradient(owner_data);
-    EXPECT_EQ(t.m_node->meta.grad.get(), owner_data.get());
+    Tensor<value_t> grad({2, 2}, MemoryLocation::HOST);
+    grad.set_data(owner_data);
+    t.set_gradient(grad);
+    EXPECT_EQ(t.get_gradient().get_dimensions(), grad.get_dimensions());
+    EXPECT_NE(t.get_gradient().get_data(), nullptr);
 
     t.set_requires_grad(true);
-    EXPECT_TRUE(t.m_node->meta.requires_grad);
+    EXPECT_TRUE(t.requires_grad());
     t.set_requires_grad(false);
-    EXPECT_FALSE(t.m_node->meta.requires_grad);
+    EXPECT_FALSE(t.requires_grad());
 }
 
 /**

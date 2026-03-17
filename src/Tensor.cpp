@@ -15,6 +15,15 @@ namespace temper
 {
 
 template<typename value_t>
+void Tensor<value_t>::ensure_node() noexcept
+{
+    if (!m_node)
+    {
+        m_node = std::make_shared<TensorNode<value_t>>();
+    }
+}
+
+template<typename value_t>
 void Tensor<value_t>::compute_strides()
 {
     std::vector<uint64_t> strides(get_dimensions().size());
@@ -50,7 +59,7 @@ Tensor<value_t>::Tensor(const std::vector<uint64_t> & dimensions,
                         MemoryLocation loc,
                         bool requires_grad)
     : m_node(std::make_shared<TensorNode<value_t>>(dimensions, std::vector<uint64_t>{}, true, loc,
-        AutogradMeta<value_t>{nullptr, nullptr, requires_grad}))
+        AutogradMeta<value_t>{nullptr, Tensor<value_t>{}, requires_grad}))
 {
     TEMPER_CHECK(!get_dimensions().empty(),
         validation_error,
@@ -170,7 +179,7 @@ Tensor<value_t>::Tensor(const Tensor & other)
             other.get_strides(),
             true,
             other.get_memory_location(),
-            AutogradMeta<value_t>{nullptr, nullptr,
+            AutogradMeta<value_t>{nullptr, Tensor<value_t>{},
                 other.requires_grad()})
         : other.m_node)
 {
@@ -230,7 +239,7 @@ Tensor<value_t>::Tensor(value_t val, MemoryLocation loc,
                         bool requires_grad)
     : m_node(std::make_shared<TensorNode<value_t>>(
         std::vector<uint64_t>{1}, std::vector<uint64_t>{}, true, loc,
-        AutogradMeta<value_t>{nullptr, nullptr, requires_grad}))
+        AutogradMeta<value_t>{nullptr, Tensor<value_t>{}, requires_grad}))
 {
     compute_strides();
 
@@ -271,7 +280,6 @@ Tensor<value_t>::Tensor(value_t val, MemoryLocation loc,
     {
         g_sycl_queue.memcpy(raw_ptr, &val, sizeof(value_t)).wait();
     }
-
 }
 
 template<typename value_t>
@@ -283,7 +291,7 @@ Tensor<value_t>::Tensor(const Tensor & owner,
         std::vector<uint64_t>{},
         false,
         owner.get_memory_location(),
-        AutogradMeta<value_t>{nullptr, nullptr,
+        AutogradMeta<value_t>{nullptr, Tensor<value_t>{},
             owner.requires_grad()}))
 {
     // TODO: Replace nullptr with a ViewEdge/SliceEdge that captures
@@ -342,11 +350,6 @@ Tensor<value_t>::Tensor(const Tensor & owner,
     const auto& owner_data = owner.get_data_handle();
     set_data(std::shared_ptr<value_t>(owner_data, owner_data.get() + offset));
 
-    const auto& owner_grad = owner.get_gradient_handle();
-    set_gradient(owner_grad
-        ? std::shared_ptr<value_t>(owner_grad, owner_grad.get() + offset)
-        : nullptr);
-
     // Set dimensions and strides for the view.
     set_dimensions(std::vector<uint64_t>(view_shape.begin(), view_shape.end()));
     const auto& owner_strides = owner.get_strides();
@@ -364,7 +367,7 @@ Tensor<value_t>::Tensor(const Tensor & owner,
         strides,
         false,
         owner.get_memory_location(),
-        AutogradMeta<value_t>{nullptr, nullptr,
+        AutogradMeta<value_t>{nullptr, Tensor<value_t>{},
             owner.requires_grad()}))
 {
     // TODO: Replace nullptr with a ViewEdge/SliceEdge that captures
@@ -505,11 +508,6 @@ Tensor<value_t>::Tensor(const Tensor & owner,
 
     const auto& owner_data = owner.get_data_handle();
     set_data(std::shared_ptr<value_t>(owner_data, owner_data.get() + offset));
-
-    const auto& owner_grad = owner.get_gradient_handle();
-    set_gradient(owner_grad
-        ? std::shared_ptr<value_t>(owner_grad, owner_grad.get() + offset)
-        : nullptr);
 }
 
 template<typename value_t>
@@ -525,8 +523,8 @@ Tensor<value_t> & Tensor<value_t>::operator=(const Tensor & other)
 
         if (other.get_owns_data())
         {
-            new_node->meta = AutogradMeta<value_t>{nullptr, nullptr,
-            other.requires_grad()};
+            new_node->meta = AutogradMeta<value_t>{nullptr, Tensor<value_t>{},
+                other.requires_grad()};
 
             if (new_node->dimensions.empty())
             {
@@ -2630,6 +2628,7 @@ void Tensor<value_t>::print_shape(std::ostream& os) const
 template<typename value_t>
 void Tensor<value_t>::set_data(const std::shared_ptr<value_t>& data) noexcept
 {
+    ensure_node();
     m_node->data = data;
 }
 
@@ -2643,6 +2642,7 @@ template<typename value_t>
 void Tensor<value_t>::set_dimensions(
     const std::vector<uint64_t>& dimensions) noexcept
 {
+    ensure_node();
     m_node->dimensions = dimensions;
 }
 
@@ -2650,18 +2650,21 @@ template<typename value_t>
 void Tensor<value_t>::set_strides(
     const std::vector<uint64_t>& strides) noexcept
 {
+    ensure_node();
     m_node->strides = strides;
 }
 
 template<typename value_t>
 void Tensor<value_t>::set_owns_data(bool owns_data) noexcept
 {
+    ensure_node();
     m_node->owns_data = owns_data;
 }
 
 template<typename value_t>
 void Tensor<value_t>::set_memory_location(MemoryLocation loc) noexcept
 {
+    ensure_node();
     m_node->mem_loc = loc;
 }
 
@@ -2669,42 +2672,56 @@ template<typename value_t>
 void Tensor<value_t>::set_source_function(
     const std::shared_ptr<FunctionEdge<value_t>>& fn) noexcept
 {
+    ensure_node();
     m_node->meta.fn = fn;
 }
 
 template<typename value_t>
-void Tensor<value_t>::set_gradient(const std::shared_ptr<value_t>& grad) noexcept
+void Tensor<value_t>::set_gradient(const Tensor<value_t>& grad) noexcept
 {
+    ensure_node();
     m_node->meta.grad = grad;
-}
-
-template<typename value_t>
-const std::shared_ptr<value_t>& Tensor<value_t>::get_gradient_handle() const noexcept
-{
-    return m_node->meta.grad;
 }
 
 template<typename value_t>
 const value_t * Tensor<value_t>::get_data() const noexcept
 {
+    if (!m_node)
+    {
+        return nullptr;
+    }
     return m_node->data.get();
 }
 
 template<typename value_t>
 value_t * Tensor<value_t>::get_data() noexcept
 {
+    if (!m_node)
+    {
+        return nullptr;
+    }
     return m_node->data.get();
 }
 
 template<typename value_t>
 const std::vector<uint64_t> & Tensor<value_t>::get_dimensions() const noexcept
 {
+    static const std::vector<uint64_t> empty_dims{};
+    if (!m_node)
+    {
+        return empty_dims;
+    }
     return m_node->dimensions;
 }
 
 template<typename value_t>
 const std::vector<uint64_t> & Tensor<value_t>::get_strides() const noexcept
 {
+    static const std::vector<uint64_t> empty_strides{};
+    if (!m_node)
+    {
+        return empty_strides;
+    }
     return m_node->strides;
 }
 
@@ -2739,12 +2756,20 @@ uint64_t Tensor<value_t>::get_num_elements() const noexcept
 template<typename value_t>
 MemoryLocation Tensor<value_t>::get_memory_location() const noexcept
 {
+    if (!m_node)
+    {
+        return MemoryLocation::DEVICE;
+    }
     return m_node->mem_loc;
 }
 
 template<typename value_t>
 bool Tensor<value_t>::get_owns_data() const noexcept
 {
+    if (!m_node)
+    {
+        return true;
+    }
     return m_node->owns_data;
 }
 
@@ -2752,30 +2777,45 @@ template<typename value_t>
 std::shared_ptr<FunctionEdge<value_t>>
 Tensor<value_t>::get_source_function() const noexcept
 {
+    if (!m_node)
+    {
+        return nullptr;
+    }
     return m_node->meta.fn;
 }
 
 template<typename value_t>
-value_t* Tensor<value_t>::get_gradient() noexcept
+Tensor<value_t>& Tensor<value_t>::get_gradient() noexcept
 {
-    return m_node->meta.grad.get();
+    ensure_node();
+    return m_node->meta.grad;
 }
 
 template<typename value_t>
-const value_t* Tensor<value_t>::get_gradient() const noexcept
+const Tensor<value_t>& Tensor<value_t>::get_gradient() const noexcept
 {
-    return m_node->meta.grad.get();
+    static const Tensor<value_t> empty_grad{};
+    if (!m_node)
+    {
+        return empty_grad;
+    }
+    return m_node->meta.grad;
 }
 
 template<typename value_t>
 bool Tensor<value_t>::requires_grad() const noexcept
 {
+    if (!m_node)
+    {
+        return false;
+    }
     return m_node->meta.requires_grad;
 }
 
 template<typename value_t>
 void Tensor<value_t>::set_requires_grad(bool require) noexcept
 {
+    ensure_node();
     m_node->meta.requires_grad = require;
 }
 
