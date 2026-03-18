@@ -109,6 +109,30 @@ extern template Tensor<uint64_t> sum<uint64_t>
 /// \endcond
 
 /**
+ * @brief Reduce a tensor to a target shape by summing broadcasted dimensions.
+ *
+ * Dimensions introduced or expanded by broadcasting are summed
+ * so that the result has exactly @p target_shape.
+ *
+ * Compatibility rules (right-aligned):
+ * - each target dimension must equal the input dimension, or
+ * - target dimension is 1 (dimension was broadcast).
+ *
+ * @param tensor Input tensor.
+ * @param target_shape Desired output shape.
+ * @return Tensor<value_t> Tensor reduced to @p target_shape.
+ */
+template <typename value_t>
+Tensor<value_t> sum_to_size(const Tensor<value_t> & tensor,
+    const std::vector<uint64_t>& target_shape);
+/// \cond
+extern template Tensor<float> sum_to_size<float>
+    (const Tensor<float>&, const std::vector<uint64_t>&);
+extern template Tensor<uint64_t> sum_to_size<uint64_t>
+    (const Tensor<uint64_t>&, const std::vector<uint64_t>&);
+/// \endcond
+
+/**
  * @brief Compute the cumulative sum of tensor elements (free function wrapper).
  *
  * Returns a new tensor containing the cumulative sums of @p tensor along

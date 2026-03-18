@@ -1348,6 +1348,289 @@ TYPED_TEST(TypedSum, sum_empty)
 }
 
 template<typename T>
+class TypedSumToSize : public ::testing::Test {};
+
+using SumToSizeTestTypes = ::testing::Types<float, uint64_t>;
+TYPED_TEST_SUITE(TypedSumToSize, SumToSizeTestTypes);
+
+/**
+ * @test TypedSumToSize.same_shape_returns_equivalent_values
+ * @brief sum_to_size with identical shape keeps values unchanged.
+ */
+TYPED_TEST(TypedSumToSize, same_shape_returns_equivalent_values)
+{
+    using value_t = TypeParam;
+    Tensor<value_t> t({2, 3}, MemoryLocation::DEVICE);
+    std::vector<value_t> vals = {
+        static_cast<value_t>(1), static_cast<value_t>(2),
+        static_cast<value_t>(3), static_cast<value_t>(4),
+        static_cast<value_t>(5), static_cast<value_t>(6)
+    };
+    t = vals;
+
+    Tensor<value_t> out = math::sum_to_size<value_t>(t, {2, 3});
+
+    EXPECT_EQ(out.get_dimensions(), (std::vector<uint64_t>{2, 3}));
+
+    std::vector<value_t> host(6);
+    g_sycl_queue.memcpy(host.data(), out.get_data(), 6 * sizeof(value_t)).wait();
+
+    for (size_t i = 0; i < host.size(); ++i)
+    {
+        if constexpr (std::is_floating_point<value_t>::value)
+        {
+            EXPECT_FLOAT_EQ(static_cast<double>(host[i]),
+                            static_cast<double>(vals[i]));
+        }
+        else
+        {
+            EXPECT_EQ(host[i], vals[i]);
+        }
+    }
+}
+
+/**
+ * @test TypedSumToSize.reduce_leading_dimension
+ * @brief sum_to_size reduces prepended broadcasted dimensions.
+ */
+TYPED_TEST(TypedSumToSize, reduce_leading_dimension)
+{
+    using value_t = TypeParam;
+    Tensor<value_t> t({2, 3, 4}, MemoryLocation::DEVICE);
+    std::vector<value_t> vals(24);
+    for (uint64_t i = 0; i < vals.size(); ++i)
+    {
+        vals[i] = static_cast<value_t>(i + 1);
+    }
+    t = vals;
+
+    Tensor<value_t> out = math::sum_to_size<value_t>(t, {3, 4});
+
+    EXPECT_EQ(out.get_dimensions(), (std::vector<uint64_t>{3, 4}));
+
+    std::vector<value_t> host(12);
+    g_sycl_queue.memcpy(host.data(), out.get_data(), 12 * sizeof(value_t)).wait();
+
+    for (uint64_t i = 0; i < 3; ++i)
+    {
+        for (uint64_t j = 0; j < 4; ++j)
+        {
+            value_t e = vals[(0 * 3 + i) * 4 + j] + vals[(1 * 3 + i) * 4 + j];
+            const size_t idx = static_cast<size_t>(i * 4 + j);
+            if constexpr (std::is_floating_point<value_t>::value)
+            {
+                EXPECT_FLOAT_EQ(static_cast<double>(host[idx]),
+                                static_cast<double>(e));
+            }
+            else
+            {
+                EXPECT_EQ(host[idx], e);
+            }
+        }
+    }
+}
+
+/**
+ * @test TypedSumToSize.reduce_middle_dimension_to_one
+ * @brief sum_to_size reduces dimensions where target has singleton size.
+ */
+TYPED_TEST(TypedSumToSize, reduce_middle_dimension_to_one)
+{
+    using value_t = TypeParam;
+    Tensor<value_t> t({2, 3, 4}, MemoryLocation::DEVICE);
+    std::vector<value_t> vals(24);
+    for (uint64_t i = 0; i < vals.size(); ++i)
+    {
+        vals[i] = static_cast<value_t>(i + 1);
+    }
+    t = vals;
+
+    Tensor<value_t> out = math::sum_to_size<value_t>(t, {2, 1, 4});
+
+    EXPECT_EQ(out.get_dimensions(), (std::vector<uint64_t>{2, 1, 4}));
+
+    std::vector<value_t> host(8);
+    g_sycl_queue.memcpy(host.data(), out.get_data(), 8 * sizeof(value_t)).wait();
+
+    for (uint64_t b = 0; b < 2; ++b)
+    {
+        for (uint64_t j = 0; j < 4; ++j)
+        {
+            value_t e = static_cast<value_t>(0);
+            for (uint64_t i = 0; i < 3; ++i)
+            {
+                e += vals[(b * 3 + i) * 4 + j];
+            }
+            const size_t idx = static_cast<size_t>(b * 4 + j);
+            if constexpr (std::is_floating_point<value_t>::value)
+            {
+                EXPECT_FLOAT_EQ(static_cast<double>(host[idx]),
+                                static_cast<double>(e));
+            }
+            else
+            {
+                EXPECT_EQ(host[idx], e);
+            }
+        }
+    }
+}
+
+/**
+ * @test TypedSumToSize.reduce_multiple_dimensions
+ * @brief sum_to_size supports reducing multiple axes at once.
+ */
+TYPED_TEST(TypedSumToSize, reduce_multiple_dimensions)
+{
+    using value_t = TypeParam;
+    Tensor<value_t> t({2, 3, 2, 2}, MemoryLocation::DEVICE);
+    std::vector<value_t> vals(24);
+    for (uint64_t i = 0; i < vals.size(); ++i)
+    {
+        vals[i] = static_cast<value_t>(i + 1);
+    }
+    t = vals;
+
+    Tensor<value_t> out = math::sum_to_size<value_t>(t, {1, 3, 1, 2});
+
+    EXPECT_EQ(out.get_dimensions(), (std::vector<uint64_t>{1, 3, 1, 2}));
+
+    std::vector<value_t> host(6);
+    g_sycl_queue.memcpy(host.data(), out.get_data(), 6 * sizeof(value_t)).wait();
+
+    for (uint64_t c = 0; c < 3; ++c)
+    {
+        for (uint64_t w = 0; w < 2; ++w)
+        {
+            value_t e = static_cast<value_t>(0);
+            for (uint64_t b = 0; b < 2; ++b)
+            {
+                for (uint64_t h = 0; h < 2; ++h)
+                {
+                    e += vals[((b * 3 + c) * 2 + h) * 2 + w];
+                }
+            }
+            const size_t idx = static_cast<size_t>(c * 2 + w);
+            if constexpr (std::is_floating_point<value_t>::value)
+            {
+                EXPECT_FLOAT_EQ(static_cast<double>(host[idx]),
+                                static_cast<double>(e));
+            }
+            else
+            {
+                EXPECT_EQ(host[idx], e);
+            }
+        }
+    }
+}
+
+/**
+ * @test TypedSumToSize.reduce_to_scalar_shape_one
+ * @brief sum_to_size can reduce all dimensions to shape {1}.
+ */
+TYPED_TEST(TypedSumToSize, reduce_to_scalar_shape_one)
+{
+    using value_t = TypeParam;
+    Tensor<value_t> t({2, 3}, MemoryLocation::DEVICE);
+    std::vector<value_t> vals = {
+        static_cast<value_t>(1), static_cast<value_t>(2),
+        static_cast<value_t>(3), static_cast<value_t>(4),
+        static_cast<value_t>(5), static_cast<value_t>(6)
+    };
+    t = vals;
+
+    Tensor<value_t> out = math::sum_to_size<value_t>(t, {1});
+
+    EXPECT_EQ(out.get_dimensions(), (std::vector<uint64_t>{1}));
+
+    std::vector<value_t> host(1);
+    g_sycl_queue.memcpy(host.data(), out.get_data(), sizeof(value_t)).wait();
+
+    value_t expect = static_cast<value_t>(0);
+    for (value_t v : vals)
+    {
+        expect += v;
+    }
+
+    if constexpr (std::is_floating_point<value_t>::value)
+    {
+        EXPECT_FLOAT_EQ(static_cast<double>(host[0]),
+                        static_cast<double>(expect));
+    }
+    else
+    {
+        EXPECT_EQ(host[0], expect);
+    }
+}
+
+/**
+ * @test TypedSumToSize.alias_view_reshape_path
+ * @brief sum_to_size handles alias/view tensors when only reshape is needed.
+ */
+TYPED_TEST(TypedSumToSize, alias_view_reshape_path)
+{
+    using value_t = TypeParam;
+    Tensor<value_t> base({1, 3}, MemoryLocation::DEVICE);
+    std::vector<value_t> vals = {
+        static_cast<value_t>(7), static_cast<value_t>(8),
+        static_cast<value_t>(9)
+    };
+    base = vals;
+
+    std::vector<uint64_t> start_indices = {0ull, 0ull};
+    std::vector<uint64_t> dims = {1ull, 3ull};
+    std::vector<uint64_t> strides = {3ull, 1ull};
+    Tensor<value_t> alias_view(base, start_indices, dims, strides);
+
+    Tensor<value_t> out = math::sum_to_size<value_t>(alias_view, {3});
+
+    EXPECT_EQ(out.get_dimensions(), (std::vector<uint64_t>{3}));
+
+    std::vector<value_t> host(3);
+    g_sycl_queue.memcpy(host.data(), out.get_data(), 3 * sizeof(value_t)).wait();
+
+    for (size_t i = 0; i < host.size(); ++i)
+    {
+        if constexpr (std::is_floating_point<value_t>::value)
+        {
+            EXPECT_FLOAT_EQ(static_cast<double>(host[i]),
+                            static_cast<double>(vals[i]));
+        }
+        else
+        {
+            EXPECT_EQ(host[i], vals[i]);
+        }
+    }
+}
+
+/**
+ * @test TypedSumToSize.target_rank_exceeds_input_throws
+ * @brief sum_to_size throws when target rank is greater than input rank.
+ */
+TYPED_TEST(TypedSumToSize, target_rank_exceeds_input_throws)
+{
+    using value_t = TypeParam;
+    Tensor<value_t> t({2, 3}, MemoryLocation::DEVICE);
+
+    EXPECT_THROW(
+        { auto out = math::sum_to_size<value_t>(t, {1, 2, 3}); },
+        temper::validation_error);
+}
+
+/**
+ * @test TypedSumToSize.incompatible_target_shape_throws
+ * @brief sum_to_size throws when target shape is not broadcast-compatible.
+ */
+TYPED_TEST(TypedSumToSize, incompatible_target_shape_throws)
+{
+    using value_t = TypeParam;
+    Tensor<value_t> t({2, 3}, MemoryLocation::DEVICE);
+
+    EXPECT_THROW(
+        { auto out = math::sum_to_size<value_t>(t, {2, 2}); },
+        temper::validation_error);
+}
+
+template<typename T>
 class TypedCumsum : public ::testing::Test {};
 
 using CumsumTestTypes = ::testing::Types<float, uint64_t>;

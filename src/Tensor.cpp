@@ -4,6 +4,7 @@
  */
 
 #include "temper/Tensor.hpp"
+#include "temper/Math.hpp"
 #include "temper/SYCLUtils.hpp"
 #include "temper/Utils.hpp"
 #include "temper/Errors.hpp"
@@ -2684,6 +2685,13 @@ void Tensor<value_t>::set_gradient(const Tensor<value_t>& grad) noexcept
 }
 
 template<typename value_t>
+void Tensor<value_t>::set_gradient(Tensor<value_t> && grad) noexcept
+{
+    ensure_node();
+    m_node->meta.grad = std::move(grad);
+}
+
+template<typename value_t>
 const value_t * Tensor<value_t>::get_data() const noexcept
 {
     if (!m_node)
@@ -2831,8 +2839,9 @@ void Tensor<value_t>::backward()
 
     // By default, the entry point for the backward pass is a Tensor filled
     // with 1.0 of the same shape as the original tensor.
-    Tensor<value_t> grad_output(get_dimensions(), get_memory_location());
-
+    Tensor<value_t> grad_output =
+        math::ones<value_t>(get_dimensions(), get_memory_location());
+    backward(grad_output);
 }
 
 template<typename value_t>
@@ -2844,7 +2853,35 @@ void Tensor<value_t>::backward(const Tensor<value_t> & grad_output)
         validation_error,
         R"(Tensor::backward:
             cannot call backward on a tensor that does not require grad.)");
-    (void)grad_output;
+
+    Tensor<value_t> unbroadcasted;
+    const Tensor<value_t>* grad_to_use = &grad_output;
+
+    // If the grad output is not the same shape as this tensor,
+    // we need to unbroadcast it by summing over the broadcasted dimensions.
+    if (grad_output.get_dimensions() != get_dimensions())
+    {
+        unbroadcasted = math::sum_to_size(grad_output, get_dimensions());
+        grad_to_use = &unbroadcasted;
+    }
+
+    // Now we can add the grad to this tensor's grad.
+    // If this tensor doesn't have a grad yet, we can just set it
+    //to the grad output. Otherwise, we need to add to the existing grad.
+    if (get_gradient().get_data() == nullptr)
+    {
+        set_gradient(*grad_to_use);
+    }
+    else
+    {
+        set_gradient(get_gradient() + (*grad_to_use));
+    }
+
+    // Finally, we need to call backward on the source function, if it exists.
+    if (auto source_fn = get_source_function())
+    {
+        source_fn->backward(*grad_to_use);
+    }
 }
 
 template<typename value_t>

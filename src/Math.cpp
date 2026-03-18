@@ -373,6 +373,67 @@ template Tensor<uint64_t> sum<uint64_t>
     (const Tensor<uint64_t>&, std::optional<std::vector<int64_t>>);
 
 template <typename value_t>
+Tensor<value_t> sum_to_size(const Tensor<value_t> & tensor,
+    const std::vector<uint64_t>& target_shape)
+{
+    const auto & input_shape = tensor.get_dimensions();
+    const int64_t input_rank = tensor.get_rank();
+    const int64_t target_rank = static_cast<int64_t>(target_shape.size());
+
+    TEMPER_CHECK(target_rank <= input_rank,
+        validation_error,
+        "sum_to_size: target rank exceeds input rank");
+
+    std::vector<uint64_t> aligned_target(input_rank, 1);
+    const int64_t offset = input_rank - target_rank;
+    for (int64_t i = 0; i < target_rank; ++i)
+    {
+        aligned_target[offset + i] = target_shape[i];
+    }
+
+    std::vector<int64_t> axes_to_sum;
+    axes_to_sum.reserve(input_rank);
+    for (int64_t d = 0; d < input_rank; ++d)
+    {
+        const uint64_t in_dim = input_shape[d];
+        const uint64_t tgt_dim = aligned_target[d];
+
+        TEMPER_CHECK(tgt_dim == in_dim || tgt_dim == 1,
+            validation_error,
+            "sum_to_size: target shape is not broadcast-compatible");
+
+        if (tgt_dim == 1 && in_dim != 1)
+        {
+            axes_to_sum.push_back(static_cast<int64_t>(d));
+        }
+    }
+
+    if (axes_to_sum.empty())
+    {
+        if (input_shape == target_shape)
+        {
+            return tensor;
+        }
+
+        // `Tensor::reshape` cannot be called on alias/view tensors.
+        // The free-function wrapper clones first, then reshapes.
+        return reshape(tensor, target_shape);
+    }
+
+    Tensor<value_t> out = tensor.sum(axes_to_sum);
+    if (out.get_dimensions() != target_shape)
+    {
+        out.reshape(target_shape);
+    }
+
+    return out;
+}
+template Tensor<float> sum_to_size<float>
+    (const Tensor<float>&, const std::vector<uint64_t>&);
+template Tensor<uint64_t> sum_to_size<uint64_t>
+    (const Tensor<uint64_t>&, const std::vector<uint64_t>&);
+
+template <typename value_t>
 Tensor<value_t> cumsum(const Tensor<value_t> & tensor,
     std::optional<int64_t> axis_opt)
 {

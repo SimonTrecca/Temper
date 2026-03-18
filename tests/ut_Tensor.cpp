@@ -9536,6 +9536,114 @@ TYPED_TEST(TypedTensor, set_requires_grad_effect)
 }
 
 /**
+ * @test TypedTensor.backward_without_requires_grad_throws
+ * @brief Verifies backward() and backward(grad) reject tensors
+ *        that do not require gradients.
+ */
+TYPED_TEST(TypedTensor, backward_without_requires_grad_throws)
+{
+    using value_t = TypeParam;
+
+    Tensor<value_t> t({2, 2}, MemoryLocation::HOST);
+    Tensor<value_t> grad({2, 2}, MemoryLocation::HOST);
+    grad = {
+        static_cast<value_t>(1), static_cast<value_t>(2),
+        static_cast<value_t>(3), static_cast<value_t>(4)
+    };
+
+    EXPECT_THROW(t.backward(), temper::validation_error);
+    EXPECT_THROW(t.backward(grad), temper::validation_error);
+}
+
+/**
+ * @test TypedTensor.backward_default_uses_ones_like
+ * @brief Verifies backward() seeds gradient with ones of matching shape.
+ */
+TYPED_TEST(TypedTensor, backward_default_uses_ones_like)
+{
+    using value_t = TypeParam;
+
+    Tensor<value_t> t({2, 3}, MemoryLocation::HOST, true);
+    t.backward();
+
+    const Tensor<value_t>& grad = t.get_gradient();
+    ASSERT_NE(grad.get_data(), nullptr);
+    EXPECT_EQ(grad.get_dimensions(), (std::vector<uint64_t>{2, 3}));
+
+    for (uint64_t i = 0; i < grad.get_num_elements(); ++i)
+    {
+        EXPECT_EQ(grad.at(i), static_cast<value_t>(1));
+    }
+}
+
+/**
+ * @test TypedTensor.backward_unbroadcasts_accumulates_and_propagates
+ * @brief Verifies backward(grad) unbroadcasts to tensor shape,
+ * accumulates over repeated calls, and propagates the normalized grad.
+ */
+TYPED_TEST(TypedTensor, backward_unbroadcasts_accumulates_and_propagates)
+{
+    using value_t = TypeParam;
+
+    struct RecordingEdge : public temper::FunctionEdge<value_t>
+    {
+        RecordingEdge() : FunctionEdge<value_t>("recording-edge") {}
+
+        void forward() override {}
+
+        void backward(const Tensor<value_t>& grad_output) override
+        {
+            ++calls;
+            last_grad = grad_output;
+        }
+
+        std::vector<std::shared_ptr<TensorNode<value_t>>> inputs() const override
+        {
+            return {};
+        }
+
+        std::shared_ptr<TensorNode<value_t>> output() const override
+        {
+            return nullptr;
+        }
+
+        int calls = 0;
+        Tensor<value_t> last_grad;
+    };
+
+    Tensor<value_t> t({2, 1}, MemoryLocation::HOST, true);
+    auto edge = std::make_shared<RecordingEdge>();
+    t.set_source_function(edge);
+
+    Tensor<value_t> grad_output({2, 3}, MemoryLocation::HOST);
+    grad_output = {
+        static_cast<value_t>(1), static_cast<value_t>(2), static_cast<value_t>(3),
+        static_cast<value_t>(4), static_cast<value_t>(5), static_cast<value_t>(6)
+    };
+
+    t.backward(grad_output);
+
+    const Tensor<value_t>& g1 = t.get_gradient();
+    ASSERT_NE(g1.get_data(), nullptr);
+    EXPECT_EQ(g1.get_dimensions(), (std::vector<uint64_t>{2, 1}));
+    EXPECT_EQ(g1.at(0), static_cast<value_t>(6));
+    EXPECT_EQ(g1.at(1), static_cast<value_t>(15));
+
+    ASSERT_EQ(edge->calls, 1);
+    EXPECT_EQ(edge->last_grad.get_dimensions(), (std::vector<uint64_t>{2, 1}));
+    EXPECT_EQ(edge->last_grad.at(0), static_cast<value_t>(6));
+    EXPECT_EQ(edge->last_grad.at(1), static_cast<value_t>(15));
+
+    t.backward(grad_output);
+
+    const Tensor<value_t>& g2 = t.get_gradient();
+    EXPECT_EQ(g2.get_dimensions(), (std::vector<uint64_t>{2, 1}));
+    EXPECT_EQ(g2.at(0), static_cast<value_t>(12));
+    EXPECT_EQ(g2.at(1), static_cast<value_t>(30));
+    EXPECT_EQ(edge->calls, 2);
+}
+
+/**
  * @test TypedTensor.private_setters
  * @brief Verifies private internal setters update all Tensor node fields.
  */

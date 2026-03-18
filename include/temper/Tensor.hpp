@@ -156,6 +156,16 @@ private:
     void set_gradient(const Tensor<value_t>& grad) noexcept;
 
     /**
+     * @brief Move-sets the gradient storage handle for this tensor.
+     *
+     * Transfers gradient tensor metadata/storage without deep-copying
+     * the underlying allocation when possible.
+     *
+     * @param grad Gradient tensor rvalue.
+     */
+    void set_gradient(Tensor<value_t> && grad) noexcept;
+
+    /**
      * @brief Computes strides using dimensions.
      *
      * Resizes `m_strides` and fills each element so that
@@ -1271,16 +1281,17 @@ public:
     /**
      * @brief Runs reverse-mode autodiff starting from this tensor.
      *
-     * Current implementation is a placeholder and intentionally performs
-     * no work.
+     * Uses an all-ones tensor as root gradient and propagates gradients
+     * through the recorded computation graph.
      */
     void backward();
 
     /**
      * @brief Runs reverse-mode autodiff with an explicit root gradient.
      *
-     * Current implementation is a placeholder and intentionally performs
-     * no work.
+     * Normalizes @p grad_output to this tensor shape (including
+     * unbroadcast reduction when needed), accumulates into this tensor
+     * gradient, then propagates to the source function edge.
      *
      * @param grad_output Upstream gradient for this tensor.
      */
