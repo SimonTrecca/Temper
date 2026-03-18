@@ -9556,6 +9556,49 @@ TYPED_TEST(TypedTensor, backward_without_requires_grad_throws)
 }
 
 /**
+ * @test TypedTensor.backward_uninitialized_requires_grad_behavior
+ * @brief Verifies backward behavior for a default-constructed tensor with
+ *        requires_grad=true, both with implicit and explicit (uninitialized)
+ *        gradient inputs.
+ */
+TYPED_TEST(TypedTensor, backward_uninitialized_requires_grad_behavior)
+{
+    using value_t = TypeParam;
+
+    Tensor<value_t> t;
+    t.set_requires_grad(true);
+    EXPECT_TRUE(t.requires_grad());
+
+    // Uninitialized tensors have empty shape, so default backward() cannot
+    // seed ones-like gradient and must fail validation.
+    EXPECT_THROW(t.backward(), temper::validation_error);
+
+    // Explicit uninitialized grad currently follows the direct path and
+    // should not throw.
+    Tensor<value_t> uninitialized_grad;
+    EXPECT_NO_THROW(t.backward(uninitialized_grad));
+
+    const Tensor<value_t>& g = t.get_gradient();
+    EXPECT_EQ(g.get_data(), nullptr);
+    EXPECT_TRUE(g.get_dimensions().empty());
+}
+
+/**
+ * @test TypedTensor.backward_with_empty_grad_throws
+ * @brief Verifies backward(grad) rejects an empty gradient tensor.
+ */
+TYPED_TEST(TypedTensor, backward_with_empty_grad_throws)
+{
+    using value_t = TypeParam;
+
+    Tensor<value_t> t({2, 2}, MemoryLocation::HOST, true);
+    Tensor<value_t> empty_grad;
+
+    EXPECT_THROW(t.backward(empty_grad), temper::validation_error);
+    EXPECT_EQ(t.get_gradient().get_data(), nullptr);
+}
+
+/**
  * @test TypedTensor.backward_default_uses_ones_like
  * @brief Verifies backward() seeds gradient with ones of matching shape.
  */
