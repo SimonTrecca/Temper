@@ -16,6 +16,11 @@ namespace temper
 {
 
 template<typename value_t>
+Tensor<value_t>::Tensor(const std::shared_ptr<TensorNode<value_t>>& node) noexcept
+    : m_node(node)
+{}
+
+template<typename value_t>
 void Tensor<value_t>::ensure_node() noexcept
 {
     if (!m_node)
@@ -174,57 +179,8 @@ Tensor<value_t>::Tensor(const std::initializer_list<uint64_t> & dimensions,
 
 template<typename value_t>
 Tensor<value_t>::Tensor(const Tensor & other)
-     : m_node(other.get_owns_data()
-        ? std::make_shared<TensorNode<value_t>>(
-            other.get_dimensions(),
-            other.get_strides(),
-            true,
-            other.get_memory_location(),
-            AutogradMeta<value_t>{nullptr, Tensor<value_t>{},
-                other.requires_grad()})
-        : other.m_node)
-{
-    if (other.get_owns_data())
-    {
-        // If other has been default constructed, build an empty ptr and return.
-        if (get_dimensions().empty())
-        {
-            set_data(std::shared_ptr<value_t>(nullptr));
-            return;
-        }
-
-        uint64_t total_size = other.get_num_elements();
-
-        const size_t alloc_bytes =
-            static_cast<size_t>(total_size) * sizeof(value_t);
-
-        // Allocate same kind of USM as other's mem_loc.
-        value_t* raw_ptr = nullptr;
-        if (get_memory_location() == MemoryLocation::HOST)
-        {
-            raw_ptr = static_cast<value_t*>
-                (sycl::malloc_shared(alloc_bytes, g_sycl_queue));
-        }
-        else
-        {
-            raw_ptr = static_cast<value_t*>
-                (sycl::malloc_device(alloc_bytes, g_sycl_queue));
-        }
-
-        TEMPER_CHECK(raw_ptr,
-            device_error,
-            R"(Tensor(copy constructor):
-                error allocating tensor memory on device.)");
-
-        set_data(std::shared_ptr<value_t>(raw_ptr,
-            [](value_t* p) { if (p) sycl::free(p, g_sycl_queue); }));
-
-        // Copy contents (assume other.get_data() is valid).
-        g_sycl_queue.memcpy
-            (get_data(), other.get_data(), alloc_bytes).wait();
-
-    }
-}
+    : m_node(other.m_node)
+{}
 
 template<typename value_t>
 Tensor<value_t>::Tensor(Tensor && other) noexcept
@@ -348,7 +304,7 @@ Tensor<value_t>::Tensor(const Tensor & owner,
     }
 
     // Aliasing constructors: Shared control block, shifted raw pointer.
-    const auto& owner_data = owner.get_data_handle();
+    auto owner_data = owner.get_data_handle();
     set_data(std::shared_ptr<value_t>(owner_data, owner_data.get() + offset));
 
     // Set dimensions and strides for the view.
@@ -507,7 +463,7 @@ Tensor<value_t>::Tensor(const Tensor & owner,
         R"(Tensor(alias view constructor):
             view exceeds owner's bounds.)");
 
-    const auto& owner_data = owner.get_data_handle();
+    auto owner_data = owner.get_data_handle();
     set_data(std::shared_ptr<value_t>(owner_data, owner_data.get() + offset));
 }
 
@@ -516,65 +472,7 @@ Tensor<value_t> & Tensor<value_t>::operator=(const Tensor & other)
 {
     if (this != &other)
     {
-        auto new_node = std::make_shared<TensorNode<value_t>>();
-        new_node->dimensions = other.get_dimensions();
-        new_node->strides = other.get_strides();
-        new_node->owns_data = other.get_owns_data();
-        new_node->mem_loc = other.get_memory_location();
-
-        if (other.get_owns_data())
-        {
-            new_node->meta = AutogradMeta<value_t>{nullptr, Tensor<value_t>{},
-                other.requires_grad()};
-
-            if (new_node->dimensions.empty())
-            {
-                new_node->data = std::shared_ptr<value_t>(nullptr);
-                m_node = std::move(new_node);
-                return *this;
-            }
-
-            uint64_t total_size = other.get_num_elements();
-
-            const size_t alloc_bytes =
-                static_cast<size_t>(total_size) * sizeof(value_t);
-
-            value_t* raw_ptr = nullptr;
-            if (new_node->mem_loc == MemoryLocation::HOST)
-            {
-                raw_ptr = static_cast<value_t*>(sycl::malloc_shared
-                    (alloc_bytes, g_sycl_queue));
-            }
-            else
-            {
-                raw_ptr = static_cast<value_t*>(sycl::malloc_device
-                    (alloc_bytes, g_sycl_queue));
-            }
-
-            TEMPER_CHECK(raw_ptr,
-                device_error,
-                R"(Tensor(operator=):
-                    error allocating tensor memory on device.)");
-
-            new_node->data = std::shared_ptr<value_t>(raw_ptr,
-                [](value_t* p)
-                {
-                    if (p)
-                    {
-                        sycl::free(p, g_sycl_queue);
-                    }
-                }
-            );
-
-            g_sycl_queue.memcpy(new_node->data.get(), other.get_data(),
-                                alloc_bytes).wait();
-
-            m_node = std::move(new_node);
-        }
-        else
-        {
-            m_node = other.m_node;
-        }
+        m_node = other.m_node;
     }
     return *this;
 }
@@ -2634,9 +2532,14 @@ void Tensor<value_t>::set_data(const std::shared_ptr<value_t>& data) noexcept
 }
 
 template<typename value_t>
-const std::shared_ptr<value_t>& Tensor<value_t>::get_data_handle() const noexcept
+std::shared_ptr<value_t> Tensor<value_t>::get_data_handle() const noexcept
 {
-    return m_node->data;
+    if (m_node)
+    {
+        return m_node->data;
+    }
+
+    return {};
 }
 
 template<typename value_t>

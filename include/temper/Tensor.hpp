@@ -78,6 +78,20 @@ private:
     /// Stable internal tensor identity used for graph references.
     std::shared_ptr<TensorNode<value_t>> m_node{nullptr};
 
+    /**
+     * @brief Wrap an existing tensor node identity.
+     *
+     * Internal constructor used by autograd internals when they need a
+     * Tensor API view over a stored TensorNode handle.
+     *
+     * @param node Existing tensor node to wrap.
+     */
+    explicit Tensor(const std::shared_ptr<TensorNode<value_t>>& node) noexcept;
+
+    /// FunctionEdge internals may bridge between Tensor and TensorNode.
+    template<typename>
+    friend class FunctionEdge;
+
     /// Ensure node exists before mutating metadata/storage handles.
     void ensure_node() noexcept;
 
@@ -96,9 +110,9 @@ private:
      *
      * Exposes the control block needed for aliasing shared_ptr views.
      *
-     * @return const std::shared_ptr<value_t>& Shared data handle.
+     * @return std::shared_ptr<value_t> Shared data handle.
      */
-    const std::shared_ptr<value_t>& get_data_handle() const noexcept;
+    std::shared_ptr<value_t> get_data_handle() const noexcept;
 
     /**
      * @brief Sets the logical dimensions (shape) of this tensor.
@@ -752,7 +766,10 @@ public:
     /**
      * @brief Copy constructor.
      *
-     * Performs a deep copy of data and metadata.
+        * Performs a shallow copy of the internal tensor node.
+        *
+        * The constructed tensor aliases the same data, shape/stride metadata,
+        * and autograd state as @p other.
      *
      * @param other The tensor to copy from.
      */
@@ -825,7 +842,10 @@ public:
     /**
      * @brief Copy assignment operator.
      *
-     * Performs a deep copy of metadata and (if owning) the underlying buffer.
+        * Performs a shallow copy of the internal tensor node.
+        *
+        * After assignment, both tensors alias the same storage and autograd
+        * metadata.
      *
      * @param other The tensor to assign from.
      * @return Reference to this tensor.

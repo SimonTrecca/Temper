@@ -911,6 +911,7 @@ TYPED_TEST(TypedTensor, copy_constructor)
     Tensor<value_t> t2(t1);
 
     EXPECT_EQ(t2.get_memory_location(), t1.get_memory_location());
+    EXPECT_EQ(t2.get_data(), t1.get_data());
 
     std::vector<value_t> host(4);
     g_sycl_queue.memcpy(host.data(), t2.get_data(),
@@ -952,8 +953,7 @@ TYPED_TEST(TypedTensor, copy_constructor_on_default_constructed)
 
 /**
  * @test TypedTensor.copy_constructor_autograd_preserves_requires_grad
- * @brief Copying an owning tensor should preserve requires_grad but clear
- * fn and grad (the copy is a new leaf, not produced by the same operation).
+ * @brief Copying an owning tensor should alias the same autograd state.
  */
 TYPED_TEST(TypedTensor, copy_constructor_autograd_preserves_requires_grad)
 {
@@ -971,10 +971,10 @@ TYPED_TEST(TypedTensor, copy_constructor_autograd_preserves_requires_grad)
     EXPECT_TRUE(t.requires_grad());
     ASSERT_NE(t.get_gradient().get_data(), nullptr);
 
-    // Copy preserves requires_grad but clears fn and grad (new leaf).
+    // Copy aliases the same autograd state.
     EXPECT_TRUE(cp.requires_grad());
     EXPECT_EQ(cp.get_source_function(), nullptr);
-    EXPECT_EQ(cp.get_gradient().get_data(), nullptr);
+    EXPECT_EQ(cp.get_gradient().get_data(), t.get_gradient().get_data());
 }
 
 /**
@@ -1039,6 +1039,7 @@ TYPED_TEST(TypedTensor, copy_constructor_host)
     t1 = values;
 
     Tensor<value_t> t2(t1);
+    EXPECT_EQ(t2.get_data(), t1.get_data());
 
     std::vector<value_t> host(4);
     std::memcpy(host.data(), t2.get_data(),
@@ -2351,6 +2352,7 @@ TYPED_TEST(TypedTensor, operator_equals_copy_assignment)
     t2 = t1;
 
     EXPECT_EQ(t2.get_memory_location(), t1.get_memory_location());
+    EXPECT_EQ(t2.get_data(), t1.get_data());
 
     std::vector<value_t> host(4);
     g_sycl_queue.memcpy(host.data(), t2.get_data(),
@@ -2482,9 +2484,7 @@ TYPED_TEST(TypedTensor, operator_equals_copy_from_view)
 
 /**
  * @test TypedTensor.operator_equals_copy_autograd
- * @brief Copy-assignment should preserve requires_grad but clear fn and grad
- * when assigning from an owning tensor, and copy meta when assigning from a
- * view.
+ * @brief Copy-assignment should alias autograd metadata.
  */
 TYPED_TEST(TypedTensor, operator_equals_copy_autograd)
 {
@@ -2496,11 +2496,11 @@ TYPED_TEST(TypedTensor, operator_equals_copy_autograd)
     src.set_gradient(src);
 
     Tensor<value_t> dst;
-    dst = src; // dst should be owning: preserves requires_grad, clears fn/grad
+    dst = src;
 
     EXPECT_TRUE(dst.requires_grad());
     EXPECT_EQ(dst.get_source_function(), nullptr);
-    EXPECT_EQ(dst.get_gradient().get_data(), nullptr);
+    EXPECT_EQ(dst.get_gradient().get_data(), src.get_gradient().get_data());
 
     // Now assignment from a view should copy meta
     src.set_requires_grad(true);
