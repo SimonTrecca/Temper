@@ -812,9 +812,8 @@ Tensor<value_t> Tensor<value_t>::operator+(const Tensor & other) const
     if (result.requires_grad())
     {
         result.set_source_function(std::make_shared<AddEdge<value_t>>(
-            m_node,
-            other.m_node,
-            result.m_node));
+            *this,
+            other));
     }
 
     return result;
@@ -2757,33 +2756,27 @@ void Tensor<value_t>::backward(const Tensor<value_t> & grad_output)
         R"(Tensor::backward:
             cannot call backward on a tensor that does not require grad.)");
 
-    Tensor<value_t> unbroadcasted;
-    const Tensor<value_t>* grad_to_use = &grad_output;
-
-    // If the grad output is not the same shape as this tensor,
-    // we need to unbroadcast it by summing over the broadcasted dimensions.
-    if (grad_output.get_dimensions() != get_dimensions())
-    {
-        unbroadcasted = math::sum_to_size(grad_output, get_dimensions());
-        grad_to_use = &unbroadcasted;
-    }
+    const Tensor<value_t> grad_to_use =
+        (grad_output.get_dimensions() == get_dimensions())
+        ? grad_output
+        : math::sum_to_size(grad_output, get_dimensions());
 
     // Now we can add the grad to this tensor's grad.
     // If this tensor doesn't have a grad yet, we can just set it
     //to the grad output. Otherwise, we need to add to the existing grad.
     if (get_gradient().get_data() == nullptr)
     {
-        set_gradient(*grad_to_use);
+        set_gradient(std::move(grad_to_use.clone()));
     }
     else
     {
-        set_gradient(get_gradient() + (*grad_to_use));
+        set_gradient(std::move(get_gradient() + (grad_to_use)));
     }
 
     // Finally, we need to call backward on the source function, if it exists.
     if (auto source_fn = get_source_function())
     {
-        source_fn->backward(*grad_to_use);
+        source_fn->backward(grad_to_use);
     }
 }
 

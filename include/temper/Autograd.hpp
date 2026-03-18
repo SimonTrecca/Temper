@@ -26,20 +26,10 @@ template <typename value_t>
 class Tensor;
 
 /**
- * @brief Forward declaration of TensorNode.
- *
- * TensorNode is the stable internal identity used by the autograd graph.
- * It is separate from the public @ref Tensor wrapper so edges can keep
- * durable references to graph operands and results.
- */
-template <typename value_t>
-struct TensorNode;
-
-/**
  * @brief Base interface for a functional edge in the graph.
  *
  * A FunctionEdge represents the mathematical relationship between
- * input tensors and their output. It stores context to re-run the
+ * input tensors and their operation. It stores context to re-run the
  * calculation (forward) or compute gradients (backward).
  */
 template <typename value_t>
@@ -49,8 +39,8 @@ public:
     /**
      * @brief Construct an edge with a mandatory operation name.
      *
-     * Initializes an operation node with a unique name but no stored
-     * input or output tensors.
+    * Initializes an operation node with a unique name but no stored
+    * input tensors.
      *
      * @param op_name Unique identifier (e.g., "add", "matmul").
      */
@@ -60,20 +50,16 @@ public:
     /**
      * @brief Construct an edge with an operation name and connected tensors.
      *
-     * Initializes an operation node with a unique name, the input tensors
-     * consumed by the operation, and an optional weak reference to the
-     * produced output tensor.
+    * Initializes an operation node with a unique name and the input tensors
+    * consumed by the operation.
      *
      * @param op_name Unique identifier (e.g., "add", "matmul").
      * @param inputs Input tensors consumed by this operation.
-     * @param output Output tensor produced by this operation.
      */
     FunctionEdge(std::string op_name,
-                std::vector<std::shared_ptr<TensorNode<value_t>>> inputs,
-                std::weak_ptr<TensorNode<value_t>> output = {})
+        std::vector<Tensor<value_t>> inputs)
         : m_op_name(std::move(op_name)),
-          m_inputs(std::move(inputs)),
-          m_output(std::move(output)) {}
+          m_inputs(std::move(inputs)) {}
 
     /**
      * @brief Virtual destructor for safe inheritance.
@@ -104,21 +90,12 @@ public:
 
     /**
      * @brief Get the input tensors connected by this edge.
-     * @return A vector of shared pointers to the input tensors.
+     * @return A vector of tensor handles to the input tensors.
      */
-    virtual std::vector<std::shared_ptr<TensorNode<value_t>>>
+    virtual std::vector<Tensor<value_t>>
     inputs() const
     {
         return m_inputs;
-    }
-
-    /**
-     * @brief Get the output tensor produced by this edge.
-     * @return A shared pointer to the resulting tensor.
-     */
-    virtual std::shared_ptr<TensorNode<value_t>> output() const
-    {
-        return m_output.lock();
     }
 
 protected:
@@ -130,32 +107,17 @@ protected:
      *
      * @param inputs New input tensor list.
      */
-    void set_inputs(std::vector<std::shared_ptr<TensorNode<value_t>>> inputs)
+    void set_inputs(std::vector<Tensor<value_t>> inputs)
     {
         m_inputs = std::move(inputs);
-    }
-
-    /**
-     * @brief Replace the currently stored output tensor.
-     *
-     * Updates the weak reference to the tensor produced by this edge.
-     * Intended for use by derived operation nodes during setup.
-     *
-     * @param output New weak reference to the output tensor.
-     */
-    void set_output(std::weak_ptr<TensorNode<value_t>> output)
-    {
-        m_output = std::move(output);
     }
 
     /// Unique identifier for serialization.
     std::string m_op_name;
 
-    /// Stable references to the tensors consumed by this operation.
-    std::vector<std::shared_ptr<TensorNode<value_t>>> m_inputs{};
+    /// Stable tensor handles consumed by this operation.
+    std::vector<Tensor<value_t>> m_inputs{};
 
-    /// Weak reference to the node produced by this operation.
-    std::weak_ptr<TensorNode<value_t>> m_output{};
 };
 
 /**
@@ -181,9 +143,9 @@ struct AutogradMeta
 /**
  * @brief Autograd edge for element-wise tensor addition.
  *
- * Stores stable references to the two input tensors and an optional weak
- * reference to the produced output tensor via the @ref FunctionEdge base
- * class. Backward propagation logic will be implemented in a later step.
+ * Stores stable handles to the two input tensors via the
+ * @ref FunctionEdge base class.
+ * Backward propagation logic will be implemented in a later step.
  *
  * @tparam value_t Tensor numeric type.
  */
@@ -196,11 +158,9 @@ public:
      *
      * @param lhs Left-hand input tensor.
      * @param rhs Right-hand input tensor.
-     * @param out Optional weak reference to the produced output tensor.
      */
-        AddEdge(const std::shared_ptr<TensorNode<value_t>> & lhs,
-            const std::shared_ptr<TensorNode<value_t>> & rhs,
-            std::weak_ptr<TensorNode<value_t>> out = {});
+    AddEdge(const Tensor<value_t> & lhs,
+        const Tensor<value_t> & rhs);
 
     /**
      * @brief Re-execute the forward pass.

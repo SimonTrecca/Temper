@@ -995,10 +995,8 @@ TYPED_TEST(TypedTensor, copy_constructor_autograd_from_view_preserves_meta)
         DummyEdge() : FunctionEdge<value_t>("dummy") {}
         void forward() override {}
         void backward(const Tensor<value_t>&) override {}
-        std::vector<std::shared_ptr<TensorNode<value_t>>> inputs() const override
+        std::vector<Tensor<value_t>> inputs() const override
         { return {}; }
-        std::shared_ptr<TensorNode<value_t>> output() const override
-        { return nullptr; }
     };
 
     owner.set_requires_grad(true);
@@ -1129,10 +1127,8 @@ TYPED_TEST(TypedTensor, move_constructor_autograd_transfers_meta)
         DummyEdge() : FunctionEdge<value_t>("move") {}
         void forward() override {}
         void backward(const Tensor<value_t>&) override {}
-        std::vector<std::shared_ptr<TensorNode<value_t>>> inputs() const override
+        std::vector<Tensor<value_t>> inputs() const override
         { return {}; }
-        std::shared_ptr<TensorNode<value_t>> output() const override
-        { return nullptr; }
     };
 
     src.set_requires_grad(true);
@@ -1952,10 +1948,8 @@ TYPED_TEST(TypedTensor, alias_view_constructor_autograd)
         DummyEdge() : FunctionEdge<value_t>("alias") {}
         void forward() override {}
         void backward(const Tensor<value_t>&) override {}
-        std::vector<std::shared_ptr<TensorNode<value_t>>> inputs() const override
+        std::vector<Tensor<value_t>> inputs() const override
         { return {}; }
-        std::shared_ptr<TensorNode<value_t>> output() const override
-        { return nullptr; }
     };
 
     owner.set_requires_grad(true);
@@ -3057,10 +3051,8 @@ TYPED_TEST(TypedTensor, operator_brackets_autograd)
         DummyEdge() : FunctionEdge<value_t>("idx") {}
         void forward() override {}
         void backward(const Tensor<value_t>&) override {}
-        std::vector<std::shared_ptr<TensorNode<value_t>>> inputs() const override
+        std::vector<Tensor<value_t>> inputs() const override
         { return {}; }
-        std::shared_ptr<TensorNode<value_t>> output() const override
-        { return nullptr; }
     };
 
     owner.set_requires_grad(true);
@@ -3832,15 +3824,14 @@ TYPED_TEST(TypedTensor, operator_addition_builds_add_graph_chain)
     ASSERT_EQ(in2.size(), 2u);
     ASSERT_EQ(in3.size(), 2u);
 
-    EXPECT_EQ(in1[0]->data.get(), a.get_data());
-    EXPECT_EQ(in1[1]->data.get(), b.get_data());
-    EXPECT_EQ(f1->output(), in2[0]);
+    EXPECT_EQ(in1[0].get_data(), a.get_data());
+    EXPECT_EQ(in1[1].get_data(), b.get_data());
+    EXPECT_EQ(in2[0].get_data(), y1.get_data());
 
-    EXPECT_EQ(in2[1]->data.get(), c.get_data());
-    EXPECT_EQ(f2->output(), in3[0]);
+    EXPECT_EQ(in2[1].get_data(), c.get_data());
+    EXPECT_EQ(in3[0].get_data(), y2.get_data());
 
-    EXPECT_EQ(in3[1]->data.get(), b.get_data());
-    EXPECT_EQ(f3->output()->data.get(), y3.get_data());
+    EXPECT_EQ(in3[1].get_data(), b.get_data());
 }
 
 /**
@@ -9451,10 +9442,8 @@ TYPED_TEST(TypedTensor, get_source_function)
         DummyEdge() : FunctionEdge<value_t>("dummy") {}
         void forward() override {}
         void backward(const Tensor<value_t>&) override {}
-        std::vector<std::shared_ptr<TensorNode<value_t>>> inputs() const override
+        std::vector<Tensor<value_t>> inputs() const override
         { return {}; }
-        std::shared_ptr<TensorNode<value_t>> output() const override
-        { return nullptr; }
     };
 
     auto fn = std::make_shared<DummyEdge>();
@@ -9573,10 +9562,9 @@ TYPED_TEST(TypedTensor, backward_uninitialized_requires_grad_behavior)
     // seed ones-like gradient and must fail validation.
     EXPECT_THROW(t.backward(), temper::validation_error);
 
-    // Explicit uninitialized grad currently follows the direct path and
-    // should not throw.
+    // Explicit uninitialized grad is invalid and should throw.
     Tensor<value_t> uninitialized_grad;
-    EXPECT_NO_THROW(t.backward(uninitialized_grad));
+    EXPECT_THROW(t.backward(uninitialized_grad), temper::validation_error);
 
     const Tensor<value_t>& g = t.get_gradient();
     EXPECT_EQ(g.get_data(), nullptr);
@@ -9640,14 +9628,9 @@ TYPED_TEST(TypedTensor, backward_unbroadcasts_accumulates_and_propagates)
             last_grad = grad_output;
         }
 
-        std::vector<std::shared_ptr<TensorNode<value_t>>> inputs() const override
+        std::vector<Tensor<value_t>> inputs() const override
         {
             return {};
-        }
-
-        std::shared_ptr<TensorNode<value_t>> output() const override
-        {
-            return nullptr;
         }
 
         int calls = 0;
@@ -9699,10 +9682,8 @@ TYPED_TEST(TypedTensor, private_setters)
         DummyEdge() : FunctionEdge<value_t>("dummy-private-setter") {}
         void forward() override {}
         void backward(const Tensor<value_t>&) override {}
-        std::vector<std::shared_ptr<TensorNode<value_t>>> inputs() const override
+        std::vector<Tensor<value_t>> inputs() const override
         { return {}; }
-        std::shared_ptr<TensorNode<value_t>> output() const override
-        { return nullptr; }
     };
 
     Tensor<value_t> t({2, 2}, MemoryLocation::HOST);
